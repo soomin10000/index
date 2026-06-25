@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Totally Pointless Website</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #07070f;
+      --card: rgba(14,14,26,0.85);
+      --border: rgba(255,255,255,0.07);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: #f0f0f0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.1rem 1.5rem;
+      gap: 0.9rem;
+      overflow: hidden;
+    }
+
+    /* Ambient blobs */
+    .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .bg span {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 0.18;
+      animation: drift linear infinite alternate;
+    }
+    .bg span:nth-child(1) { width:500px;height:500px;background:#ff6030;top:-10%;left:-10%;animation-duration:30s; }
+    .bg span:nth-child(2) { width:400px;height:400px;background:#2060ff;top:10%;right:-5%;animation-duration:22s;animation-delay:-8s; }
+    .bg span:nth-child(3) { width:450px;height:300px;background:#00c0a0;bottom:-5%;left:30%;animation-duration:27s;animation-delay:-14s; }
+    .bg span:nth-child(4) { width:300px;height:400px;background:#9040ff;bottom:10%;right:10%;animation-duration:35s;animation-delay:-3s; }
+    @keyframes drift {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(40px,30px) scale(1.1); }
+    }
+
+    header, main, footer { position: relative; z-index: 1; }
+
+    /* Header */
+    header { text-align: center; }
+    .brand {
+      font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, #555);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    #clock {
+      font-size: 0.82rem; color: #3a3a3a; margin-top: 0.4rem;
+      font-variant-numeric: tabular-nums; letter-spacing: 0.1em; text-transform: uppercase;
+    }
+
+    /* ── Bento grid ── */
+    main {
+      display: grid;
+      flex: 1;
+      min-height: 0;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      grid-template-areas:
+        "harold  weather  weather"
+        "harold  train    parents"
+        "bbc     bbc      darren";
+      gap: 1.15rem;
+      width: 100%;
+      max-width: 980px;
+      align-items: stretch;
+    }
+
+    #c-harold  { grid-area: harold; }
+    #c-weather { grid-area: weather; }
+    #c-train   { grid-area: train; }
+    #c-parents { grid-area: parents; }
+    #c-bbc     { grid-area: bbc; }
+    #c-darren  { grid-area: darren; }
+
+    /* Card base */
+    .card {
+      position: relative;
+      display: flex; flex-direction: column;
+      padding: 1.1rem 1.3rem;
+      border-radius: 20px;
+      min-height: 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 2px 40px rgba(0,0,0,0.55);
+      text-decoration: none; color: inherit;
+      overflow: hidden; cursor: pointer;
+      transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .card { animation: rise 0.5s ease both; }
+    .card:nth-child(1) { animation-delay: 0.05s; }
+    .card:nth-child(2) { animation-delay: 0.12s; }
+    .card:nth-child(3) { animation-delay: 0.19s; }
+    .card:nth-child(4) { animation-delay: 0.26s; }
+    .card:nth-child(5) { animation-delay: 0.33s; }
+    .card:nth-child(6) { animation-delay: 0.40s; }
+
+    .card::before {
+      content: ''; position: absolute;
+      top: 0; left: 10%; right: 10%; height: 1px;
+      background: var(--a, #fff); opacity: 0.45;
+      border-radius: 50%; filter: blur(1px);
+      transition: opacity 0.3s;
+    }
+    .card::after {
+      content: ''; position: absolute;
+      top: -60px; left: 50%; transform: translateX(-50%);
+      width: 200px; height: 120px;
+      background: radial-gradient(ellipse, var(--a, #fff) 0%, transparent 70%);
+      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    .card:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 12px 60px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.13); }
+    .card:hover::before { opacity: 0.9; }
+    .card:hover::after  { opacity: 0.12; }
+
+    /* Card internals */
+    .c-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .c-icon { font-size: 1.1rem; line-height: 1; }
+    .c-name { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #484848; }
+
+    .c-metric { display: flex; align-items: baseline; gap: 0.15rem; margin-bottom: 0.3rem; line-height: 1; }
+    .c-val {
+      font-size: clamp(2rem, 3.2vw, 3.4rem); font-weight: 800; letter-spacing: -2px;
+      color: var(--a, #fff); font-variant-numeric: tabular-nums; transition: color 0.4s;
+    }
+    .c-unit { font-size: 1.2rem; font-weight: 400; color: #333; letter-spacing: 0; }
+
+    .c-sub { font-size: 0.74rem; color: #555; line-height: 1.6; flex: 1; }
+
+    .c-foot {
+      margin-top: 0.6rem; padding-top: 0.5rem;
+      border-top: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.62rem; color: #272727;
+      font-family: monospace; letter-spacing: 0.06em;
+    }
+
+    /* ── Card-specific overrides ── */
+
+    /* Harold: tall — bigger temp */
+    #c-harold { justify-content: space-between; }
+    #c-harold .c-val { font-size: clamp(3rem, 5vw, 5rem); letter-spacing: -3px; }
+
+    /* Weather: wide — faint emoji watermark */
+    #c-weather { position: relative; }
+    .c-bg-emoji {
+      position: absolute; right: 1.5rem; bottom: 2.5rem;
+      font-size: 5rem; line-height: 1;
+      opacity: 0.08; pointer-events: none; user-select: none;
+      filter: blur(1.5px);
+    }
+
+    /* BBC: wide — "Ready" smaller, sub more prominent */
+    #c-bbc .c-val { font-size: 2.2rem; letter-spacing: -0.5px; }
+    #c-bbc .c-sub { color: #484848; }
+
+    /* Dots */
+    .dot {
+      display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      margin-right: 5px; vertical-align: middle; position: relative; top: -1px;
+    }
+    .dot-on  { background: #4ade80; box-shadow: 0 0 6px #4ade8099; }
+    .dot-off { background: #333; }
+    .dot-red { background: #ef5350; box-shadow: 0 0 6px #ef535099; }
+
+    /* State classes */
+    .is-offline .c-val  { color: #252525 !important; font-size: 2rem; letter-spacing: -1px; }
+    .is-offline .c-sub  { color: #252525; font-style: italic; }
+    .is-offline .c-unit { opacity: 0; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+    .is-loading .c-val { animation: pulse 1.4s ease infinite; color: #2a2a2a; }
+
+    footer { position: relative; z-index: 1; color: #1e1e1e; font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; flex-shrink: 0; }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      body { height: auto; min-height: 100vh; overflow: auto; }
+      main {
+        flex: none;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto;
+        grid-template-areas:
+          "weather  weather"
+          "harold   train"
+          "parents  darren"
+          "bbc      bbc";
+      }
+      #c-harold .c-val { font-size: 3.5rem; }
+    }
+    @media (max-width: 520px) {
+      main {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "weather" "harold" "train" "parents" "darren" "bbc";
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+<header>
+  <div class="brand">Totally Pointless Website</div>
+  <div id="clock"></div>
+</header>
+
+<main>
+
+  <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
+    <div class="c-head"><span class="c-icon">🌡️</span><span class="c-name">How Hot is Harold?</span></div>
+    <div class="c-metric"><span class="c-val" id="h-val">—</span><span class="c-unit">°C</span></div>
+    <div class="c-sub" id="h-sub"></div>
+    <div class="c-foot">:5000</div>
+  </a>
+
+  <a class="card is-loading" id="c-weather" style="--a:#29b6f6" href="http://192.168.1.183:8186">
+    <div class="c-head"><span class="c-icon">🌤️</span><span class="c-name">Weather</span></div>
+    <div class="c-metric"><span class="c-val" id="w-val">—</span><span class="c-unit">°C</span></div>
+    <div class="c-sub" id="w-sub"></div>
+    <div class="c-bg-emoji" id="w-emoji" aria-hidden="true"></div>
+    <div class="c-foot">:8186</div>
+  </a>
+
+  <a class="card is-loading" id="c-train" style="--a:#42a5f5" href="http://192.168.1.183:8192">
+    <div class="c-head"><span class="c-icon">🚆</span><span class="c-name">Next Train</span></div>
+    <div class="c-metric"><span class="c-val" id="t-val">—</span></div>
+    <div class="c-sub" id="t-sub"></div>
+    <div class="c-foot">:8192</div>
+  </a>
+
+  <a class="card is-loading" id="c-parents" style="--a:#ab47bc" href="http://192.168.1.183:8092">
+    <div class="c-head"><span class="c-icon">😈</span><span class="c-name">Bad Parents</span></div>
+    <div class="c-metric"><span class="c-val" id="p-val">—</span></div>
+    <div class="c-sub" id="p-sub"></div>
+    <div class="c-foot">:8092</div>
+  </a>
+
+  <a class="card" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
+    <div class="c-head"><span class="c-icon">📰</span><span class="c-name">BBC News Spoofer</span></div>
+    <div class="c-metric"><span class="c-val" style="font-size:2.2rem;letter-spacing:-0.5px">Ready</span></div>
+    <div class="c-sub">Upload a photo, write a headline — get a convincing BBC News page.</div>
+    <div class="c-foot">:8194</div>
+  </a>
+
+  <a class="card is-loading" id="c-darren" style="--a:#26c6da" href="http://192.168.1.183:8193">
+    <div class="c-head"><span class="c-icon">🍽️</span><span class="c-name">What's Darren Doing?</span></div>
+    <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
+    <div class="c-sub" id="d-sub"></div>
+    <div class="c-foot">:8193</div>
+  </a>
+
+</main>
+
+<footer>192.168.1.183</footer>
+
+<script>
+  (function tick() {
+    const n = new Date();
+    document.getElementById('clock').textContent =
+      n.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' }) +
+      '  ·  ' +
+      n.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    setTimeout(tick, 1000);
+  })();
+
+  async function get(path) {
+    const c = new AbortController();
+    const t = setTimeout(() => c.abort(), 4000);
+    try {
+      const r = await fetch(path, { signal: c.signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+
+  function setCard(id, { val, unit, sub, accent } = {}, offline = false) {
+    const card = document.getElementById('c-' + id);
+    if (!card) return;
+    card.classList.remove('is-loading', 'is-offline');
+    if (offline) card.classList.add('is-offline');
+    const v = card.querySelector('.c-val');
+    const u = card.querySelector('.c-unit');
+    const s = card.querySelector('.c-sub');
+    if (v) v.textContent = val ?? '—';
+    if (u && unit !== undefined) u.textContent = unit;
+    if (s) s.innerHTML = sub ?? '';
+    if (accent) card.style.setProperty('--a', accent);
+  }
+
+  const compassDir = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d/45)%8];
+  const mins = s => !s||s<=0 ? null : Math.round(s/60)===1 ? '1 min' : `${Math.round(s/60)} mins`;
+  const dot  = cls => `<span class="dot ${cls}"></span>`;
+  const MODE = { low:'Low heat', high:'High heat', af:'Anti-frost' };
+
+  function wmoEmoji(c, day) {
+    if (c===0)  return day ? '☀️' : '🌙';
+    if (c<=2)   return day ? '⛅' : '🌤️';
+    if (c===3)  return '☁️';
+    if (c<=48)  return '🌫️';
+    if (c<=55)  return '🌦️';
+    if (c<=65)  return '🌧️';
+    if (c<=77)  return '❄️';
+    if (c<=82)  return '🌧️';
+    if (c<=86)  return '🌨️';
+    return '⛈️';
+  }
+
+  async function harold() {
+    try {
+      const d = await get('/api/harold');
+      const dps = d.dps || {};
+      const temp = dps['3'], on = dps['1'], mode = MODE[dps['4']] ?? dps['4'] ?? '';
+      const accent = temp >= 30 ? '#ff4500' : temp >= 20 ? '#ff8c00' : '#42a5f5';
+      setCard('harold', {
+        val: temp ?? '—', unit: '°C',
+        sub: `${dot(on ? 'dot-on' : 'dot-off')}${on ? 'On' : 'Off'}${mode ? ' · '+mode : ''}`,
+        accent,
+      });
+    } catch { setCard('harold', { val: 'Offline', unit: '' }, true); }
+  }
+
+  async function train() {
+    try {
+      const d = await get('/api/train');
+      const svcs = d.trainServices || [];
+      const next = svcs.find(s => s.etd !== 'Cancelled');
+      if (!next) { setCard('train', { val: 'None', sub: 'No services' }); return; }
+      const dest = next.destination?.[0]?.locationName ?? '?';
+      const std = next.std ?? '—', etd = next.etd ?? '—';
+      const time = (etd && etd !== 'On time' && etd !== '—') ? etd : std;
+      const onTime = etd === 'On time';
+      const status = onTime ? 'On time' : etd !== '—' && etd !== 'On time' ? `Exp ${etd}` : '';
+      const plat = next.platform ? ` · Plat ${next.platform}` : '';
+      setCard('train', {
+        val: time,
+        sub: `${dot(onTime ? 'dot-on' : 'dot-off')}${dest}${status ? ' · '+status : ''}${plat}`,
+      });
+    } catch { setCard('train', { val: 'Offline' }, true); }
+  }
+
+  async function parents() {
+    try {
+      const d = await get('/api/parents');
+      if (d.blocked) {
+        const rem = d.unblock_at ? Math.max(0, Math.round((d.unblock_at - Date.now()/1000)/60)) : null;
+        setCard('parents', {
+          val: 'Blocked',
+          sub: `${dot('dot-red')}${rem != null ? rem+' min left' : 'Until unblocked'}`,
+          accent: '#ef5350',
+        });
+      } else {
+        setCard('parents', { val: 'Allowed', sub: `${dot('dot-on')}TikTok is on`, accent: '#66bb6a' });
+      }
+    } catch { setCard('parents', { val: 'Offline' }, true); }
+  }
+
+  async function darren() {
+    try {
+      const d = await get('/api/darren');
+      const state = d.operation_state ?? 'Unknown';
+      const rem = mins(d.remaining_seconds);
+      const parts = [d.program, d.program_phase !== 'None' ? d.program_phase : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
+      const accent = { Run:'#26c6da', Finished:'#66bb6a', Error:'#ef5350', Ready:'#888', Inactive:'#555' }[state] ?? '#888';
+      setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent });
+    } catch { setCard('darren', { val: 'Offline' }, true); }
+  }
+
+  async function weather() {
+    try {
+      const j = await get('/api/weather');
+      const d = j.data;
+      if (!d) { setCard('weather', { val: '—', unit: '' }); return; }
+      const temp  = d.temperature_2m != null ? Math.round(d.temperature_2m) : null;
+      const feels = d.apparent_temperature != null ? Math.round(d.apparent_temperature) : null;
+      const wind  = d.wind_speed_10m != null ? Math.round(d.wind_speed_10m) : null;
+      const dir   = d.wind_direction_10m != null ? compassDir(d.wind_direction_10m) : '';
+      const parts = [d.description, feels != null ? `Feels ${feels}°C` : null, wind != null ? `${wind} mph ${dir}` : null].filter(Boolean);
+      const emoji = wmoEmoji(d.weather_code ?? 0, !!d.is_day);
+      document.getElementById('w-emoji').textContent = emoji;
+      setCard('weather', { val: temp ?? '—', unit: '°C', sub: parts.join(' · ') });
+    } catch { setCard('weather', { val: 'Offline', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); parents(); darren(); weather(); }
+  refresh();
+  setInterval(refresh, 30000);
+</script>
+</body>
+</html>
