@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Network Cross-Reference</title>
+  <script src="/chart.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #5a9ab8;
+      min-height: 100vh;
+    }
+
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px,
+        rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none;
+             letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { margin-left: auto; font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+
+    .page { max-width: 1500px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
+
+    /* Stat strip */
+    .stat-strip {
+      display: flex; gap: 0.8rem; margin-bottom: 1.4rem; flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
+      border-radius: 8px; padding: 0.55rem 1rem;
+      font-size: 0.65rem; letter-spacing: 0.1em;
+    }
+    .stat-pill span { font-size: 1.3rem; font-weight: bold; display: block; margin-bottom: 2px; }
+    .c-blue   { color: #4e9af1; }
+    .c-red    { color: #ff4444; }
+    .c-green  { color: #00cc88; }
+    .c-teal   { color: #00e5cc; }
+    .c-orange { color: #f0a030; }
+
+    /* Charts row */
+    .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem; }
+    @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1rem 1.2rem;
+    }
+    .chart-title { font-size: 0.6rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 0.9rem; }
+
+    /* Filters */
+    .filter-row { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; flex-wrap: wrap; align-items: center; }
+    .filter-btn {
+      background: rgba(4,14,30,0.7); border: 1px solid #0a2a40;
+      color: #3a7090; font-family: inherit; font-size: 0.6rem; letter-spacing: 0.1em;
+      padding: 0.3rem 0.7rem; border-radius: 6px; cursor: pointer; transition: all .2s;
+    }
+    .filter-btn:hover, .filter-btn.active { background: #0a2a40; color: #00e5cc; border-color: #00e5cc; }
+    .filter-label { font-size: 0.6rem; color: #2a5570; letter-spacing: 0.1em; }
+    #search {
+      background: rgba(4,14,30,0.7); border: 1px solid #0a2a40;
+      color: #5a9ab8; font-family: inherit; font-size: 0.65rem;
+      padding: 0.3rem 0.7rem; border-radius: 6px; outline: none; width: 180px;
+    }
+    #search::placeholder { color: #2a5570; }
+    #search:focus { border-color: #3a7090; }
+
+    /* Table */
+    .tbl-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    th {
+      font-size: 0.56rem; letter-spacing: 0.14em; color: #3a7090;
+      padding: 0.5rem 0.8rem; text-align: left; white-space: nowrap;
+      border-bottom: 1px solid #0a2a40; cursor: pointer; user-select: none;
+    }
+    th:hover { color: #00e5cc; }
+    th.sorted { color: #00e5cc; }
+    td {
+      font-size: 0.7rem; padding: 0.55rem 0.8rem;
+      border-bottom: 1px solid rgba(10,42,64,0.4); white-space: nowrap;
+    }
+    tr:hover td { background: rgba(10,30,55,0.6); }
+    tr.flagged td { border-left: 2px solid #ff4444; }
+
+    .name-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .hostname { color: #aaddff; }
+    .guessed  { color: #5a9ab8; font-style: italic; }
+    .vendor   { color: #3a7090; font-size: 0.6rem; }
+    .ap-cell  { color: #5a9ab8; font-size: 0.65rem; }
+    .null-val { color: #1a3a50; }
+
+    /* Signal bar */
+    .sig-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
+    .sig-bar { height: 6px; border-radius: 3px; min-width: 4px; }
+
+    /* DNS bar */
+    .dns-bar-wrap { display: flex; align-items: center; gap: 0.4rem; }
+    .dns-bar-bg { background: #0a1e30; height: 5px; border-radius: 3px; flex: 1; min-width: 50px; overflow: hidden; }
+    .dns-bar-fill { height: 100%; border-radius: 3px; }
+
+    /* Blocked % badge */
+    .pct-badge {
+      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
+      font-size: 0.65rem; font-weight: bold;
+    }
+
+    /* Insight tags */
+    .tag {
+      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
+      font-size: 0.55rem; letter-spacing: 0.06em; margin-right: 2px;
+    }
+    .tag-chatty  { background: #1a3020; color: #00cc88; border: 1px solid #00cc8840; }
+    .tag-noisy   { background: #1a2030; color: #4e9af1; border: 1px solid #4e9af140; }
+    .tag-blocked { background: #2a1010; color: #ff4444; border: 1px solid #ff444440; }
+    .tag-clean   { background: #0a1a0a; color: #44aa44; border: 1px solid #44aa4440; }
+    .tag-iot     { background: #1a1030; color: #cc88ff; border: 1px solid #cc88ff40; }
+
+    #updated { font-size: 0.58rem; color: #2a5570; margin-top: 1.2rem; text-align: right; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">← HOME</a>
+  <a href="/unifi">OVERVIEW</a>
+  <a href="/unifi/map">MAP</a>
+  <a href="/unifi/devices">DEVICES</a>
+  <a href="/unifi/events">EVENTS</a>
+  <a href="/pihole">PI-HOLE</a>
+  <span class="brand">· CROSS-REF ·</span>
+  <span id="status">LOADING...</span>
+</nav>
+
+<div class="page">
+  <div class="stat-strip" id="stats"></div>
+
+  <div class="chart-row">
+    <div class="chart-card">
+      <div class="chart-title">DNS QUERIES PER DEVICE (TOP 20 — MATCHED ONLY)</div>
+      <canvas id="ch-queries" height="200"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">BLOCKED % PER DEVICE (TOP 20 BY BLOCK RATE)</div>
+      <canvas id="ch-blocked" height="200"></canvas>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <span class="filter-label">FILTER:</span>
+    <button class="filter-btn active" onclick="setFilter('all',this)">ALL</button>
+    <button class="filter-btn" onclick="setFilter('matched',this)">DNS MATCHED</button>
+    <button class="filter-btn" onclick="setFilter('chatty',this)">CHATTY</button>
+    <button class="filter-btn" onclick="setFilter('high_block',this)">HIGH BLOCK %</button>
+    <button class="filter-btn" onclick="setFilter('flagged',this)">WIFI FLAGGED</button>
+    <input id="search" type="text" placeholder="search hostname…" oninput="renderTable()">
+    <span class="filter-label" id="row-count"></span>
+  </div>
+
+  <div class="tbl-wrap">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th onclick="sortBy('display_name')">DEVICE</th>
+          <th onclick="sortBy('ap')">AP · SSID</th>
+          <th onclick="sortBy('signal')">SIGNAL</th>
+          <th onclick="sortBy('retry_pct')">RETRIES</th>
+          <th onclick="sortBy('dns_total')">DNS QUERIES</th>
+          <th onclick="sortBy('dns_pct')">BLOCKED %</th>
+          <th>INSIGHTS</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div id="updated"></div>
+</div>
+
+<script>
+const GRID  = '#0a1e30';
+const LABEL = '#3a7090';
+const TEAL  = '#00e5cc';
+const RED   = '#ff4444';
+const BLUE  = '#4e9af1';
+const GREEN = '#00cc88';
+
+Chart.defaults.color       = LABEL;
+Chart.defaults.borderColor = GRID;
+Chart.defaults.font.family = "'DejaVu Sans Mono', monospace";
+Chart.defaults.font.size   = 10;
+
+const TIP = {
+  backgroundColor: '#08182a', borderColor: '#1a4060', borderWidth: 1,
+  titleColor: '#aaddff', bodyColor: '#5a9ab8', padding: 10,
+};
+
+let allData = [], charts = {}, sortKey = 'dns_total', sortDir = -1, activeFilter = 'all';
+
+// Compute per-device DNS queries/24h — normalise by query count
+let globalMaxDns = 1;
+
+function setFilter(f, btn) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+
+function sortBy(key) {
+  if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = -1; }
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
+  event.target.classList.add('sorted');
+  renderTable();
+}
+
+function sigColor(s) {
+  if (s == null) return '#2a5570';
+  if (s >= -65) return '#00cc88';
+  if (s >= -75) return '#f0a030';
+  return '#ff4444';
+}
+function sigWidth(s) {
+  if (s == null) return 0;
+  return Math.max(4, Math.round((s + 100) / 45 * 80));
+}
+function pctColor(p) {
+  if (p == null) return '#2a5570';
+  if (p < 10) return '#00cc88';
+  if (p < 25) return '#f0a030';
+  return '#ff4444';
+}
+
+function insights(d, avg) {
+  const tags = [];
+  if (d.dns_total != null) {
+    if (d.dns_total > avg * 2.5) tags.push('<span class="tag tag-chatty">CHATTY</span>');
+    if (d.dns_pct >= 30) tags.push('<span class="tag tag-blocked">HIGH ADS</span>');
+    if (d.dns_pct === 0 && d.dns_total > 50) tags.push('<span class="tag tag-clean">AD-FREE</span>');
+  }
+  if (d.guessed) tags.push('<span class="tag tag-iot">IOT?</span>');
+  if (d.flagged)  tags.push('<span class="tag tag-noisy">WEAK WIFI</span>');
+  return tags.join('');
+}
+
+function renderTable() {
+  const q = (document.getElementById('search').value || '').toLowerCase();
+
+  let rows = allData.filter(d => {
+    if (q && !(d.display_name || '').toLowerCase().includes(q) &&
+             !(d.hostname || '').toLowerCase().includes(q) &&
+             !(d.vendor || '').toLowerCase().includes(q)) return false;
+    if (activeFilter === 'matched'    && d.dns_total == null)    return false;
+    if (activeFilter === 'chatty'     && (d.dns_total == null || d.dns_total < globalMaxDns * 0.05)) return false;
+    if (activeFilter === 'high_block' && (d.dns_pct == null || d.dns_pct < 25))  return false;
+    if (activeFilter === 'flagged'    && !d.flagged) return false;
+    return true;
+  });
+
+  rows.sort((a, b) => {
+    const av = a[sortKey] ?? (sortDir > 0 ? Infinity : -Infinity);
+    const bv = b[sortKey] ?? (sortDir > 0 ? Infinity : -Infinity);
+    return typeof av === 'string' ? av.localeCompare(bv) * sortDir : (av - bv) * sortDir;
+  });
+
+  const matched = rows.filter(d => d.dns_total != null);
+  const avg = matched.length
+    ? matched.reduce((s, d) => s + d.dns_total, 0) / matched.length
+    : 1;
+
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = rows.map(d => {
+    const sc = sigColor(d.signal);
+    const sw = sigWidth(d.signal);
+    const pc = pctColor(d.dns_pct);
+    const dnsBar = d.dns_total != null
+      ? `<div class="dns-bar-wrap">
+           <div class="dns-bar-bg">
+             <div class="dns-bar-fill" style="width:${Math.round(d.dns_total/globalMaxDns*100)}%;background:${BLUE}88"></div>
+           </div>
+           <span style="color:#aaddff">${d.dns_total.toLocaleString()}</span>
+         </div>`
+      : `<span class="null-val">—</span>`;
+    const pctBadge = d.dns_pct != null
+      ? `<span class="pct-badge" style="background:${pc}22;color:${pc}">${d.dns_pct}%</span>`
+      : `<span class="null-val">—</span>`;
+    const sigBadge = d.signal != null
+      ? `<div class="sig-bar-wrap">
+           <div class="sig-bar" style="width:${sw}px;background:${sc}"></div>
+           <span style="color:${sc}">${d.signal} dBm</span>
+         </div>`
+      : `<span class="null-val">wired</span>`;
+    const retries = d.retry_pct != null
+      ? `<span style="color:${d.retry_pct > 15 ? '#ff4444' : d.retry_pct > 8 ? '#f0a030' : '#3a7090'}">${d.retry_pct.toFixed(1)}%</span>`
+      : `<span class="null-val">—</span>`;
+    const apCell = [d.ap, d.ssid].filter(Boolean).join(' · ') || '—';
+    const nameHtml = d.guessed
+      ? `<div class="name-cell guessed">${d.display_name} <span style="color:#2a5570">?</span></div>`
+      : `<div class="name-cell hostname">${d.display_name || d.hostname || d.ip}</div>`;
+    return `<tr class="${d.flagged ? 'flagged' : ''}">
+      <td>
+        ${nameHtml}
+        ${d.vendor ? `<div class="vendor">${d.vendor}</div>` : ''}
+      </td>
+      <td class="ap-cell">${apCell}</td>
+      <td>${sigBadge}</td>
+      <td>${retries}</td>
+      <td>${dnsBar}</td>
+      <td>${pctBadge}</td>
+      <td>${insights(d, avg)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('row-count').textContent = `${rows.length} devices`;
+}
+
+function mkBarH(canvasId, labels, values, color, maxVal) {
+  if (charts[canvasId]) charts[canvasId].destroy();
+  charts[canvasId] = new Chart(document.getElementById(canvasId), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: color + '44', borderColor: color,
+                   borderWidth: 1, borderRadius: 3 }],
+    },
+    options: {
+      responsive: true,
+      indexAxis: 'y',
+      animation: { duration: 500 },
+      plugins: { legend: { display: false }, tooltip: { ...TIP } },
+      scales: {
+        x: { grid: { color: GRID }, ticks: { color: LABEL }, max: maxVal },
+        y: { grid: { color: GRID }, ticks: { color: LABEL, font: { size: 9 } } },
+      },
+    },
+  });
+}
+
+async function load() {
+  const r = await fetch('/api/cross_ref?t=' + Date.now());
+  const d = await r.json();
+
+  allData = d.devices || [];
+  const s = d.summary || {};
+
+  globalMaxDns = Math.max(...allData.map(x => x.dns_total || 0), 1);
+
+  // Stat pills
+  const matched = allData.filter(x => x.dns_total != null);
+  const coverage = allData.length ? Math.round(matched.length / allData.length * 100) : 0;
+  const avgQ = matched.length ? Math.round(matched.reduce((a, x) => a + x.dns_total, 0) / matched.length) : 0;
+  const chatty = matched.filter(x => x.dns_total > avgQ * 2.5).length;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-pill"><span class="c-blue">${allData.length}</span>TOTAL DEVICES</div>
+    <div class="stat-pill"><span class="c-teal">${matched.length}</span>DNS MATCHED</div>
+    <div class="stat-pill"><span class="c-green">${coverage}%</span>COVERAGE</div>
+    <div class="stat-pill"><span class="c-orange">${avgQ.toLocaleString()}</span>AVG QUERIES / DEVICE</div>
+    <div class="stat-pill"><span class="c-red">${chatty}</span>CHATTY DEVICES</div>
+    <div class="stat-pill"><span class="c-red">${s.percent_blocked || 0}%</span>GLOBAL BLOCK RATE</div>
+  `;
+  document.getElementById('status').textContent =
+    `${matched.length}/${allData.length} DEVICES MATCHED · ${s.percent_blocked || 0}% BLOCKED`;
+
+  // Charts — top 20 by DNS volume (matched only)
+  const top20 = [...matched].sort((a, b) => b.dns_total - a.dns_total).slice(0, 20);
+  mkBarH('ch-queries',
+    top20.map(d => d.display_name || d.hostname || d.ip),
+    top20.map(d => d.dns_total),
+    BLUE, globalMaxDns);
+
+  // Top 20 by block % (with at least 50 queries for meaningful %)
+  const top20blk = [...matched]
+    .filter(d => d.dns_total >= 50 && d.dns_pct != null)
+    .sort((a, b) => b.dns_pct - a.dns_pct)
+    .slice(0, 20);
+  mkBarH('ch-blocked',
+    top20blk.map(d => d.display_name || d.hostname || d.ip),
+    top20blk.map(d => d.dns_pct),
+    RED, 100);
+
+  renderTable();
+
+  const ts = new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+  document.getElementById('updated').textContent = `Pi-hole data as of: ${ts}`;
+}
+
+load().catch(e => {
+  document.getElementById('status').textContent = 'ERROR: ' + e.message;
+  console.error(e);
+});
+setInterval(load, 60000);
+</script>
+</body>
+</html>

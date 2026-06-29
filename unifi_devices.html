@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Device Inventory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #4a8aaa;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50;
+      flex-shrink: 0;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav-item {
+      font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
+      padding: 0.25rem 0.75rem; border-radius: 999px;
+      border: 1px solid #1a4060; color: #5a9ab8; transition: all .2s;
+    }
+    .subnav-item:hover { color: #00ffcc; border-color: #006644; }
+    .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
+
+    #filters {
+      display: flex; align-items: center; gap: 0.8rem;
+      padding: 0.6rem 1.2rem;
+      border-bottom: 1px solid #040e20;
+      background: rgba(2,8,20,0.8);
+      flex-shrink: 0;
+    }
+    #search {
+      background: #040e20; border: 1px solid #1a4060; color: #4a8aaa;
+      font-family: inherit; font-size: 0.68rem; padding: 0.3rem 0.7rem;
+      border-radius: 4px; width: 220px; outline: none;
+      letter-spacing: 0.05em;
+    }
+    #search:focus { border-color: #00ffcc; }
+    #search::placeholder { color: #3a7090; }
+
+    .filter-btn {
+      background: none; border: 1px solid #1a4060; color: #5a9ab8;
+      font-family: inherit; font-size: 0.62rem; padding: 0.25rem 0.6rem;
+      border-radius: 4px; cursor: pointer; letter-spacing: 0.08em;
+      transition: all .2s;
+    }
+    .filter-btn:hover, .filter-btn.active { color: #00ffcc; border-color: #00ffcc; }
+    .filter-btn.flagged.active { color: #ff4444; border-color: #ff4444; }
+
+    #sort-label { font-size: 0.6rem; color: #2a6080; margin-left: auto; letter-spacing: 0.1em; }
+    select#sort-by {
+      background: #040e20; border: 1px solid #1a4060; color: #5a9ab8;
+      font-family: inherit; font-size: 0.62rem; padding: 0.25rem 0.5rem;
+      border-radius: 4px; outline: none; cursor: pointer;
+    }
+
+    #table-wrap { flex: 1; overflow: auto; padding: 0.8rem 1.2rem 2rem; }
+
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 1rem; }
+
+    thead th {
+      text-align: left; padding: 0.7rem 1.1rem;
+      color: #4a8aaa; letter-spacing: 0.1em; font-weight: normal; font-size: 0.75rem;
+      border-bottom: 1px solid #0a2040;
+      position: sticky; top: 0; background: #020a18; z-index: 10;
+      cursor: pointer; user-select: none;
+    }
+    thead th:hover { color: #2a7aaa; }
+    thead th.sorted { color: #00ffcc; }
+    thead th .arrow { margin-left: 0.3em; opacity: 0.5; }
+
+    tbody tr {
+      border-bottom: 1px solid #040e1a;
+      transition: transform .15s ease, background .15s, box-shadow .15s;
+      transform-origin: center;
+    }
+    tbody tr:hover {
+      transform: scaleY(1.2);
+      background: rgba(0,50,100,0.45);
+      box-shadow: 0 4px 24px rgba(0,80,150,0.25);
+      position: relative; z-index: 5;
+    }
+    tbody tr.flagged { background: rgba(40,0,0,0.3); }
+    tbody tr.flagged:hover { background: rgba(80,0,0,0.5); }
+
+    td { padding: 0.75rem 1.1rem; vertical-align: middle; }
+
+    .td-hostname { color: #7abcdd; font-weight: bold; }
+    .td-hostname.flagged { color: #ff5555; }
+    .td-hostname.guessed { color: #4a8aaa; font-weight: normal; font-style: italic; }
+    .td-hostname.guessed::after { content: ' ?'; color: #4a8aaa; font-size: 0.75em; }
+
+    .hn-wrap { position: relative; display: inline-block; }
+    .flag-bubble {
+      display: none;
+      position: absolute; bottom: 130%; left: 0;
+      background: #08182a; border: 1px solid #ff3333;
+      color: #ffaaaa; font-size: 0.72rem; padding: 0.5rem 0.8rem;
+      border-radius: 6px; white-space: nowrap; z-index: 99;
+      pointer-events: none; line-height: 1.6;
+    }
+    .flag-bubble::after {
+      content: ''; position: absolute; top: 100%; left: 1rem;
+      border: 5px solid transparent; border-top-color: #ff3333;
+    }
+    .hn-wrap:hover .flag-bubble { display: block; }
+    .td-ip   { color: #4a8aaa; }
+    .td-vendor { color: #4a8aaa; font-size: 0.88rem; }
+    .td-ssid { color: #5aaccc; }
+    .td-ap   { color: #4a8aaa; font-size: 0.88rem; }
+
+    .signal-val { font-weight: bold; }
+    .signal-good { color: #00cc88; }
+    .signal-warn { color: #ffaa00; }
+    .signal-bad  { color: #ff4444; }
+
+    .retry-val { font-weight: bold; }
+    .retry-good { color: #00cc88; }
+    .retry-warn { color: #ffaa00; }
+    .retry-bad  { color: #ff4444; }
+
+    .link-badge {
+      display: inline-block; font-size: 0.78rem; padding: 0.25rem 0.6rem;
+      border-radius: 3px; letter-spacing: 0.06em;
+    }
+    .link-wired    { background: #003a55; color: #22aadd; }
+    .link-wireless { background: #001a30; color: #2a6a88; }
+    .link-flagged  { background: #330000; color: #ff3333; border: 1px solid #550000; }
+
+    .flag-icon { color: #ff3333; margin-right: 0.3em; }
+
+    #empty { display: none; text-align: center; padding: 4rem; color: #2a6080; font-size: 0.75rem; letter-spacing: 0.1em; }
+
+    #updated { font-size: 0.58rem; color: #2a6080; letter-spacing: 0.08em; margin-left: 0.5rem; }
+
+    tbody tr { cursor: pointer; }
+
+    /* Detail panel */
+    #detail {
+      position: fixed; top: 0; right: -420px; width: 400px; height: 100vh;
+      background: #030c1e; border-left: 1px solid #0d3060;
+      z-index: 200; display: flex; flex-direction: column;
+      transition: right .25s cubic-bezier(.4,0,.2,1);
+      box-shadow: -8px 0 40px rgba(0,0,0,0.6);
+    }
+    #detail.open { right: 0; }
+
+    #detail-header {
+      padding: 1.1rem 1.2rem 0.9rem;
+      border-bottom: 1px solid #0a2a40; flex-shrink: 0;
+      display: flex; align-items: flex-start; gap: 0.8rem;
+    }
+    #detail-close {
+      margin-left: auto; cursor: pointer; color: #4a8aaa;
+      font-size: 1.1rem; line-height: 1; flex-shrink: 0;
+      transition: color .2s;
+    }
+    #detail-close:hover { color: #ff4444; }
+    #detail-type { font-size: 0.55rem; letter-spacing: 0.18em; color: #4a8aaa; margin-bottom: 0.25rem; }
+    #detail-name { font-size: 1rem; font-weight: bold; color: #7abcdd; letter-spacing: 0.03em; }
+    #detail-name.flagged { color: #ff5555; }
+
+    #detail-meta {
+      padding: 0.8rem 1.2rem; flex-shrink: 0;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.3rem 1rem;
+      border-bottom: 1px solid #0a2040;
+    }
+    .dmeta-row { font-size: 0.7rem; }
+    .dmeta-key { color: #4a8aaa; font-size: 0.6rem; letter-spacing: 0.08em; display: block; }
+    .dmeta-val { color: #5a9ab8; }
+
+    #detail-body { flex: 1; overflow-y: auto; padding: 0.9rem 1.2rem 2rem; }
+
+    .detail-section { margin-bottom: 1.2rem; }
+    .detail-section h3 {
+      font-size: 0.6rem; letter-spacing: 0.15em; color: #4a8aaa;
+      margin-bottom: 0.6rem; padding-bottom: 0.3rem;
+      border-bottom: 1px solid #0a2040;
+    }
+
+    .spark-wrap { position: relative; margin-bottom: 0.5rem; }
+    .spark-label { font-size: 0.6rem; color: #4a8aaa; margin-bottom: 0.25rem; letter-spacing: 0.08em; }
+    canvas.spark { width: 100%; height: 64px; display: block; border-radius: 4px; }
+
+    .no-history { font-size: 0.72rem; color: #3a7090; padding: 0.5rem 0; }
+
+    .dev-event {
+      display: flex; gap: 0.7rem; padding: 0.45rem 0;
+      border-bottom: 1px solid #040e1a; font-size: 0.7rem;
+    }
+    .dev-event-time { flex-shrink: 0; color: #3a7090; width: 70px; font-size: 0.62rem; }
+    .dev-event-title { font-weight: bold; }
+    .type-weak .dev-event-title       { color: #ffaa00; }
+    .type-resolved .dev-event-title   { color: #00cc88; }
+    .type-new_device .dev-event-title { color: #00aaff; }
+    .type-congestion .dev-event-title { color: #ff6644; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">← HOME</a>
+  <span class="brand">UNIFI NETWORK</span>
+  <span id="status">LOADING...</span>
+  <span id="updated"></span>
+  <div class="subnav">
+    <a href="/unifi"         class="subnav-item">Overview</a>
+    <a href="/unifi/map"     class="subnav-item">Network Map</a>
+    <a href="/unifi/devices" class="subnav-item active">Devices</a>
+    <a href="/unifi/events"  class="subnav-item">Events</a>
+  </div>
+</nav>
+
+<div id="filters">
+  <input id="search" type="text" placeholder="Search hostname, IP, MAC, vendor..." oninput="applyFilters()">
+  <button class="filter-btn active" id="btn-all"      onclick="setFilter('all')">ALL</button>
+  <button class="filter-btn"        id="btn-wireless" onclick="setFilter('wireless')">WIRELESS</button>
+  <button class="filter-btn"        id="btn-wired"    onclick="setFilter('wired')">WIRED</button>
+  <button class="filter-btn flagged" id="btn-flagged"  onclick="setFilter('flagged')">FLAGGED</button>
+  <button class="filter-btn"        id="btn-chatty"   onclick="setFilter('chatty')">CHATTY DNS</button>
+  <button class="filter-btn"        id="btn-highblock" onclick="setFilter('highblock')">HIGH ADS</button>
+  <span id="sort-label">SORT BY</span>
+  <select id="sort-by" onchange="applyFilters()">
+    <option value="flagged">Flagged first</option>
+    <option value="hostname">Hostname</option>
+    <option value="signal">Signal (worst)</option>
+    <option value="retry">Retry % (worst)</option>
+    <option value="dns_total">DNS queries (most)</option>
+    <option value="dns_pct">Blocked % (most)</option>
+    <option value="vendor">Vendor</option>
+  </select>
+</div>
+
+<div id="table-wrap">
+  <table id="devices-table">
+    <thead>
+      <tr>
+        <th>HOSTNAME</th>
+        <th>IP</th>
+        <th>VENDOR</th>
+        <th>SSID / AP</th>
+        <th>LINK</th>
+        <th>SIGNAL</th>
+        <th>RETRIES</th>
+        <th>DNS / DAY</th>
+        <th>BLOCKED %</th>
+        <th>FIRST SEEN</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="empty">NO DEVICES MATCH FILTER</div>
+</div>
+
+<div id="detail">
+  <div id="detail-header">
+    <div>
+      <div id="detail-type"></div>
+      <div id="detail-name"></div>
+    </div>
+    <span id="detail-close" onclick="closeDetail()">✕</span>
+  </div>
+  <div id="detail-meta"></div>
+  <div id="detail-body">
+    <div class="detail-section">
+      <h3>PI-HOLE · DNS PROFILE</h3>
+      <div id="detail-pihole"></div>
+    </div>
+    <div class="detail-section">
+      <h3>SIGNAL HISTORY · 7 DAYS</h3>
+      <div id="detail-charts"></div>
+    </div>
+    <div class="detail-section">
+      <h3>EVENTS</h3>
+      <div id="detail-events"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allDevices = [], globalMaxDns = 1;
+let activeFilter = 'all';
+
+function sigClass(v) {
+  if (v == null) return '';
+  if (v >= -60) return 'signal-good';
+  if (v >= -70) return 'signal-warn';
+  return 'signal-bad';
+}
+function retryClass(v) {
+  if (v == null) return '';
+  if (v <= 5)  return 'retry-good';
+  if (v <= 10) return 'retry-warn';
+  return 'retry-bad';
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  ['all','wireless','wired','flagged','chatty','highblock'].forEach(k => {
+    const el = document.getElementById('btn-' + k);
+    if (el) el.classList.toggle('active', k === f);
+  });
+  applyFilters();
+}
+
+function applyFilters() {
+  const q  = document.getElementById('search').value.toLowerCase();
+  const sf = document.getElementById('sort-by').value;
+
+  const avgDns = allDevices.filter(d => d.dns_total != null).reduce((s, d) => s + d.dns_total, 0)
+    / (allDevices.filter(d => d.dns_total != null).length || 1);
+
+  let devs = allDevices.filter(d => {
+    if (activeFilter === 'wireless'  && d.is_wired) return false;
+    if (activeFilter === 'wired'     && !d.is_wired) return false;
+    if (activeFilter === 'flagged'   && !d.flagged) return false;
+    if (activeFilter === 'chatty'    && (d.dns_total == null || d.dns_total < avgDns * 2)) return false;
+    if (activeFilter === 'highblock' && (d.dns_pct == null || d.dns_pct < 25)) return false;
+    if (q) {
+      const hay = [d.display_name, d.hostname, d.ip, d.mac, d.vendor, d.ssid, d.ap].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  devs.sort((a, b) => {
+    if (sf === 'flagged')    return (b.flagged ? 1 : 0) - (a.flagged ? 1 : 0) || (a.hostname||'').localeCompare(b.hostname||'');
+    if (sf === 'hostname')   return (a.hostname||'').localeCompare(b.hostname||'');
+    if (sf === 'signal')     return (a.signal ?? 0) - (b.signal ?? 0);
+    if (sf === 'retry')      return (b.retry_pct ?? 0) - (a.retry_pct ?? 0);
+    if (sf === 'dns_total')  return (b.dns_total ?? -1) - (a.dns_total ?? -1);
+    if (sf === 'dns_pct')    return (b.dns_pct ?? -1) - (a.dns_pct ?? -1);
+    if (sf === 'vendor')     return (a.vendor || 'zzz').localeCompare(b.vendor || 'zzz');
+    return 0;
+  });
+
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = devs.map(d => {
+    const linkBadge = d.flagged
+      ? `<span class="link-badge link-flagged">⚠ FLAGGED</span>`
+      : d.is_wired
+        ? `<span class="link-badge link-wired">WIRED</span>`
+        : `<span class="link-badge link-wireless">WIRELESS</span>`;
+
+    const sigV  = d.signal   != null ? d.signal.toFixed(0) + ' dBm' : '—';
+    const retV  = d.retry_pct != null ? d.retry_pct.toFixed(1) + '%' : '—';
+    const ssidAp = d.is_wired
+      ? `<span class="td-ap">${d.ap || '—'}</span>`
+      : `<span class="td-ssid">${d.ssid || '—'}</span><br><span class="td-ap">${d.ap || '—'}</span>`;
+
+    const hnClass = d.flagged ? 'flagged' : d.guessed ? 'guessed' : '';
+    let bubble = '';
+    if (d.flagged) {
+      const reasons = [];
+      if (d.signal != null && d.signal < -70) reasons.push(`⚠ Signal ${d.signal} dBm (threshold −70)`);
+      if (d.retry_pct != null && d.retry_pct > 10) reasons.push(`⚠ Retries ${d.retry_pct.toFixed(1)}% (threshold 10%)`);
+      if (!reasons.length) reasons.push('Flagged by poller');
+      bubble = `<span class="flag-bubble">${reasons.join('<br>')}</span>`;
+    }
+    const dnsColor = d.dns_total != null
+      ? (d.dns_total > avgDns * 2.5 ? '#4e9af1' : '#3a7090') : '#1a3a50';
+    const dnsBar = d.dns_total != null
+      ? `<div style="display:flex;align-items:center;gap:0.5rem">
+           <div style="background:#0a1e30;height:4px;border-radius:2px;width:50px;overflow:hidden">
+             <div style="width:${Math.round(d.dns_total/globalMaxDns*100)}%;height:100%;background:${dnsColor};border-radius:2px"></div>
+           </div>
+           <span style="color:${dnsColor}">${d.dns_total.toLocaleString()}</span>
+         </div>`
+      : `<span style="color:#1a3a50">—</span>`;
+    const pctColor = d.dns_pct == null ? '#1a3a50'
+      : d.dns_pct >= 30 ? '#ff4444' : d.dns_pct < 10 ? '#00cc88' : '#f0a030';
+    const pctCell = d.dns_pct != null
+      ? `<span style="color:${pctColor};font-weight:bold">${d.dns_pct}%</span>`
+      : `<span style="color:#1a3a50">—</span>`;
+
+    return `<tr class="${d.flagged ? 'flagged' : ''}" onclick='openDetail(${JSON.stringify(d)})'>
+      <td><span class="hn-wrap"><span class="td-hostname ${hnClass}">${d.flagged ? '⚠ ' : ''}${d.display_name || d.hostname || '—'}</span>${bubble}</span></td>
+      <td><span class="td-ip">${d.ip || '—'}</span></td>
+      <td><span class="td-vendor">${d.vendor || '—'}</span></td>
+      <td>${ssidAp}</td>
+      <td>${linkBadge}</td>
+      <td><span class="signal-val ${sigClass(d.signal)}">${sigV}</span></td>
+      <td><span class="retry-val ${retryClass(d.retry_pct)}">${retV}</span></td>
+      <td>${dnsBar}</td>
+      <td>${pctCell}</td>
+      <td><span class="td-ip">${d.first_seen ? new Date(d.first_seen*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'2-digit'}) : '—'}</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('empty').style.display = devs.length ? 'none' : 'block';
+  document.getElementById('status').textContent =
+    `${devs.length} OF ${allDevices.length} DEVICES · ${allDevices.filter(d=>d.flagged).length} FLAGGED`;
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/cross_ref?t=' + Date.now());
+    const data = await r.json();
+    allDevices = data.devices || [];
+    globalMaxDns = Math.max(...allDevices.map(d => d.dns_total || 0), 1);
+    const ts = new Date(data.ts * 1000).toLocaleTimeString('en-GB');
+    document.getElementById('updated').textContent = `pi-hole ${ts}`;
+    applyFilters();
+  } catch(e) {
+    document.getElementById('status').textContent = 'ERROR: ' + e.message;
+  }
+}
+
+load();
+setInterval(load, 30000);
+
+// ── Sparkline ─────────────────────────────────────────────────────────────────
+function drawSpark(canvas, values, color, min, max, threshold, thresholdDir) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  ctx.fillStyle = '#04101e';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!values.length) return;
+
+  const pad = 4;
+  const span = max - min || 1;
+  const x = i => pad + (i / (values.length - 1 || 1)) * (W - pad * 2);
+  const y = v => H - pad - ((v - min) / span) * (H - pad * 2);
+
+  // Threshold line
+  if (threshold != null) {
+    const ty = y(threshold);
+    ctx.strokeStyle = 'rgba(255,50,50,0.4)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(pad, ty); ctx.lineTo(W - pad, ty); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(x(0), H);
+  values.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+  ctx.lineTo(x(values.length - 1), H);
+  ctx.closePath();
+  ctx.fillStyle = color + '18';
+  ctx.fill();
+
+  // Glow line
+  [5, 2.5, 1.2].forEach((lw, i) => {
+    ctx.beginPath();
+    values.forEach((v, j) => j === 0 ? ctx.moveTo(x(j), y(v)) : ctx.lineTo(x(j), y(v)));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.globalAlpha = i === 0 ? 0.08 : i === 1 ? 0.2 : 0.9;
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+
+  // Dots for last point
+  const lx = x(values.length - 1), ly = y(values[values.length - 1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2);
+  ctx.fillStyle = color; ctx.fill();
+}
+
+// ── Detail panel ──────────────────────────────────────────────────────────────
+function closeDetail() {
+  document.getElementById('detail').classList.remove('open');
+}
+
+async function openDetail(d) {
+  const panel = document.getElementById('detail');
+  panel.classList.add('open');
+
+  document.getElementById('detail-type').textContent = d.is_wired ? 'WIRED CLIENT' : 'WIRELESS CLIENT';
+  const nameEl = document.getElementById('detail-name');
+  nameEl.textContent = d.display_name || d.hostname || d.mac;
+  nameEl.className   = d.flagged ? 'flagged' : '';
+
+  const meta = [
+    ['IP',         d.ip     || '—'],
+    ['MAC',        d.mac    || '—'],
+    ['VENDOR',     d.vendor || '—'],
+    ['SSID',       d.ssid   || '—'],
+    ['AP',         d.ap     || '—'],
+    ['FIRST SEEN', d.first_seen ? new Date(d.first_seen*1000).toLocaleDateString('en-GB') : '—'],
+    ['DNS QUERIES', d.dns_total != null ? d.dns_total.toLocaleString() : '—'],
+    ['DNS BLOCKED', d.dns_blocked != null ? `${d.dns_blocked.toLocaleString()} (${d.dns_pct}%)` : '—'],
+  ];
+  document.getElementById('detail-meta').innerHTML = meta.map(([k,v]) =>
+    `<div class="dmeta-row"><span class="dmeta-key">${k}</span><span class="dmeta-val">${v}</span></div>`
+  ).join('');
+
+  // Pi-hole inline summary
+  const phSection = document.getElementById('detail-pihole');
+  if (d.dns_total != null) {
+    const blockedW = Math.round(d.dns_pct);
+    const cachedW  = 0; // not per-device
+    const fwdW     = Math.max(0, 100 - blockedW);
+    const pc = d.dns_pct >= 30 ? '#ff4444' : d.dns_pct < 10 ? '#00cc88' : '#f0a030';
+    phSection.innerHTML = `
+      <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;font-size:0.65rem">
+        <span style="color:#aaddff;font-weight:bold">${d.dns_total.toLocaleString()}</span>
+        <span style="color:#3a7090">queries</span>
+        <span style="color:${pc};font-weight:bold;margin-left:auto">${d.dns_pct}% blocked</span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:#0a1e30;overflow:hidden;display:flex">
+        <div style="width:${blockedW}%;background:#ff4444;opacity:0.8"></div>
+        <div style="width:${fwdW}%;background:#4e9af1;opacity:0.4"></div>
+      </div>
+      <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.58rem;color:#2a5570">
+        <span><span style="color:#ff4444">■</span> blocked ${d.dns_blocked?.toLocaleString()}</span>
+        <span><span style="color:#4e9af188">■</span> allowed ${(d.dns_total - d.dns_blocked)?.toLocaleString()}</span>
+      </div>`;
+  } else {
+    phSection.innerHTML = '<span style="color:#2a5570;font-size:0.65rem">Not matched in Pi-hole — likely uses IPv6 privacy addressing</span>';
+  }
+
+  document.getElementById('detail-charts').innerHTML = '<div class="no-history">Loading...</div>';
+  document.getElementById('detail-events').innerHTML  = '';
+
+  if (!d.hostname) {
+    document.getElementById('detail-charts').innerHTML = '<div class="no-history">No hostname — history unavailable</div>';
+    return;
+  }
+
+  try {
+    const r   = await fetch(`/api/unifi/device?hostname=${encodeURIComponent(d.hostname)}`);
+    const data = await r.json();
+
+    // Charts
+    const chartsEl = document.getElementById('detail-charts');
+    if (!data.history.length) {
+      chartsEl.innerHTML = '<div class="no-history">No flagged history in the last 7 days</div>';
+    } else {
+      const signals  = data.history.map(h => h.signal);
+      const retries  = data.history.map(h => h.retry_pct);
+      const sigMin   = Math.min(...signals) - 5;
+      const sigMax   = Math.max(...signals) + 5;
+
+      chartsEl.innerHTML = `
+        <div class="spark-wrap">
+          <div class="spark-label">SIGNAL (dBm)</div>
+          <canvas class="spark" id="spark-sig"></canvas>
+        </div>
+        <div class="spark-wrap">
+          <div class="spark-label">RETRY RATE (%)</div>
+          <canvas class="spark" id="spark-ret"></canvas>
+        </div>`;
+
+      // defer one frame so canvas has layout dimensions
+      requestAnimationFrame(() => {
+        drawSpark(document.getElementById('spark-sig'), signals, '#00e5cc', sigMin, sigMax, -70);
+        drawSpark(document.getElementById('spark-ret'), retries, '#f0a030', 0, Math.max(...retries, 12), 10);
+      });
+    }
+
+    // Events
+    const evEl = document.getElementById('detail-events');
+    if (!data.events.length) {
+      evEl.innerHTML = '<div class="no-history">No events recorded yet</div>';
+    } else {
+      evEl.innerHTML = data.events.map(e => {
+        const t = new Date(e.ts * 1000).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+        const dt = new Date(e.ts * 1000).toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+        return `<div class="dev-event type-${e.type}">
+          <span class="dev-event-time">${t}<br><span style="font-size:0.55rem;color:#2a6080">${dt}</span></span>
+          <div><div class="dev-event-title">${e.title}</div><div style="color:#4a8aaa;font-size:0.65rem">${e.message}</div></div>
+        </div>`;
+      }).join('');
+    }
+  } catch(err) {
+    document.getElementById('detail-charts').innerHTML = `<div class="no-history">Error: ${err.message}</div>`;
+  }
+}
+</script>
+</body>
+</html>

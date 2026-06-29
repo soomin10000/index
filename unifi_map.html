@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Network Map</title>
+  <script src="/vis-network.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'Courier New', monospace;
+      color: #aaddff;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scan lines overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      flex-shrink: 0;
+      z-index: 50;
+      background: rgba(2,10,24,0.9);
+      backdrop-filter: blur(8px);
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav-item {
+      font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
+      padding: 0.25rem 0.75rem; border-radius: 999px;
+      border: 1px solid #1a4060; color: #5a9ab8; transition: all .2s;
+    }
+    .subnav-item:hover { color: #00ffcc; border-color: #006644; }
+    .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
+    #regen-btn {
+      font-size: 0.62rem; letter-spacing: 0.1em;
+      color: #3a7090; background: none; border: 1px solid #1a4060;
+      border-radius: 4px; padding: 0.2rem 0.6rem; cursor: pointer;
+      font-family: inherit; transition: all .2s;
+    }
+    #regen-btn:hover { color: #00ffcc; border-color: #00ffcc; }
+
+    #container { flex: 1; position: relative; min-height: 0; }
+
+    /* Hex canvas sits behind the network */
+    #hex-canvas { position: absolute; inset: 0; z-index: 0; }
+
+    #network { position: absolute; inset: 0; z-index: 1; }
+
+    /* Pulse overlay for flagged nodes */
+    #pulse-canvas { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+
+    /* Info panel */
+    #panel {
+      position: absolute;
+      top: 1rem; right: 1rem;
+      width: 260px;
+      background: rgba(2, 8, 20, 0.95);
+      border: 1px solid #1a5070;
+      border-radius: 0;
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+      padding: 1.1rem;
+      display: none;
+      z-index: 50;
+    }
+    #panel::before {
+      content: '';
+      position: absolute;
+      inset: 1px;
+      border: 1px solid #061828;
+      clip-path: inherit;
+      pointer-events: none;
+    }
+    #panel.visible { display: block; }
+
+    #panel-close {
+      position: absolute; top: 0.5rem; right: 0.9rem;
+      cursor: pointer; color: #5a9ab8; font-size: 0.9rem;
+      transition: color .2s; z-index: 51;
+    }
+    #panel-close:hover { color: #ff4444; }
+
+    #panel-type {
+      font-size: 0.5rem; letter-spacing: 0.2em;
+      color: #3a7090; margin-bottom: 0.3rem;
+    }
+    #panel-name {
+      font-size: 0.95rem; font-weight: bold; color: #00ffcc;
+      margin-bottom: 0.9rem; word-break: break-all; letter-spacing: 0.05em;
+    }
+    #panel-name.flagged { color: #ff3333; text-shadow: 0 0 8px rgba(255,50,50,0.5); }
+
+    .panel-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 0.62rem; padding: 0.22rem 0;
+      border-bottom: 1px solid #041020;
+    }
+    .panel-row:last-child { border-bottom: none; }
+    .panel-key { color: #4a8aaa; letter-spacing: 0.08em; }
+    .panel-val { color: #4a8aaa; text-align: right; letter-spacing: 0.05em; }
+    .panel-val.bad  { color: #ff4444; text-shadow: 0 0 6px rgba(255,0,0,0.4); }
+    .panel-val.good { color: #00ffcc; }
+    .panel-val.warn { color: #ffaa00; }
+
+    /* Legend */
+    #legend {
+      position: absolute; bottom: 1rem; left: 1rem;
+      z-index: 50; font-size: 0.58rem; letter-spacing: 0.08em;
+    }
+    .leg-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; color: #3a7090; }
+    .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .leg-line { width: 18px; height: 1px; flex-shrink: 0; }
+
+    #hint {
+      position: absolute; bottom: 1rem; left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.55rem; color: #2a5570; letter-spacing: 0.12em;
+      pointer-events: none; z-index: 50; white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">← HOME</a>
+  <span class="brand">UNIFI NETWORK</span>
+  <span id="status">LOADING...</span>
+  <div class="subnav">
+    <a href="/unifi"         class="subnav-item">Overview</a>
+    <a href="/unifi/map"     class="subnav-item active">Network Map</a>
+    <a href="/unifi/devices" class="subnav-item">Devices</a>
+    <a href="/unifi/events"  class="subnav-item">Events</a>
+    <button id="regen-btn" onclick="load()">↺</button>
+  </div>
+</nav>
+
+<div id="container">
+  <canvas id="hex-canvas"></canvas>
+  <div id="network"></div>
+  <canvas id="pulse-canvas"></canvas>
+
+  <div id="panel">
+    <span id="panel-close" onclick="closePanel()">✕</span>
+    <div id="panel-type"></div>
+    <div id="panel-name"></div>
+    <div id="panel-rows"></div>
+  </div>
+
+  <div id="legend">
+    <div class="leg-row"><div class="leg-dot" style="background:#ffffff;box-shadow:0 0 6px #aaddff"></div>Gateway</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#00aaff;box-shadow:0 0 6px #0066ff"></div>Switch</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#00ffcc;box-shadow:0 0 6px #00ffaa"></div>Access Point</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#ff2020;box-shadow:0 0 6px #ff0000"></div>Flagged Client</div>
+    <div class="leg-row"><div class="leg-line" style="background:#005588"></div>Wired</div>
+    <div class="leg-row"><div class="leg-line" style="background:#003344;border-top:1px dashed #003344;height:0"></div>Wireless</div>
+  </div>
+
+  <div id="hint">SCROLL TO ZOOM · DRAG TO PAN · CLICK NODE FOR DETAILS</div>
+</div>
+
+<script>
+// ── Hex grid background ───────────────────────────────────────────────────────
+(function drawHex() {
+  const canvas = document.getElementById('hex-canvas');
+  function resize() {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    draw();
+  }
+  function draw() {
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    const R = 28, h = R * Math.sqrt(3);
+    ctx.strokeStyle = 'rgba(0,60,120,0.18)';
+    ctx.lineWidth = 0.5;
+    for (let row = -1; row * h < H + h; row++) {
+      for (let col = -1; col * R * 1.5 < W + R; col++) {
+        const cx = col * R * 1.5;
+        const cy = row * h + (col % 2 === 0 ? 0 : h / 2);
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 180 * (60 * i - 30);
+          const x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+})();
+
+// ── Pulse animation for flagged nodes ────────────────────────────────────────
+let network, flaggedPositions = [];
+
+(function animatePulse() {
+  const canvas = document.getElementById('pulse-canvas');
+  function resize() { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  let t = 0;
+  function frame() {
+    requestAnimationFrame(frame);
+    if (!network || !flaggedPositions.length) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    t += 0.03;
+    flaggedPositions.forEach(id => {
+      try {
+        const pos = network.getPositions([id])[id];
+        const dom = network.canvasToDOM(pos);
+        const scale = network.getScale();
+        const r = 18 * scale;
+        const alpha = (Math.sin(t * 2) + 1) / 2;
+        const grad = ctx.createRadialGradient(dom.x, dom.y, r * 0.5, dom.x, dom.y, r * 2.5);
+        grad.addColorStop(0, `rgba(255,30,30,${0.35 * alpha})`);
+        grad.addColorStop(1, 'rgba(255,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(dom.x, dom.y, r * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      } catch(e) {}
+    });
+  }
+  frame();
+})();
+
+// ── Node / edge styling ───────────────────────────────────────────────────────
+const INFRA = { udm: "#ffffff", usw: "#00aaff", uap: "#00ffcc" };
+const INFRA_GLOW = { udm: "rgba(200,230,255,0.5)", usw: "rgba(0,120,255,0.35)", uap: "rgba(0,255,180,0.35)" };
+const INFRA_SIZE = { udm: 28, usw: 20, uap: 17 };
+
+function nodeStyle(n) {
+  if (n.flagged) {
+    return {
+      id: n.id, label: n.label, level: n.level, _data: n,
+      shape: "dot", size: 11,
+      color: { background: "#ff2020", border: "#ff6666",
+               highlight: { background: "#ff4444", border: "#ffffff" } },
+      shadow: { enabled: true, color: "rgba(255,0,0,0.6)", size: 18, x:0, y:0 },
+      font: { color: "#ff7777", size: 9, face: "Courier New", bold: true },
+    };
+  }
+  if (n.type in INFRA) {
+    const c = INFRA[n.type];
+    return {
+      id: n.id, label: n.label, level: n.level, _data: n,
+      shape: "dot", size: INFRA_SIZE[n.type],
+      color: { background: c, border: c,
+               highlight: { background: "#ffffff", border: "#ffffff" } },
+      shadow: { enabled: true, color: INFRA_GLOW[n.type], size: 22, x:0, y:0 },
+      font: { color: c, size: n.type==="udm"?12:10, face: "Courier New", bold: true },
+    };
+  }
+  // Client — use SSID colour
+  const c = n.ssid_color || "#1a4a6e";
+  return {
+    id: n.id, label: n.label, level: n.level, _data: n,
+    shape: "dot", size: 6,
+    color: { background: c, border: c,
+             highlight: { background: "#ffffff", border: "#ffffff" } },
+    shadow: { enabled: true, color: c + "55", size: 8, x:0, y:0 },
+    font: { color: c, size: 8, face: "Courier New" },
+  };
+}
+
+function edgeStyle(e) {
+  return {
+    from: e.from, to: e.to,
+    color: { color: e.wired ? "#004466" : "#002233",
+             highlight: "#00aaff", hover: "#00aaff", opacity: 0.8 },
+    width: e.wired ? 1.5 : 0.7,
+    dashes: e.wired ? false : [5, 5],
+    smooth: { type: "cubicBezier", forceDirection: "vertical", roundness: 0.3 },
+    shadow: { enabled: true, color: e.wired ? "rgba(0,80,180,0.25)" : "rgba(0,50,120,0.15)", size: 8 },
+    selectionWidth: 2,
+  };
+}
+
+// ── Panel ─────────────────────────────────────────────────────────────────────
+function showPanel(n) {
+  const typeLabels = { udm:"GATEWAY", usw:"SWITCH", uap:"ACCESS POINT", client:"CLIENT" };
+  document.getElementById('panel-type').textContent = typeLabels[n.type] || n.type.toUpperCase();
+
+  const nameEl = document.getElementById('panel-name');
+  nameEl.textContent = n.name || n.hostname || n.label || n.mac;
+  nameEl.className = n.flagged ? 'flagged' : '';
+
+  const rows = [];
+  if (n.mac)           rows.push(["MAC",     n.mac,                       null]);
+  if (n.ip)            rows.push(["IP",      n.ip,                        null]);
+  if (n.model)         rows.push(["MODEL",   n.model,                     null]);
+  if (n.ssid)          rows.push(["SSID",    n.ssid,                      null]);
+  if (n.signal!=null)  rows.push(["SIGNAL",  n.signal+" dBm",             n.signal < -70 ? "bad" : n.signal < -60 ? "warn" : "good"]);
+  if (n.retry_pct!=null) rows.push(["RETRIES", n.retry_pct.toFixed(1)+"%", n.retry_pct > 10 ? "bad" : n.retry_pct > 5 ? "warn" : "good"]);
+  if (n.is_wired!=null) rows.push(["LINK",   n.is_wired ? "WIRED" : "WIRELESS", null]);
+  if (n.flagged)       rows.push(["STATUS",  "⚠ FLAGGED",                "bad"]);
+  else if (n.type==="client") rows.push(["STATUS", "OK",                  "good"]);
+
+  document.getElementById('panel-rows').innerHTML = rows.map(([k,v,cls]) =>
+    `<div class="panel-row">
+      <span class="panel-key">${k}</span>
+      <span class="panel-val ${cls||''}">${v}</span>
+    </div>`
+  ).join('');
+  document.getElementById('panel').classList.add('visible');
+}
+
+function closePanel() {
+  document.getElementById('panel').classList.remove('visible');
+}
+
+// ── Load & render ─────────────────────────────────────────────────────────────
+async function load() {
+  document.getElementById('status').textContent = 'LOADING...';
+  try {
+    const r = await fetch('/api/unifi/graph?t=' + Date.now());
+    const data = await r.json();
+
+    const nodes = new vis.DataSet(data.nodes.map(nodeStyle));
+    const edges = new vis.DataSet(data.edges.map(edgeStyle));
+
+    if (network) network.destroy();
+
+    const container = document.getElementById('network');
+    network = new vis.Network(container, { nodes, edges }, {
+      layout: {
+        hierarchical: {
+          enabled: true,
+          direction: "UD",
+          sortMethod: "directed",
+          levelSeparation: 130,
+          nodeSpacing: 100,
+          treeSpacing: 180,
+          blockShifting: true,
+          edgeMinimization: true,
+          parentCentralization: true,
+        }
+      },
+      physics: { enabled: false },
+      interaction: {
+        hover: true,
+        zoomView: true,
+        dragView: true,
+        navigationButtons: false,
+        keyboard: false,
+      },
+      nodes: { borderWidth: 1 },
+      edges: { arrows: { to: false } },
+      background: "transparent",
+    });
+
+    flaggedPositions = data.nodes.filter(n => n.flagged).map(n => n.id);
+
+    const nFlagged = flaggedPositions.length;
+    const nCong    = 0;
+    document.getElementById('status').textContent =
+      `${data.nodes.length} NODES · ${data.edges.length} LINKS · ${nFlagged} FLAGGED`;
+
+    network.on("click", params => {
+      if (!params.nodes.length) { closePanel(); return; }
+      const nd = nodes.get(params.nodes[0]);
+      showPanel(nd._data);
+    });
+
+    network.once("stabilized", () => network.fit({ animation: { duration: 600, easingFunction: "easeInOutQuad" } }));
+
+  } catch(e) {
+    document.getElementById('status').textContent = 'ERROR: ' + e.message;
+  }
+}
+
+load();
+window.onerror = (msg) => { document.getElementById('status').textContent = 'JS ERROR: ' + msg; };
+</script>
+</body>
+</html>

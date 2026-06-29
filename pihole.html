@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pi-hole</title>
+  <script src="/chart.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #4a8aaa;
+      min-height: 100vh;
+    }
+
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { margin-left: auto; font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+
+    .page { max-width: 1400px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
+
+    /* Stat cards */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.9rem; margin-bottom: 1.6rem;
+    }
+    .stat-card {
+      background: rgba(4,14,30,0.9);
+      border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1rem 1.2rem;
+    }
+    .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 0.4rem; }
+    .stat-val   { font-size: 2rem; font-weight: bold; letter-spacing: -1px; }
+    .stat-sub   { font-size: 0.65rem; color: #3a7090; margin-top: 0.3rem; }
+    .c-green  { color: #00cc88; }
+    .c-red    { color: #ff4444; }
+    .c-blue   { color: #00aaff; }
+    .c-purple { color: #cc88ff; }
+    .c-teal   { color: #00ffcc; }
+
+    /* Chart cards */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem; margin-bottom: 1rem;
+    }
+    .chart-grid.wide { grid-template-columns: 1fr; }
+    @media (max-width: 900px) { .chart-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: rgba(4,14,30,0.9);
+      border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1.1rem 1.2rem;
+    }
+    .chart-title {
+      font-size: 0.62rem; letter-spacing: 0.14em; color: #3a7090;
+      margin-bottom: 1rem;
+    }
+    .chart-wrap { position: relative; }
+    canvas { display: block; }
+
+    #updated { font-size: 0.6rem; color: #2a5570; margin-top: 1.2rem; text-align: right; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">← HOME</a>
+  <a href="/unifi">UNIFI</a>
+  <a href="/cross_ref">CROSS-REF</a>
+  <span class="brand">· PI-HOLE ·</span>
+  <span id="status">LOADING...</span>
+</nav>
+
+<div class="page">
+  <div class="stat-grid" id="stats"></div>
+
+  <div class="chart-grid wide">
+    <div class="chart-card">
+      <div class="chart-title">QUERY HISTORY · LAST 24H (10-MIN BUCKETS)</div>
+      <div class="chart-wrap"><canvas id="ch-history" height="110"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="chart-title">TOP CLIENTS</div>
+      <div class="chart-wrap"><canvas id="ch-clients" height="220"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">TOP BLOCKED DOMAINS</div>
+      <div class="chart-wrap"><canvas id="ch-blocked" height="220"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="chart-title">TOP QUERIED DOMAINS</div>
+      <div class="chart-wrap"><canvas id="ch-domains" height="220"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">QUERY TYPE BREAKDOWN</div>
+      <div class="chart-wrap"><canvas id="ch-types" height="220"></canvas></div>
+    </div>
+  </div>
+
+  <div id="updated"></div>
+</div>
+
+<script>
+const BG      = '#020a18';
+const PANEL   = 'rgba(4,14,30,0.9)';
+const GRID    = '#0a1e30';
+const LABEL   = '#3a7090';
+const TEAL    = '#00e5cc';
+const RED     = '#ff4444';
+const BLUE    = '#4e9af1';
+const ORANGE  = '#f0a030';
+const PURPLE  = '#cc88ff';
+const GREEN   = '#00cc88';
+
+Chart.defaults.color          = LABEL;
+Chart.defaults.borderColor    = GRID;
+Chart.defaults.font.family    = "'DejaVu Sans Mono', monospace";
+Chart.defaults.font.size      = 11;
+
+const baseOpts = {
+  responsive: true,
+  animation: { duration: 600 },
+  plugins: { legend: { display: false }, tooltip: {
+    backgroundColor: '#08182a',
+    borderColor: '#1a4060', borderWidth: 1,
+    titleColor: '#aaddff', bodyColor: '#5a9ab8',
+    padding: 10,
+  }},
+  scales: {
+    x: { grid: { color: GRID }, ticks: { color: LABEL } },
+    y: { grid: { color: GRID }, ticks: { color: LABEL }, beginAtZero: true },
+  },
+};
+
+function glow(color, alpha=0.12) { return color.replace('#', '#') + Math.round(alpha*255).toString(16).padStart(2,'0'); }
+
+let charts = {};
+function mkChart(id, type, data, opts={}) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type, data,
+    options: { ...baseOpts, ...opts },
+  });
+}
+
+function hBar(labels, values, color) {
+  return {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: color + '33', borderColor: color,
+                   borderWidth: 1, borderRadius: 4 }],
+    },
+    options: {
+      ...baseOpts,
+      indexAxis: 'y',
+      scales: {
+        x: { grid: { color: GRID }, ticks: { color: LABEL } },
+        y: { grid: { color: GRID }, ticks: { color: LABEL, font: { size: 10 } } },
+      },
+    },
+  };
+}
+
+async function load() {
+  const r = await fetch('/api/pihole?t=' + Date.now());
+  const d = await r.json();
+  const s = d.summary;
+
+  // Stat cards
+  const cacheRate = s.total ? ((s.cached / s.total) * 100).toFixed(1) : 0;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">TOTAL QUERIES</div>
+      <div class="stat-val c-blue">${s.total.toLocaleString()}</div>
+      <div class="stat-sub">${s.frequency.toFixed(2)} q/s</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">BLOCKED</div>
+      <div class="stat-val c-red">${s.percent_blocked}%</div>
+      <div class="stat-sub">${s.blocked.toLocaleString()} queries</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">CACHED</div>
+      <div class="stat-val c-green">${cacheRate}%</div>
+      <div class="stat-sub">${s.cached.toLocaleString()} queries</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">UNIQUE DOMAINS</div>
+      <div class="stat-val c-teal">${s.unique_domains.toLocaleString()}</div>
+      <div class="stat-sub">seen</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">FORWARDED</div>
+      <div class="stat-val c-purple">${s.forwarded.toLocaleString()}</div>
+      <div class="stat-sub">to upstream DNS</div>
+    </div>
+  `;
+  document.getElementById('status').textContent =
+    `${s.percent_blocked}% BLOCKED · ${s.total.toLocaleString()} QUERIES`;
+
+  // History chart
+  const hist = d.history;
+  const labels = hist.map(h => {
+    const dt = new Date(h.timestamp * 1000);
+    return dt.getHours().toString().padStart(2,'0') + ':' + dt.getMinutes().toString().padStart(2,'0');
+  });
+  // Show every ~2h label
+  const sparseLabels = labels.map((l, i) => i % 12 === 0 ? l : '');
+
+  mkChart('ch-history', 'line', {
+    labels: sparseLabels,
+    datasets: [
+      {
+        label: 'Total', data: hist.map(h => h.total),
+        borderColor: BLUE, backgroundColor: BLUE + '15',
+        borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 0,
+      },
+      {
+        label: 'Cached', data: hist.map(h => h.cached),
+        borderColor: GREEN, backgroundColor: GREEN + '10',
+        borderWidth: 1.2, fill: true, tension: 0.3, pointRadius: 0,
+      },
+      {
+        label: 'Blocked', data: hist.map(h => h.blocked),
+        borderColor: RED, backgroundColor: RED + '18',
+        borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 0,
+      },
+      {
+        label: 'Forwarded', data: hist.map(h => h.forwarded),
+        borderColor: ORANGE, backgroundColor: ORANGE + '10',
+        borderWidth: 1, fill: false, tension: 0.3, pointRadius: 0,
+      },
+    ],
+  }, { plugins: { legend: { display: true, labels: { color: LABEL, boxWidth: 12, padding: 16 } } } });
+
+  // Top clients
+  const cl = d.top_clients;
+  const clChart = hBar(
+    cl.map(c => c.name || c.ip),
+    cl.map(c => c.count),
+    TEAL
+  );
+  mkChart('ch-clients', 'bar', clChart.data, clChart.options);
+
+  // Top blocked
+  const bl = d.top_blocked;
+  const blChart = hBar(
+    bl.map(b => b.domain.length > 32 ? '…' + b.domain.slice(-30) : b.domain),
+    bl.map(b => b.count),
+    RED
+  );
+  mkChart('ch-blocked', 'bar', blChart.data, blChart.options);
+
+  // Top domains
+  const td = d.top_domains;
+  const tdChart = hBar(
+    td.map(b => b.domain.length > 32 ? '…' + b.domain.slice(-30) : b.domain),
+    td.map(b => b.count),
+    BLUE
+  );
+  mkChart('ch-domains', 'bar', tdChart.data, tdChart.options);
+
+  // Query types — only non-zero
+  const types = Object.entries(s.types).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1]);
+  const typeColors = [TEAL, BLUE, ORANGE, PURPLE, GREEN, RED, '#f7dc6f', '#4ecdc4'];
+  mkChart('ch-types', 'doughnut', {
+    labels: types.map(([k]) => k),
+    datasets: [{
+      data: types.map(([,v]) => v),
+      backgroundColor: typeColors.map(c => c + 'aa'),
+      borderColor:     typeColors,
+      borderWidth: 1,
+    }],
+  }, {
+    plugins: {
+      legend: { display: true, position: 'right', labels: { color: LABEL, boxWidth: 12, padding: 10 } },
+      tooltip: baseOpts.plugins.tooltip,
+    },
+    scales: {},
+  });
+
+  const ts = new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+  document.getElementById('updated').textContent = `Last updated: ${ts}`;
+}
+
+load().catch(e => {
+  document.getElementById('status').textContent = 'ERROR: ' + e.message;
+});
+setInterval(load, 60000);
+</script>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Speed Test History</title>
+  <script src="/chart.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #5a9ab8; min-height: 100vh;
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem; border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95); backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav-item {
+      font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
+      padding: 0.25rem 0.75rem; border-radius: 999px;
+      border: 1px solid #1a4060; color: #5a9ab8; transition: all .2s;
+    }
+    .subnav-item:hover { color: #00ffcc; border-color: #006644; }
+    .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+
+    .page { max-width: 1300px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
+
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.9rem; margin-bottom: 1.4rem;
+    }
+    .stat-card {
+      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 0.9rem 1.1rem;
+    }
+    .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 0.35rem; }
+    .stat-val   { font-size: 1.9rem; font-weight: bold; letter-spacing: -1px; }
+    .stat-sub   { font-size: 0.62rem; color: #3a7090; margin-top: 0.25rem; }
+    .c-dl   { color: #4e9af1; }
+    .c-ul   { color: #00cc88; }
+    .c-ping { color: #cc88ff; }
+    .c-date { color: #3a7090; }
+
+    .chart-card {
+      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1.1rem 1.2rem; margin-bottom: 1rem;
+    }
+    .chart-title { font-size: 0.62rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 1rem; }
+
+    #trigger-btn {
+      background: rgba(4,14,30,0.9); border: 1px solid #0a4060;
+      color: #00e5cc; font-family: inherit; font-size: 0.62rem;
+      letter-spacing: 0.12em; padding: 0.35rem 0.9rem;
+      border-radius: 6px; cursor: pointer; transition: all .2s; margin-left: 1rem;
+    }
+    #trigger-btn:hover { background: #0a2a40; border-color: #00e5cc; }
+    #trigger-btn:disabled { opacity: 0.4; cursor: default; }
+
+    #updated { font-size: 0.6rem; color: #2a5570; margin-top: 1rem; text-align: right; }
+  </style>
+</head>
+<body>
+<nav>
+  <a href="/">← HOME</a>
+  <span class="brand">SPEED TEST</span>
+  <span id="status">LOADING...</span>
+  <button id="trigger-btn" onclick="triggerTest()">RUN NOW</button>
+  <div class="subnav">
+    <a href="/unifi"         class="subnav-item">Overview</a>
+    <a href="/unifi/map"     class="subnav-item">Network Map</a>
+    <a href="/unifi/devices" class="subnav-item">Devices</a>
+    <a href="/unifi/events"  class="subnav-item">Events</a>
+    <a href="/pihole"        class="subnav-item">Pi-hole</a>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="stat-grid" id="stats"></div>
+
+  <div class="chart-card">
+    <div class="chart-title">DOWNLOAD & UPLOAD · Mbps · GATEWAY (UDM WAN)</div>
+    <canvas id="ch-speed" height="120"></canvas>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">LATENCY · ms</div>
+    <canvas id="ch-ping" height="60"></canvas>
+  </div>
+
+  <div id="updated"></div>
+</div>
+
+<script>
+const GRID   = '#0a1e30';
+const LABEL  = '#3a7090';
+const BLUE   = '#4e9af1';
+const GREEN  = '#00cc88';
+const PURPLE = '#cc88ff';
+const RED    = '#ff4444';
+const TIP = {
+  backgroundColor: '#08182a', borderColor: '#1a4060', borderWidth: 1,
+  titleColor: '#aaddff', bodyColor: '#5a9ab8', padding: 10,
+};
+
+Chart.defaults.color       = LABEL;
+Chart.defaults.borderColor = GRID;
+Chart.defaults.font.family = "'DejaVu Sans Mono', monospace";
+Chart.defaults.font.size   = 10;
+
+let charts = {};
+function mkChart(id, data, opts) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), { type: 'line', data, options: opts });
+}
+
+function sparseLabels(labels, n) {
+  const step = Math.max(1, Math.round(labels.length / n));
+  return labels.map((l, i) => i % step === 0 ? l : '');
+}
+
+async function load() {
+  const r = await fetch('/api/speedtest?t=' + Date.now());
+  const d = await r.json();
+  const results = d.results || [];
+  if (!results.length) { document.getElementById('status').textContent = 'NO DATA'; return; }
+
+  const labels = results.map(r => {
+    const dt = new Date(r.ts * 1000);
+    return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  });
+
+  const dl   = results.map(r => r.download_mbps);
+  const ul   = results.map(r => r.upload_mbps);
+  const ping = results.map(r => r.ping_ms);
+
+  const latest = results[results.length - 1];
+  const avgDl  = Math.round(dl.reduce((a, v) => a + v, 0) / dl.length);
+  const avgUl  = Math.round(ul.reduce((a, v) => a + v, 0) / ul.length);
+  const minDl  = Math.min(...dl);
+  const maxDl  = Math.max(...dl);
+  const avgPing = (ping.reduce((a, v) => a + v, 0) / ping.length).toFixed(1);
+  const latestDate = new Date(latest.ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">LAST DOWNLOAD</div>
+      <div class="stat-val c-dl">${latest.download_mbps.toLocaleString()}</div>
+      <div class="stat-sub">Mbps · ${latestDate}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">LAST UPLOAD</div>
+      <div class="stat-val c-ul">${latest.upload_mbps.toLocaleString()}</div>
+      <div class="stat-sub">Mbps · ${latestDate}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">LAST PING</div>
+      <div class="stat-val c-ping">${latest.ping_ms}</div>
+      <div class="stat-sub">ms latency</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">AVG DOWNLOAD</div>
+      <div class="stat-val c-dl">${avgDl.toLocaleString()}</div>
+      <div class="stat-sub">Mbps over ${results.length} tests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">AVG UPLOAD</div>
+      <div class="stat-val c-ul">${avgUl.toLocaleString()}</div>
+      <div class="stat-sub">Mbps over ${results.length} tests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">DL RANGE</div>
+      <div class="stat-val" style="color:#f0a030;font-size:1.3rem">${minDl}–${maxDl}</div>
+      <div class="stat-sub">Mbps min/max</div>
+    </div>
+  `;
+
+  document.getElementById('status').textContent =
+    `${latest.download_mbps} / ${latest.upload_mbps} Mbps · ${latest.ping_ms}ms · ${results.length} tests`;
+
+  const sparse = sparseLabels(labels, 16);
+  const baseScales = {
+    x: { grid: { color: GRID }, ticks: { color: LABEL } },
+    y: { grid: { color: GRID }, ticks: { color: LABEL }, beginAtZero: false },
+  };
+
+  mkChart('ch-speed', {
+    labels: sparse,
+    datasets: [
+      {
+        label: 'Download',
+        data: dl,
+        borderColor: BLUE, backgroundColor: BLUE + '15',
+        borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 2,
+        pointBackgroundColor: BLUE,
+      },
+      {
+        label: 'Upload',
+        data: ul,
+        borderColor: GREEN, backgroundColor: GREEN + '10',
+        borderWidth: 1.5, fill: true, tension: 0.3, pointRadius: 2,
+        pointBackgroundColor: GREEN,
+      },
+    ],
+  }, {
+    responsive: true, animation: { duration: 500 },
+    plugins: {
+      legend: { display: true, labels: { color: LABEL, boxWidth: 12, padding: 16 } },
+      tooltip: { ...TIP, callbacks: {
+        label: ctx => ` ${ctx.dataset.label}: ${ctx.raw.toLocaleString()} Mbps`
+      }},
+    },
+    scales: baseScales,
+  });
+
+  mkChart('ch-ping', {
+    labels: sparse,
+    datasets: [{
+      label: 'Ping',
+      data: ping,
+      borderColor: PURPLE, backgroundColor: PURPLE + '18',
+      borderWidth: 1.2, fill: true, tension: 0.3, pointRadius: 1.5,
+      pointBackgroundColor: PURPLE,
+    }],
+  }, {
+    responsive: true, animation: { duration: 500 },
+    plugins: {
+      legend: { display: false },
+      tooltip: { ...TIP, callbacks: { label: ctx => ` ${ctx.raw} ms` } },
+    },
+    scales: baseScales,
+  });
+
+  document.getElementById('updated').textContent =
+    `Source: UniFi gateway (UDM) WAN interface · ${results.length} tests from ${labels[0]} to ${labels[labels.length-1]}`;
+}
+
+async function triggerTest() {
+  const btn = document.getElementById('trigger-btn');
+  btn.disabled = true;
+  btn.textContent = 'RUNNING...';
+  try {
+    const r = await fetch('/api/speedtest/trigger', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      btn.textContent = 'TRIGGERED ✓';
+      setTimeout(() => { btn.textContent = 'RUN NOW'; btn.disabled = false; }, 30000);
+      setTimeout(load, 35000);
+    } else {
+      btn.textContent = 'FAILED';
+      setTimeout(() => { btn.textContent = 'RUN NOW'; btn.disabled = false; }, 5000);
+    }
+  } catch(e) {
+    btn.textContent = 'ERROR';
+    setTimeout(() => { btn.textContent = 'RUN NOW'; btn.disabled = false; }, 5000);
+  }
+}
+
+load().catch(e => { document.getElementById('status').textContent = 'ERROR: ' + e.message; });
+setInterval(load, 300000);
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Event Log</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #4a8aaa;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50; flex-shrink: 0;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
+    #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav-item {
+      font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
+      padding: 0.25rem 0.75rem; border-radius: 999px;
+      border: 1px solid #1a4060; color: #5a9ab8; transition: all .2s;
+    }
+    .subnav-item:hover { color: #00ffcc; border-color: #006644; }
+    .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
+
+    #filters {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.6rem 1.4rem; border-bottom: 1px solid #040e20;
+      background: rgba(2,8,20,0.8); flex-shrink: 0;
+    }
+    .filter-btn {
+      background: none; border: 1px solid #1a4060; color: #5a9ab8;
+      font-family: inherit; font-size: 0.65rem; padding: 0.25rem 0.7rem;
+      border-radius: 4px; cursor: pointer; letter-spacing: 0.08em; transition: all .2s;
+    }
+    .filter-btn.active, .filter-btn:hover { color: #00ffcc; border-color: #00ffcc; }
+    #updated { margin-left: auto; font-size: 0.6rem; color: #2a5570; }
+
+    #feed { flex: 1; overflow: auto; padding: 1.2rem 1.4rem 3rem; }
+
+    .event {
+      display: flex; gap: 1.2rem; align-items: flex-start;
+      padding: 0.8rem 0; border-bottom: 1px solid #040e1a;
+      transition: background .15s;
+    }
+    .event:hover { background: rgba(0,30,60,0.3); margin: 0 -1.4rem; padding: 0.8rem 1.4rem; }
+
+    .event-time {
+      flex-shrink: 0; width: 90px;
+      font-size: 0.68rem; color: #2a5570; line-height: 1.5;
+      text-align: right; padding-top: 0.15rem;
+    }
+    .event-time .date { display: block; font-size: 0.58rem; color: #1a3a50; }
+
+    .event-dot {
+      flex-shrink: 0; width: 10px; height: 10px;
+      border-radius: 50%; margin-top: 0.35rem;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .event-body { flex: 1; }
+    .event-title { font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem; }
+    .event-msg   { font-size: 0.75rem; color: #3a7090; }
+
+    /* Type colours */
+    .type-weak       .event-dot   { color: #ffaa00; background: #ffaa00; }
+    .type-weak       .event-title { color: #ffaa00; }
+    .type-congestion .event-dot   { color: #ff6644; background: #ff6644; }
+    .type-congestion .event-title { color: #ff6644; }
+    .type-resolved   .event-dot   { color: #00cc88; background: #00cc88; }
+    .type-resolved   .event-title { color: #00cc88; }
+    .type-new_device .event-dot   { color: #00aaff; background: #00aaff; }
+    .type-new_device .event-title { color: #00aaff; }
+    .type-speedtest  .event-dot   { color: #cc88ff; background: #cc88ff; }
+    .type-speedtest  .event-title { color: #cc88ff; }
+
+    #empty { text-align: center; padding: 4rem; color: #1a3a50; font-size: 0.8rem; letter-spacing: 0.1em; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">← HOME</a>
+  <span class="brand">UNIFI NETWORK</span>
+  <span id="status">LOADING...</span>
+  <div class="subnav">
+    <a href="/unifi"         class="subnav-item">Overview</a>
+    <a href="/unifi/map"     class="subnav-item">Network Map</a>
+    <a href="/unifi/devices" class="subnav-item">Devices</a>
+    <a href="/unifi/events"  class="subnav-item active">Events</a>
+  </div>
+</nav>
+
+<div id="filters">
+  <button class="filter-btn active" onclick="setFilter('all')">ALL</button>
+  <button class="filter-btn" onclick="setFilter('new_device')">NEW DEVICES</button>
+  <button class="filter-btn" onclick="setFilter('weak')">WEAK CLIENTS</button>
+  <button class="filter-btn" onclick="setFilter('congestion')">CONGESTION</button>
+  <button class="filter-btn" onclick="setFilter('resolved')">RESOLVED</button>
+  <span id="updated"></span>
+</div>
+
+<div id="feed">
+  <div id="empty" style="display:none">NO EVENTS YET</div>
+</div>
+
+<script>
+let allEvents = [];
+let activeFilter = 'all';
+
+function setFilter(f) {
+  activeFilter = f;
+  document.querySelectorAll('.filter-btn').forEach((b, i) => {
+    b.classList.toggle('active', ['all','new_device','weak','congestion','resolved'][i] === f);
+  });
+  render();
+}
+
+function timeAgo(ts) {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60)   return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+function render() {
+  const evs = activeFilter === 'all'
+    ? allEvents
+    : allEvents.filter(e => e.type === activeFilter);
+
+  const feed = document.getElementById('feed');
+  const empty = document.getElementById('empty');
+
+  if (!evs.length) {
+    empty.style.display = 'block';
+    feed.innerHTML = '';
+    feed.appendChild(empty);
+    return;
+  }
+
+  empty.style.display = 'none';
+  feed.innerHTML = evs.map(e => {
+    const d = new Date(e.ts * 1000);
+    const timeStr = d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+    const dateStr = d.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+    return `<div class="event type-${e.type}">
+      <div class="event-time">${timeStr}<span class="date">${dateStr}</span></div>
+      <div class="event-dot"></div>
+      <div class="event-body">
+        <div class="event-title">${e.title}</div>
+        <div class="event-msg">${e.message}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/unifi/events?t=' + Date.now());
+    const d = await r.json();
+    allEvents = d.events || [];
+    document.getElementById('status').textContent = `${allEvents.length} EVENTS`;
+    document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('en-GB');
+    render();
+  } catch(e) {
+    document.getElementById('status').textContent = 'ERROR: ' + e.message;
+  }
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UniFi Network</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #07070f;
+      --card:   rgba(14,14,26,0.85);
+      --border: rgba(255,255,255,0.07);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: #f0f0f0;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .bg span {
+      position: absolute; border-radius: 50%;
+      filter: blur(80px); opacity: 0.13;
+      animation: drift linear infinite alternate;
+    }
+    .bg span:nth-child(1) { width:500px;height:500px;background:#2060ff;top:-10%;left:20%;animation-duration:28s; }
+    .bg span:nth-child(2) { width:400px;height:400px;background:#00c0a0;bottom:0;right:10%;animation-duration:22s;animation-delay:-8s; }
+    @keyframes drift {
+      from { transform: translate(0,0) scale(1); }
+      to   { transform: translate(30px,20px) scale(1.08); }
+    }
+
+    .content { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      margin-bottom: 1.5rem; flex-wrap: wrap;
+    }
+    nav > a {
+      color: #6a8aaa; font-size: 0.75rem; text-decoration: none;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      transition: color 0.2s;
+    }
+    nav > a:hover { color: #f0f0f0; }
+    .brand { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 30%, #555);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav-item {
+      font-size: 0.7rem; text-decoration: none; letter-spacing: 0.08em;
+      padding: 0.3rem 0.85rem; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      color: #4a7090; transition: all 0.2s;
+    }
+    .subnav-item:hover { color: #f0f0f0; border-color: rgba(255,255,255,0.2); }
+    .subnav-item.active {
+      color: #f0f0f0; background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.15);
+    }
+
+    /* Status strip */
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 0.9rem 1.1rem;
+      backdrop-filter: blur(16px);
+    }
+    .stat-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #6a8aaa; margin-bottom: 0.3rem; }
+    .stat-val   { font-size: 1.8rem; font-weight: 800; letter-spacing: -1px; color: var(--a, #fff); }
+    .stat-sub   { font-size: 0.72rem; color: #4a7090; margin-top: 0.3rem; line-height: 1.6; }
+
+    /* Flagged client list */
+    .flag-list { list-style: none; }
+    .flag-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.35rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.78rem;
+    }
+    .flag-list li:last-child { border-bottom: none; }
+    .flag-name { color: #ef5350; font-weight: 600; }
+    .flag-meta { color: #6a8aaa; font-size: 0.7rem; font-family: monospace; }
+    .flag-bubble {
+      display: none; position: absolute; bottom: 125%; left: 0;
+      background: #0a1e30; border: 1px solid #1a4060;
+      color: #aaddff; font-size: 0.68rem; padding: 0.4rem 0.7rem;
+      border-radius: 6px; white-space: nowrap; z-index: 99;
+      pointer-events: none;
+    }
+    .flag-meta:hover .flag-bubble { display: block; }
+
+    .dot { display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;vertical-align:middle;position:relative;top:-1px; }
+    .dot-ok  { background:#4ade80; box-shadow: 0 0 6px #4ade8099; }
+    .dot-bad { background:#ef5350; box-shadow: 0 0 6px #ef535099; }
+
+    /* Image cards */
+    .img-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.2rem;
+      backdrop-filter: blur(16px);
+      margin-bottom: 1.2rem;
+    }
+    .img-card h2 {
+      font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: #6a8aaa; margin-bottom: 1rem;
+    }
+    .img-card img {
+      width: 100%; border-radius: 10px; display: block;
+      background: #111;
+    }
+    .img-foot {
+      margin-top: 0.6rem; font-size: 0.62rem; color: #2a5570;
+      font-family: monospace; letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><span></span><span></span></div>
+
+<div class="content">
+  <nav>
+    <a href="/">← Home</a>
+    <span style="color:#1e1e1e">|</span>
+    <span class="brand">UniFi Network</span>
+    <div class="subnav">
+      <a href="/unifi"         class="subnav-item active">Overview</a>
+      <a href="/unifi/map"     class="subnav-item">Network Map</a>
+      <a href="/unifi/devices" class="subnav-item">Devices</a>
+      <a href="/unifi/events"  class="subnav-item">Events</a>
+      <a href="/speedtest"     class="subnav-item">Speed Test</a>
+    </div>
+  </nav>
+
+  <div class="status-grid">
+    <div class="stat-card" style="--a:#ef5350">
+      <div class="stat-label">Flagged clients</div>
+      <div class="stat-val" id="s-flagged">—</div>
+      <ul class="flag-list" id="s-clients"></ul>
+    </div>
+    <div class="stat-card" style="--a:#66bb6a">
+      <div class="stat-label">Congestion</div>
+      <div class="stat-val" id="s-congestion">—</div>
+      <ul class="flag-list" id="s-congestion-list"></ul>
+    </div>
+    <div class="stat-card" style="--a:#29b6f6">
+      <div class="stat-label">Status</div>
+      <div class="stat-val" id="s-status">—</div>
+      <div class="stat-sub" id="s-updated"></div>
+    </div>
+    <a class="stat-card" href="/speedtest" style="--a:#cc88ff;text-decoration:none;display:block">
+      <div class="stat-label">Speed test · gateway</div>
+      <div class="stat-val" id="s-speed">—</div>
+      <div class="stat-sub" id="s-speed-sub"></div>
+    </a>
+    <div class="stat-card" style="--a:#f0a030">
+      <div class="stat-label">Pi-hole · top DNS users</div>
+      <div class="stat-val" id="s-pihole-pct">—</div>
+      <ul class="flag-list" id="s-pihole-list"></ul>
+    </div>
+  </div>
+
+  <div class="img-card">
+    <h2>Network topology</h2>
+    <img id="img-topology" src="" alt="Network topology">
+    <div class="img-foot" id="topo-ts"></div>
+  </div>
+
+  <div class="img-card">
+    <h2>Client history</h2>
+    <img id="img-dashboard" src="" alt="Client history">
+    <div class="img-foot" id="dash-ts"></div>
+  </div>
+</div>
+
+<script>
+  function bust() { return '?t=' + Date.now(); }
+
+  function loadImages() {
+    const ts = new Date().toLocaleTimeString('en-GB');
+    document.getElementById('img-topology').src  = '/unifi/topology.png'  + bust();
+    document.getElementById('img-dashboard').src = '/unifi/dashboard.png' + bust();
+    document.getElementById('topo-ts').textContent = 'Last loaded: ' + ts;
+    document.getElementById('dash-ts').textContent = 'Last loaded: ' + ts;
+  }
+
+  async function fetchStatus() {
+    try {
+      const r = await fetch('/api/unifi');
+      const d = await r.json();
+      const fc = d.flagged_clients || [];
+      const cg = d.flagged_congestion || [];
+
+      document.getElementById('s-flagged').textContent = fc.length;
+      document.getElementById('s-flagged').style.color = fc.length > 0 ? '#ef5350' : '#4ade80';
+
+      const cl = document.getElementById('s-clients');
+      cl.innerHTML = fc.length
+        ? fc.map(c => {
+            const reasons = [];
+            if (c.signal < -70) reasons.push(`weak signal (${c.signal} dBm)`);
+            if (c.retry_pct > 10) reasons.push(`high retries (${c.retry_pct}%)`);
+            const tip = reasons.join(' · ') || `${c.signal} dBm · ${c.retry_pct}%`;
+            return `<li title="${tip}" style="cursor:default">
+              <span class="flag-name">${c.hostname}</span>
+              <span class="flag-meta" style="position:relative">
+                ${c.signal} dBm · ${c.retry_pct}%
+                <span class="flag-bubble">${tip}</span>
+              </span>
+            </li>`;
+          }).join('')
+        : '<li><span class="dot dot-ok"></span><span style="color:#6a8aaa">All clear</span></li>';
+
+      document.getElementById('s-congestion').textContent = cg.length;
+      document.getElementById('s-congestion').style.color = cg.length > 0 ? '#ef5350' : '#4ade80';
+
+      const cgl = document.getElementById('s-congestion-list');
+      cgl.innerHTML = cg.length
+        ? cg.map(c => `<li><span class="flag-name">${c.ap} ${c.radio}</span><span class="flag-meta">${c.cu_total}%</span></li>`).join('')
+        : '<li><span class="dot dot-ok"></span><span style="color:#555">All clear</span></li>';
+
+      const overall = fc.length === 0 && cg.length === 0;
+      document.getElementById('s-status').textContent = overall ? 'OK' : 'Issues';
+      document.getElementById('s-status').style.color = overall ? '#4ade80' : '#ef5350';
+      document.getElementById('s-updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+
+      const sp = d.speedtest;
+      if (sp) {
+        document.getElementById('s-speed').textContent = sp.download_mbps + ' Mbps';
+        const spAge = Math.round((Date.now()/1000 - sp.ts) / 60);
+        document.getElementById('s-speed-sub').textContent =
+          `↑ ${sp.upload_mbps} Mbps · ${sp.ping_ms.toFixed(0)}ms ping\n${spAge}m ago`;
+      } else {
+        document.getElementById('s-speed').textContent = '—';
+        document.getElementById('s-speed-sub').textContent = 'First test pending';
+      }
+    } catch(e) {
+      document.getElementById('s-status').textContent = 'Offline';
+    }
+  }
+
+  async function fetchPihole() {
+    try {
+      const r = await fetch('/api/cross_ref');
+      const d = await r.json();
+      const s = d.summary || {};
+      document.getElementById('s-pihole-pct').textContent = (s.percent_blocked || 0) + '%';
+      const top5 = (d.devices || [])
+        .filter(x => x.dns_total != null)
+        .sort((a, b) => b.dns_total - a.dns_total)
+        .slice(0, 5);
+      const list = document.getElementById('s-pihole-list');
+      list.innerHTML = top5.map(x => {
+        const pc = x.dns_pct >= 30 ? '#ef5350' : x.dns_pct < 10 ? '#4ade80' : '#f0a030';
+        return `<li>
+          <span class="flag-name" style="color:#aaddff">${x.display_name || x.hostname || x.ip}</span>
+          <span class="flag-meta" style="color:${pc}">${x.dns_total.toLocaleString()} · ${x.dns_pct}%</span>
+        </li>`;
+      }).join('');
+    } catch(e) {
+      document.getElementById('s-pihole-pct').textContent = '?';
+    }
+  }
+
+  loadImages();
+  fetchStatus();
+  fetchPihole();
+  setInterval(fetchStatus, 30000);
+  setInterval(fetchPihole, 60000);
+</script>
+</body>
+</html>

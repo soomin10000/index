@@ -63,11 +63,13 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr auto auto;
       grid-template-areas:
         "harold  weather  weather"
         "harold  train    parents"
-        "bbc     bbc      darren";
+        "bbc     bbc      darren"
+        "unifi   unifi    unifi"
+        "pihole  pihole   pihole";
       gap: 1.15rem;
       width: 100%;
       max-width: 980px;
@@ -80,6 +82,8 @@
     #c-parents { grid-area: parents; }
     #c-bbc     { grid-area: bbc; }
     #c-darren  { grid-area: darren; }
+    #c-unifi   { grid-area: unifi; }
+    #c-pihole  { grid-area: pihole; }
 
     /* Card base */
     .card {
@@ -108,6 +112,9 @@
     .card:nth-child(4) { animation-delay: 0.26s; }
     .card:nth-child(5) { animation-delay: 0.33s; }
     .card:nth-child(6) { animation-delay: 0.40s; }
+    .card:nth-child(7) { animation-delay: 0.47s; }
+
+    #c-unifi .c-sub { column-count: 2; column-gap: 2rem; }
 
     .card::before {
       content: ''; position: absolute;
@@ -196,7 +203,8 @@
           "weather  weather"
           "harold   train"
           "parents  darren"
-          "bbc      bbc";
+          "bbc      bbc"
+          "unifi    unifi";
       }
       #c-harold .c-val { font-size: 3.5rem; }
     }
@@ -204,7 +212,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc";
+          "weather" "harold" "train" "parents" "darren" "bbc" "unifi";
       }
     }
   </style>
@@ -261,6 +269,22 @@
     <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
     <div class="c-sub" id="d-sub"></div>
     <div class="c-foot">:8193</div>
+  </a>
+
+  <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
+    <div class="c-icon">🕳️</div>
+    <div class="c-name">Pi-hole</div>
+    <div class="c-val">—</div>
+    <div class="c-unit">blocked</div>
+    <div class="c-sub" id="pihole-sub"></div>
+    <div class="c-foot">bazza · 192.168.1.246</div>
+  </a>
+
+  <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
+    <div class="c-head"><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
+    <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
+    <div class="c-sub" id="u-sub"></div>
+    <div class="c-foot">unifi_poller</div>
   </a>
 
 </main>
@@ -395,7 +419,33 @@
     } catch { setCard('weather', { val: 'Offline', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); }
+  async function unifi() {
+    try {
+      const d = await get('/api/unifi');
+      if (d.error) { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
+      const fc = d.flagged_clients || [];
+      const cg = d.flagged_congestion || [];
+      const n  = fc.length;
+      const accent = n > 0 ? '#ef5350' : '#66bb6a';
+      const clientLines = fc.map(c => `${dot('dot-red')}${c.hostname} ${c.signal} dBm · ${c.retry_pct}% retries`).join('<br>');
+      const congLines   = cg.map(c => `${dot('dot-red')}${c.ap} ${c.radio} ${c.cu_total}% util`).join('<br>');
+      const sub = [clientLines, congLines].filter(Boolean).join('<br>') || `${dot('dot-on')}All clear`;
+      setCard('unifi', { val: n, unit: n === 1 ? ' flagged' : ' flagged', sub, accent });
+    } catch { setCard('unifi', { val: 'Offline', unit: '' }, true); }
+  }
+
+  async function pihole() {
+    try {
+      const d = await get('/api/pihole');
+      if (d.error) { setCard('pihole', { val: '?', unit: '' }, true); return; }
+      const s = d.summary;
+      const sub = `${s.total.toLocaleString()} queries · ${s.cached.toLocaleString()} cached`;
+      document.getElementById('pihole-sub').textContent = sub;
+      setCard('pihole', { val: s.percent_blocked + '%', unit: 'blocked' });
+    } catch { setCard('pihole', { val: 'Offline', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); }
   refresh();
   setInterval(refresh, 30000);
 </script>

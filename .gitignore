@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+pihole.json
+unifi_poller/devices.json
+unifi_poller/topology.json
+unifi_poller/topology.png
+unifi_poller/dashboard.png
+unifi_poller/poller.log*
+*.db
+handoff.md
+HANDOFF.md
+*.service
+clients.png
+dump_*.py
+plot_*.py
+end_result.txt
