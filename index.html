@@ -188,7 +188,14 @@
 
     /* ── Responsive ── */
     @media (max-width: 900px) {
-      body { height: auto; min-height: 100svh; overflow: auto; }
+      body {
+        height: auto;
+        min-height: 100svh;
+        overflow: auto;
+        align-items: stretch;
+        justify-content: flex-start;
+      }
+      header { text-align: center; }
       main {
         flex: none;
         grid-template-columns: 1fr 1fr;
@@ -204,10 +211,10 @@
     @media (max-width: 560px) {
       body {
         gap: 0.5rem;
-        padding: max(0.6rem, env(safe-area-inset-top))
-                 max(0.7rem, env(safe-area-inset-right))
-                 max(0.9rem, env(safe-area-inset-bottom))
-                 max(0.7rem, env(safe-area-inset-left));
+        padding-top: max(0.6rem, env(safe-area-inset-top));
+        padding-right: max(0.7rem, env(safe-area-inset-right));
+        padding-bottom: max(0.9rem, env(safe-area-inset-bottom));
+        padding-left: max(0.7rem, env(safe-area-inset-left));
       }
       main { gap: 0.5rem; }
       .card { padding: 0.65rem 0.8rem; border-radius: 14px; }
