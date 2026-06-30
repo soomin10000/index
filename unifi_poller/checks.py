@@ -70,7 +70,7 @@ def check_weak_clients(client, signal_threshold=-70, retry_pct_threshold=10):
 
 if __name__ == "__main__":
     # Manual smoke test against the real console.
-    # Run with: UNIFI_PASSWORD=... python3 checks.py
+    # Run with: UNIFI_API_KEY=... python3 checks.py
     import os
     import sys
     import json
@@ -81,12 +81,12 @@ if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(__file__))
     from unifi_client import UnifiClient
 
-    password = os.environ.get("UNIFI_PASSWORD")
-    if not password:
-        print("Set UNIFI_PASSWORD env var before running this smoke test.", file=sys.stderr)
+    api_key = os.environ.get("UNIFI_API_KEY")
+    if not api_key:
+        print("Set UNIFI_API_KEY env var before running this smoke test.", file=sys.stderr)
         sys.exit(1)
 
-    client = UnifiClient("https://192.168.1.1", "unifi", password)
+    client = UnifiClient("https://192.168.1.1", api_key)
 
     print("--- Congestion check (cu_threshold=70) ---")
     congestion = check_congestion(client)

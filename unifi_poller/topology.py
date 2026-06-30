@@ -5,7 +5,7 @@ Draws the full network tree: gateway → switches/APs → clients.
 Flagged clients (weak signal + high retries) are highlighted in red.
 Saves to topology.png.
 
-Run with: UNIFI_PASSWORD=... python3 topology.py
+Run with: UNIFI_API_KEY=... python3 topology.py
 """
 
 import json
@@ -25,11 +25,11 @@ from checks import check_weak_clients
 
 # ── Fetch data ────────────────────────────────────────────────────────────────
 
-password = os.environ.get("UNIFI_PASSWORD")
-if not password:
-    print("Set UNIFI_PASSWORD", file=sys.stderr); sys.exit(1)
+api_key = os.environ.get("UNIFI_API_KEY")
+if not api_key:
+    print("Set UNIFI_API_KEY", file=sys.stderr); sys.exit(1)
 
-client = UnifiClient("https://192.168.1.1", "unifi", password)
+client = UnifiClient("https://192.168.1.1", api_key)
 devices  = client.get_devices()
 stations = client.get_clients()
 wlans    = client._get("s/default/rest/wlanconf")

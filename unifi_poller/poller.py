@@ -2,8 +2,8 @@
 UniFi poller — long-running poll loop.
 
 Run with:
-    UNIFI_PASSWORD=... python3 poller.py
-    UNIFI_PASSWORD=... python3 poller.py --interval 120
+    UNIFI_API_KEY=... python3 poller.py
+    UNIFI_API_KEY=... python3 poller.py --interval 120
 """
 
 import argparse
@@ -49,7 +49,7 @@ _sh.setFormatter(_fmt)
 log.addHandler(_sh)
 
 _POLLER_DIR = Path(__file__).parent
-_ENV = {**os.environ, "UNIFI_PASSWORD": os.environ.get("UNIFI_PASSWORD", "")}
+_ENV = {**os.environ, "UNIFI_API_KEY": os.environ.get("UNIFI_API_KEY", "")}
 
 
 # ── Vendor lookup & device type guessing ─────────────────────────────────────
@@ -285,16 +285,14 @@ def run(interval, client):
             _notify("UniFi: Congestion resolved", key, sound=False)
             log_event(db, "resolved", "Congestion resolved", key)
 
-        # Weak client alerts
+        # Weak client alerts — notifications disabled (too noisy)
         for key, f in curr_weak.items():
             if key not in prev_weak:
                 msg = f"{f['hostname']} — {f['signal']} dBm, {f['retry_pct']:.1f}% retries ({f['essid']})"
-                log.warning("NEW weak client: %s", msg)
-                _notify("UniFi: Weak client", msg, sound=False)
+                log.warning("NEW weak client (no notification): %s", msg)
                 log_event(db, "weak", "Weak client", msg)
         for key in prev_weak - curr_weak.keys():
             log.info("Weak client resolved: %s", key)
-            _notify("UniFi: Client recovered", key, sound=False)
             log_event(db, "resolved", "Client recovered", key)
 
         # New device detection
@@ -337,16 +335,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--interval", type=int, default=300)
     parser.add_argument("--url",      default="https://192.168.1.1")
-    parser.add_argument("--username", default="unifi")
     parser.add_argument("--site",     default="default")
     args = parser.parse_args()
 
-    password = os.environ.get("UNIFI_PASSWORD")
-    if not password:
-        print("Set UNIFI_PASSWORD env var.", file=sys.stderr)
+    api_key = os.environ.get("UNIFI_API_KEY")
+    if not api_key:
+        print("Set UNIFI_API_KEY env var.", file=sys.stderr)
         sys.exit(1)
 
-    client = UnifiClient(args.url, args.username, password, site=args.site)
+    client = UnifiClient(args.url, api_key, site=args.site)
     run(args.interval, client)
 
 
