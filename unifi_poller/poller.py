@@ -20,8 +20,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 
 from unifi_client import UnifiClient, UnifiAuthError
-from checks import check_congestion, check_weak_clients
-from db import (open_db, log_poll, last_flagged_clients, last_flagged_congestion,
+from checks import check_congestion
+from db import (open_db, log_poll, last_flagged_congestion,
                 check_new_devices, log_speedtest, log_event, get_known_devices)
 
 try:
@@ -236,11 +236,10 @@ def _regenerate_visuals():
 # ── Poll helpers ──────────────────────────────────────────────────────────────
 
 def _congestion_key(f): return f"{f['ap']}:{f['radio']}"
-def _client_key(f):     return f["hostname"]
 
 
 def poll_once(client):
-    return check_congestion(client), check_weak_clients(client)
+    return check_congestion(client)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -248,9 +247,8 @@ def poll_once(client):
 def run(interval, client):
     db = open_db()
     prev_congestion = last_flagged_congestion(db, within_seconds=interval * 2)
-    prev_weak       = last_flagged_clients(db, within_seconds=interval * 2)
-    if prev_weak or prev_congestion:
-        log.info("Resuming — suppressing re-notification for: %s", prev_weak | prev_congestion)
+    if prev_congestion:
+        log.info("Resuming — suppressing re-notification for: %s", prev_congestion)
 
     # Speed test: once per hour
     speedtest_every = max(1, 3600 // interval)
@@ -260,7 +258,7 @@ def run(interval, client):
 
     while True:
         try:
-            congestion, weak = poll_once(client)
+            congestion = poll_once(client)
         except UnifiAuthError as e:
             log.error("Auth error: %s", e)
             time.sleep(interval)
@@ -271,7 +269,6 @@ def run(interval, client):
             continue
 
         curr_congestion = {_congestion_key(f): f for f in congestion}
-        curr_weak       = {_client_key(f): f for f in weak}
 
         # Congestion alerts
         for key, f in curr_congestion.items():
@@ -284,16 +281,6 @@ def run(interval, client):
             log.info("Congestion resolved: %s", key)
             _notify("UniFi: Congestion resolved", key, sound=False)
             log_event(db, "resolved", "Congestion resolved", key)
-
-        # Weak client alerts — notifications disabled (too noisy)
-        for key, f in curr_weak.items():
-            if key not in prev_weak:
-                msg = f"{f['hostname']} — {f['signal']} dBm, {f['retry_pct']:.1f}% retries ({f['essid']})"
-                log.warning("NEW weak client (no notification): %s", msg)
-                log_event(db, "weak", "Weak client", msg)
-        for key in prev_weak - curr_weak.keys():
-            log.info("Weak client resolved: %s", key)
-            log_event(db, "resolved", "Client recovered", key)
 
         # New device detection
         try:
@@ -312,8 +299,8 @@ def run(interval, client):
         except Exception as e:
             log.warning("Device check failed: %s", e)
 
-        log_poll(db, congestion, weak)
-        write_devices_json(client, weak, db=db)
+        log_poll(db, congestion, [])
+        write_devices_json(client, [], db=db)
 
         poll_count += 1
         if poll_count % speedtest_every == 0:
@@ -323,9 +310,8 @@ def run(interval, client):
         _regenerate_visuals()
 
         prev_congestion = set(curr_congestion.keys())
-        prev_weak       = set(curr_weak.keys())
 
-        log.info("Poll complete — %d congestion, %d weak clients", len(curr_congestion), len(curr_weak))
+        log.info("Poll complete — %d congestion flags", len(curr_congestion))
         time.sleep(interval)
 
 
