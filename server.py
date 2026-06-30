@@ -55,8 +55,18 @@ def _unifi_status():
         return {'error': str(e)}
 
 
-PIHOLE_JSON = Path(__file__).parent / 'pihole.json'
+PIHOLE_JSON  = Path(__file__).parent / 'pihole.json'
+KISMET_JSON  = Path(__file__).parent / 'kismet.json'
 DEVICES_JSON = UNIFI_DIR / 'devices.json'
+
+
+def _kismet_data():
+    if not KISMET_JSON.exists():
+        return {'error': 'no kismet.json — run kismet_poller.py'}
+    try:
+        return json.loads(KISMET_JSON.read_text())
+    except Exception as e:
+        return {'error': str(e)}
 
 
 def _cross_ref():
@@ -64,8 +74,11 @@ def _cross_ref():
     try:
         ph = json.loads(PIHOLE_JSON.read_text()) if PIHOLE_JSON.exists() else {}
         ud = json.loads(DEVICES_JSON.read_text()) if DEVICES_JSON.exists() else {}
+        ks = json.loads(KISMET_JSON.read_text()) if KISMET_JSON.exists() else {}
     except Exception as e:
         return {'error': str(e), 'devices': []}
+
+    kismet_by_mac = {d['mac'].lower(): d for d in ks.get('devices', [])}
 
     unifi_devices = ud.get('devices', [])
     ph_clients    = ph.get('clients_detail', [])
@@ -90,12 +103,18 @@ def _cross_ref():
             if len(matches) == 1:
                 ph_c = matches[0]
 
+        mac_key = (dev.get('mac') or '').lower()
+        ks_dev  = kismet_by_mac.get(mac_key, {})
         result.append({
             **dev,
-            'dns_total':   ph_c['total']       if ph_c else None,
-            'dns_blocked': ph_c['blocked']      if ph_c else None,
-            'dns_pct':     ph_c['blocked_pct']  if ph_c else None,
-            'dns_ip':      ph_c['ip']            if ph_c else None,
+            'dns_total':     ph_c['total']       if ph_c else None,
+            'dns_blocked':   ph_c['blocked']      if ph_c else None,
+            'dns_pct':       ph_c['blocked_pct']  if ph_c else None,
+            'dns_ip':        ph_c['ip']            if ph_c else None,
+            'rf_signal':     ks_dev.get('signal'),
+            'rf_channel':    ks_dev.get('channel'),
+            'rf_manuf':      ks_dev.get('manuf'),
+            'rf_last_seen':  ks_dev.get('last_time'),
         })
 
     # Also include Pi-hole-only clients (not in UniFi — wired/unknown)
@@ -233,6 +252,10 @@ class Handler(BaseHTTPRequestHandler):
             self._file('cross_ref.html', 'text/html; charset=utf-8')
         elif path == '/api/cross_ref':
             self._json(_cross_ref())
+        elif path == '/kismet':
+            self._file('kismet.html', 'text/html; charset=utf-8')
+        elif path == '/api/kismet':
+            self._json(_kismet_data())
         elif path == '/pihole':
             self._file('pihole.html', 'text/html; charset=utf-8')
         elif path == '/api/pihole':

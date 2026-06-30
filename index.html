@@ -68,7 +68,7 @@
         "harold  weather  weather"
         "harold  train    parents"
         "bbc     bbc      darren"
-        "unifi   unifi    unifi"
+        "unifi   unifi    wireless"
         "pihole  pihole   pihole";
       gap: 1.15rem;
       width: 100%;
@@ -82,7 +82,8 @@
     #c-parents { grid-area: parents; }
     #c-bbc     { grid-area: bbc; }
     #c-darren  { grid-area: darren; }
-    #c-unifi   { grid-area: unifi; }
+    #c-unifi    { grid-area: unifi; }
+    #c-wireless { grid-area: wireless; }
     #c-pihole  { grid-area: pihole; }
 
     /* Card base */
@@ -204,7 +205,8 @@
           "harold   train"
           "parents  darren"
           "bbc      bbc"
-          "unifi    unifi";
+          "unifi    wireless"
+          "pihole   pihole";
       }
       #c-harold .c-val { font-size: 3.5rem; }
     }
@@ -212,7 +214,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi";
+          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole";
       }
     }
   </style>
@@ -269,6 +271,13 @@
     <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
     <div class="c-sub" id="d-sub"></div>
     <div class="c-foot">:8193</div>
+  </a>
+
+  <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
+    <div class="c-head"><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
+    <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
+    <div class="c-sub" id="wl-sub"></div>
+    <div class="c-foot">kismet · wlx00c0cabaea2c</div>
   </a>
 
   <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
@@ -445,7 +454,22 @@
     } catch { setCard('pihole', { val: 'Offline', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); }
+  async function wireless() {
+    try {
+      const d = await get('/api/kismet');
+      if (d.error) { setCard('wireless', { val: 'No data', unit: '' }, true); return; }
+      const unknown = (d.unknown_clients || []).length;
+      const alerts  = (d.alerts || []).length;
+      const accent  = alerts > 0 ? '#ef5350' : unknown > 0 ? '#fbbf24' : '#a78bfa';
+      const parts   = [];
+      if (unknown > 0) parts.push(`${dot('dot-red')}${unknown} unknown clients`);
+      if (alerts > 0)  parts.push(`${dot('dot-red')}${alerts} alerts`);
+      if (!parts.length) parts.push(`${dot('dot-on')}All clear`);
+      setCard('wireless', { val: d.device_count, unit: ' devices', sub: parts.join('<br>'), accent });
+    } catch { setCard('wireless', { val: 'Offline', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
