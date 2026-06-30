@@ -19,12 +19,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def check_congestion(client, cu_threshold=70):
+def check_congestion(devices, cu_threshold=70):
     """
     Flags AP radios with channel utilization above cu_threshold (%).
     Returns a list of dicts: {ap, radio, cu_total, num_sta}
     """
-    devices = client.get_devices()
     flags = []
     for dev in devices:
         radio_stats = dev.get("radio_table_stats")
@@ -89,7 +88,7 @@ if __name__ == "__main__":
     client = UnifiClient("https://192.168.1.1", api_key)
 
     print("--- Congestion check (cu_threshold=70) ---")
-    congestion = check_congestion(client)
+    congestion = check_congestion(client.get_devices())
     print(json.dumps(congestion, indent=2) if congestion else "No congestion flags.")
 
     print("\n--- Weak/flooding client check (signal<-70dBm, retry_pct>10%) ---")

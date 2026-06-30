@@ -62,6 +62,9 @@ class UnifiClient:
     def get_devices(self):
         return self._get(f"s/{self.site}/stat/device")
 
+    def get_wlans(self):
+        return self._get(f"s/{self.site}/rest/wlanconf")
+
     def trigger_speedtest(self):
         return self._post(f"s/{self.site}/cmd/devmgr", {"cmd": "speedtest"})
 

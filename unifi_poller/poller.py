@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 
 from unifi_client import UnifiClient, UnifiAuthError
 from checks import check_congestion
+import topology
+import dashboard
 from db import (open_db, log_poll, last_flagged_congestion,
                 check_new_devices, log_speedtest, log_event, get_known_devices)
 
@@ -164,12 +166,10 @@ def trigger_speedtest(client):
 
 # ── Devices JSON ──────────────────────────────────────────────────────────────
 
-def write_devices_json(client, weak_flags, db=None):
+def write_devices_json(devices, stations, db=None):
     try:
-        stations = client.get_clients()
-        devices  = client.get_devices()
-        weak_macs = {f.get("mac", "") for f in weak_flags}
-        weak_hosts = {f["hostname"] for f in weak_flags}
+        weak_macs = set()
+        weak_hosts = set()
 
         dev_by_mac  = {d["mac"]: d for d in devices}
         ap_by_mac   = {d["mac"]: d.get("name", d["mac"]) for d in devices if d.get("type") == "uap"}
@@ -218,28 +218,34 @@ def write_devices_json(client, weak_flags, db=None):
 
 # ── Visuals ───────────────────────────────────────────────────────────────────
 
-def _regenerate_visuals():
-    for script in ("topology.py", "dashboard.py",
-                   str(Path.home() / "projects" / "pihole_poller.py")):
-        try:
-            subprocess.run(
-                [sys.executable, str(_POLLER_DIR / script)],
-                env=_ENV, timeout=60, capture_output=True, check=True,
-            )
-            log.info("Regenerated %s", script)
-        except subprocess.CalledProcessError as e:
-            log.warning("Failed to regenerate %s: %s", script, e.stderr.decode().strip())
-        except Exception as e:
-            log.warning("Failed to regenerate %s: %s", script, e)
+def _regenerate_visuals(devices, stations, wlans):
+    try:
+        topology.render(devices, stations, wlans)
+        log.info("Regenerated topology")
+    except Exception as e:
+        log.warning("Failed to regenerate topology: %s", e)
+
+    try:
+        dashboard.render()
+        log.info("Regenerated dashboard")
+    except Exception as e:
+        log.warning("Failed to regenerate dashboard: %s", e)
+
+    try:
+        subprocess.run(
+            [sys.executable, str(Path.home() / "projects" / "pihole_poller.py")],
+            env=_ENV, timeout=60, capture_output=True, check=True,
+        )
+        log.info("Regenerated pihole_poller.py")
+    except subprocess.CalledProcessError as e:
+        log.warning("Failed to regenerate pihole_poller.py: %s", e.stderr.decode().strip())
+    except Exception as e:
+        log.warning("Failed to regenerate pihole_poller.py: %s", e)
 
 
 # ── Poll helpers ──────────────────────────────────────────────────────────────
 
 def _congestion_key(f): return f"{f['ap']}:{f['radio']}"
-
-
-def poll_once(client):
-    return check_congestion(client)
 
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
@@ -258,7 +264,9 @@ def run(interval, client):
 
     while True:
         try:
-            congestion = poll_once(client)
+            devices  = client.get_devices()
+            stations = client.get_clients()
+            wlans    = client.get_wlans()
         except UnifiAuthError as e:
             log.error("Auth error: %s", e)
             time.sleep(interval)
@@ -268,6 +276,7 @@ def run(interval, client):
             time.sleep(interval)
             continue
 
+        congestion      = check_congestion(devices)
         curr_congestion = {_congestion_key(f): f for f in congestion}
 
         # Congestion alerts
@@ -284,8 +293,6 @@ def run(interval, client):
 
         # New device detection
         try:
-            stations = client.get_clients()
-            devices  = client.get_devices()
             all_seen = [
                 {"mac": s["mac"], "hostname": s.get("hostname", ""), "vendor": _vendor(s["mac"])}
                 for s in stations + devices
@@ -300,14 +307,14 @@ def run(interval, client):
             log.warning("Device check failed: %s", e)
 
         log_poll(db, congestion, [])
-        write_devices_json(client, [], db=db)
+        write_devices_json(devices, stations, db=db)
 
         poll_count += 1
         if poll_count % speedtest_every == 0:
             trigger_speedtest(client)
         sync_speedtest(db, client)
 
-        _regenerate_visuals()
+        _regenerate_visuals(devices, stations, wlans)
 
         prev_congestion = set(curr_congestion.keys())
 
