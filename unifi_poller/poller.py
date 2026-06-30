@@ -13,6 +13,7 @@ import logging.handlers
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -29,10 +30,12 @@ from db import (open_db, log_poll, last_flagged_congestion,
 try:
     from notify_sender import notify as _notify_send
     def _notify(title, message, **kwargs):
-        results = _notify_send(title, message, **kwargs)
-        for host, status in results.items():
-            if status != "ok":
-                log.warning("Notification to %s failed: %s", host, status)
+        def _send():
+            results = _notify_send(title, message, **kwargs)
+            for host, status in results.items():
+                if status != "ok":
+                    log.warning("Notification to %s failed: %s", host, status)
+        threading.Thread(target=_send, daemon=True).start()
 except ImportError:
     def _notify(title, message, **kwargs):
         log.warning("notify_sender unavailable — would have sent: [%s] %s", title, message)
