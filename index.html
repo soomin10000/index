@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Totally Pointless Website</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -63,13 +63,11 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr auto auto;
+      grid-template-rows: 1fr 1fr 1fr;
       grid-template-areas:
         "harold  weather  weather"
         "harold  train    parents"
-        "bbc     bbc      darren"
-        "unifi   unifi    unifi"
-        "pihole  pihole   pihole";
+        "bbc     bbc      darren";
       gap: 1.15rem;
       width: 100%;
       max-width: 980px;
@@ -82,8 +80,6 @@
     #c-parents { grid-area: parents; }
     #c-bbc     { grid-area: bbc; }
     #c-darren  { grid-area: darren; }
-    #c-unifi   { grid-area: unifi; }
-    #c-pihole  { grid-area: pihole; }
 
     /* Card base */
     .card {
@@ -99,6 +95,7 @@
       text-decoration: none; color: inherit;
       overflow: hidden; cursor: pointer;
       transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+      touch-action: manipulation;
     }
 
     @keyframes rise {
@@ -112,9 +109,6 @@
     .card:nth-child(4) { animation-delay: 0.26s; }
     .card:nth-child(5) { animation-delay: 0.33s; }
     .card:nth-child(6) { animation-delay: 0.40s; }
-    .card:nth-child(7) { animation-delay: 0.47s; }
-
-    #c-unifi .c-sub { column-count: 2; column-gap: 2rem; }
 
     .card::before {
       content: ''; position: absolute;
@@ -193,27 +187,51 @@
     footer { position: relative; z-index: 1; color: #1e1e1e; font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; flex-shrink: 0; }
 
     /* ── Responsive ── */
-    @media (max-width: 860px) {
-      body { height: auto; min-height: 100vh; overflow: auto; }
+    @media (max-width: 900px) {
+      body {
+        display: block;
+        height: auto;
+        min-height: 100svh;
+        overflow: auto;
+        padding: 1rem 1rem 1.2rem;
+      }
+      header { text-align: center; margin-bottom: 0.8rem; }
+      footer { text-align: center; margin-top: 0.8rem; }
       main {
-        flex: none;
+        display: grid;
+        width: 100%;
+        max-width: 100%;
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         grid-template-areas:
           "weather  weather"
           "harold   train"
           "parents  darren"
-          "bbc      bbc"
-          "unifi    unifi";
+          "bbc      bbc";
+        gap: 0.85rem;
       }
-      #c-harold .c-val { font-size: 3.5rem; }
+      #c-harold .c-val { font-size: 3rem; }
     }
-    @media (max-width: 520px) {
-      main {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi";
+    @media (max-width: 560px) {
+      body {
+        padding-top: max(0.8rem, env(safe-area-inset-top));
+        padding-right: max(0.75rem, env(safe-area-inset-right));
+        padding-bottom: max(1rem, env(safe-area-inset-bottom));
+        padding-left: max(0.75rem, env(safe-area-inset-left));
       }
+      main { gap: 0.55rem; }
+      .card { padding: 0.65rem 0.8rem; border-radius: 14px; }
+      .c-head { margin-bottom: 0.25rem; gap: 0.35rem; }
+      .c-icon { font-size: 0.9rem; }
+      .c-name { font-size: 0.55rem; }
+      .c-metric { margin-bottom: 0.15rem; }
+      .c-val { font-size: 1.5rem; letter-spacing: -0.5px; }
+      .c-unit { font-size: 0.85rem; }
+      #c-harold .c-val { font-size: 2rem; letter-spacing: -1px; }
+      .c-sub { font-size: 0.65rem; line-height: 1.4; }
+      .c-foot { display: none; }
+      .c-bg-emoji { display: none; }
+      #c-bbc .c-val { font-size: 1.2rem !important; letter-spacing: -0.5px; }
     }
   </style>
 </head>
@@ -269,22 +287,6 @@
     <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
     <div class="c-sub" id="d-sub"></div>
     <div class="c-foot">:8193</div>
-  </a>
-
-  <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
-    <div class="c-icon">🕳️</div>
-    <div class="c-name">Pi-hole</div>
-    <div class="c-val">—</div>
-    <div class="c-unit">blocked</div>
-    <div class="c-sub" id="pihole-sub"></div>
-    <div class="c-foot">bazza · 192.168.1.246</div>
-  </a>
-
-  <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
-    <div class="c-head"><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
-    <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
-    <div class="c-sub" id="u-sub"></div>
-    <div class="c-foot">unifi_poller</div>
   </a>
 
 </main>
@@ -419,33 +421,7 @@
     } catch { setCard('weather', { val: 'Offline', unit: '' }, true); }
   }
 
-  async function unifi() {
-    try {
-      const d = await get('/api/unifi');
-      if (d.error) { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
-      const fc = d.flagged_clients || [];
-      const cg = d.flagged_congestion || [];
-      const n  = fc.length;
-      const accent = n > 0 ? '#ef5350' : '#66bb6a';
-      const clientLines = fc.map(c => `${dot('dot-red')}${c.hostname} ${c.signal} dBm · ${c.retry_pct}% retries`).join('<br>');
-      const congLines   = cg.map(c => `${dot('dot-red')}${c.ap} ${c.radio} ${c.cu_total}% util`).join('<br>');
-      const sub = [clientLines, congLines].filter(Boolean).join('<br>') || `${dot('dot-on')}All clear`;
-      setCard('unifi', { val: n, unit: n === 1 ? ' flagged' : ' flagged', sub, accent });
-    } catch { setCard('unifi', { val: 'Offline', unit: '' }, true); }
-  }
-
-  async function pihole() {
-    try {
-      const d = await get('/api/pihole');
-      if (d.error) { setCard('pihole', { val: '?', unit: '' }, true); return; }
-      const s = d.summary;
-      const sub = `${s.total.toLocaleString()} queries · ${s.cached.toLocaleString()} cached`;
-      document.getElementById('pihole-sub').textContent = sub;
-      setCard('pihole', { val: s.percent_blocked + '%', unit: 'blocked' });
-    } catch { setCard('pihole', { val: 'Offline', unit: '' }, true); }
-  }
-
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); }
+  function refresh() { harold(); train(); parents(); darren(); weather(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
