@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wireless · Kismet</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --bg: #07070f; --card: rgba(14,14,26,0.85); --border: rgba(255,255,255,0.07); --a: #a78bfa; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: #e0e0e0; padding: 1.5rem; min-height: 100vh; }
+
+    .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .bg span { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.13; animation: drift linear infinite alternate; }
+    .bg span:nth-child(1) { width:500px;height:500px;background:#7c3aed;top:-10%;left:-10%;animation-duration:30s; }
+    .bg span:nth-child(2) { width:400px;height:400px;background:#2060ff;top:10%;right:-5%;animation-duration:22s;animation-delay:-8s; }
+    .bg span:nth-child(3) { width:350px;height:350px;background:#059669;bottom:5%;left:30%;animation-duration:27s;animation-delay:-14s; }
+    @keyframes drift { from{transform:translate(0,0) scale(1)} to{transform:translate(40px,30px) scale(1.1)} }
+
+    .content { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; }
+
+    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    header a { color: #444; text-decoration: none; font-size: 0.8rem; }
+    header a:hover { color: #888; }
+    h1 { font-size: 1.4rem; font-weight: 800; color: var(--a); }
+    .meta { font-size: 0.72rem; color: #333; margin-left: auto; font-family: monospace; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; margin-bottom: 1.5rem; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.2rem; }
+    .stat-val { font-size: 2rem; font-weight: 800; color: var(--a); letter-spacing: -1px; }
+    .stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: #444; margin-top: 0.2rem; }
+
+    .section { margin-bottom: 1.5rem; }
+    .section-title { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #444; margin-bottom: 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+
+    .alert-item { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 0.5rem; }
+    .alert-header { font-size: 0.75rem; font-weight: 700; color: #ef4444; }
+    .alert-text { font-size: 0.72rem; color: #888; margin-top: 0.2rem; line-height: 1.5; }
+    .alert-meta { font-size: 0.62rem; color: #333; margin-top: 0.3rem; font-family: monospace; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #333; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    td { padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.03); color: #bbb; white-space: nowrap; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-ap     { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .badge-client { background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .badge-other  { background: rgba(255,255,255,0.05); color: #555; }
+    .badge-unknown { background: rgba(251,191,36,0.12); color: #fbbf24; }
+
+    .sig { font-family: monospace; }
+    .sig-good  { color: #4ade80; }
+    .sig-ok    { color: #facc15; }
+    .sig-weak  { color: #f87171; }
+
+    .filter-row { display: flex; gap: 0.6rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
+    .filter-btn { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #555; font-size: 0.68rem; cursor: pointer; transition: all 0.2s; }
+    .filter-btn.active { border-color: var(--a); color: var(--a); }
+    input[type=search] { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #ccc; font-size: 0.68rem; outline: none; width: 200px; }
+    input[type=search]::placeholder { color: #333; }
+  </style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><span></span><span></span><span></span></div>
+<div class="content">
+
+  <header>
+    <a href="/">← Home</a>
+    <h1>📡 Wireless</h1>
+    <div class="meta" id="meta">Loading…</div>
+  </header>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="section" id="alerts-section" style="display:none">
+    <div class="section-title">🚨 Alerts</div>
+    <div id="alerts"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Devices</div>
+    <div class="filter-row">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="AP">APs</button>
+      <button class="filter-btn" data-filter="Client">Clients</button>
+      <button class="filter-btn" data-filter="unknown">Unknown</button>
+      <input type="search" id="search" placeholder="Search MAC, SSID, vendor…">
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th><th>MAC</th><th>SSID / Name</th><th>Vendor</th>
+          <th>Signal</th><th>Ch</th><th>Last seen</th><th>Probing for</th>
+        </tr>
+      </thead>
+      <tbody id="devices"></tbody>
+    </table>
+  </div>
+
+</div>
+<script>
+  let allDevices = [];
+  let activeFilter = 'all';
+
+  function sigClass(s) {
+    if (!s || s === 0) return '';
+    if (s >= -60) return 'sig-good';
+    if (s >= -75) return 'sig-ok';
+    return 'sig-weak';
+  }
+
+  function relTime(ts) {
+    if (!ts) return '—';
+    const diff = Math.floor(Date.now()/1000) - ts;
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+    return `${Math.floor(diff/86400)}d ago`;
+  }
+
+  function renderDevices() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const tbody = document.getElementById('devices');
+    const rows = allDevices.filter(d => {
+      if (activeFilter === 'AP' && !d.type.includes('AP')) return false;
+      if (activeFilter === 'Client' && !d.type.includes('Client')) return false;
+      if (activeFilter === 'unknown' && d.known) return false;
+      if (q && ![d.mac, d.ssid, d.name, d.manuf, ...(d.probes||[])].join(' ').toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    tbody.innerHTML = rows.map(d => {
+      const isAP = d.type.includes('AP');
+      const badge = isAP ? 'badge-ap' : d.type.includes('Client') ? 'badge-client' : 'badge-other';
+      const label = isAP ? 'AP' : d.type.includes('Client') ? 'Client' : d.type;
+      const unknownBadge = (!d.known && d.type.includes('Client')) ? ' <span class="badge badge-unknown">unknown</span>' : '';
+      const ssid = d.ssid || (isAP ? '<span style="color:#333">hidden</span>' : '—');
+      const sig = d.signal ? `<span class="sig ${sigClass(d.signal)}">${d.signal} dBm</span>` : '—';
+      const probes = (d.probes||[]).slice(0,3).join(', ') || '—';
+      return `<tr>
+        <td><span class="badge ${badge}">${label}</span>${unknownBadge}</td>
+        <td style="font-family:monospace;color:#666">${d.mac}</td>
+        <td>${ssid}</td>
+        <td style="color:#555">${d.manuf||'—'}</td>
+        <td>${sig}</td>
+        <td style="color:#555">${d.channel||'—'}</td>
+        <td style="color:#444">${relTime(d.last_time)}</td>
+        <td style="color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis">${probes}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function load() {
+    const d = await fetch('/api/kismet').then(r => r.json());
+    if (d.error) { document.getElementById('meta').textContent = d.error; return; }
+
+    allDevices = d.devices || [];
+    const aps     = allDevices.filter(x => x.type.includes('AP')).length;
+    const clients = allDevices.filter(x => x.type.includes('Client')).length;
+    const unknown = allDevices.filter(x => !x.known && x.type.includes('Client')).length;
+    const alerts  = d.alerts || [];
+
+    document.getElementById('meta').textContent =
+      `Updated ${relTime(d.ts)} · Kismet up ${Math.floor((d.uptime_sec||0)/60)}m`;
+
+    document.getElementById('stats').innerHTML = [
+      [d.device_count, 'Total devices'],
+      [aps, 'Access points'],
+      [clients, 'Clients'],
+      [unknown, 'Unknown clients'],
+      [alerts.length, 'Alerts'],
+    ].map(([v,l]) => `<div class="stat"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
+
+    if (alerts.length) {
+      document.getElementById('alerts-section').style.display = '';
+      document.getElementById('alerts').innerHTML = alerts.map(a => `
+        <div class="alert-item">
+          <div class="alert-header">${a.header} <span style="font-weight:400;color:#555">[${a.class}]</span></div>
+          <div class="alert-text">${a.text}</div>
+          <div class="alert-meta">${new Date(a.ts*1000).toLocaleString()} ${a.source_mac ? '· ' + a.source_mac : ''}</div>
+        </div>`).join('');
+    }
+
+    renderDevices();
+  }
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.filter;
+      renderDevices();
+    });
+  });
+  document.getElementById('search').addEventListener('input', renderDevices);
+
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>
