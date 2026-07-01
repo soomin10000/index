@@ -11,7 +11,6 @@ import json
 import logging
 import logging.handlers
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -54,7 +53,6 @@ _sh.setFormatter(_fmt)
 log.addHandler(_sh)
 
 _POLLER_DIR = Path(__file__).parent
-_ENV = {**os.environ, "UNIFI_API_KEY": os.environ.get("UNIFI_API_KEY", "")}
 
 
 # ── Vendor lookup & device type guessing ─────────────────────────────────────
@@ -234,16 +232,9 @@ def _regenerate_visuals(devices, stations, wlans):
     except Exception as e:
         log.warning("Failed to regenerate dashboard: %s", e)
 
-    try:
-        subprocess.run(
-            [sys.executable, str(Path.home() / "projects" / "pihole_poller.py")],
-            env=_ENV, timeout=60, capture_output=True, check=True,
-        )
-        log.info("Regenerated pihole_poller.py")
-    except subprocess.CalledProcessError as e:
-        log.warning("Failed to regenerate pihole_poller.py: %s", e.stderr.decode().strip())
-    except Exception as e:
-        log.warning("Failed to regenerate pihole_poller.py: %s", e)
+    # pihole_poller.py now runs on its own cron schedule (needs PIHOLE_PASSWORD,
+    # which unifi-poller.service's systemd environment doesn't have and we can't
+    # add without an interactive sudo password to edit the unit file).
 
 
 # ── Poll helpers ──────────────────────────────────────────────────────────────

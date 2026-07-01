@@ -18,6 +18,8 @@ if not KISMET_USER or not KISMET_PASS:
 
 OUT = Path(__file__).parent / 'kismet.json'
 UNIFI_DEVICES = Path(__file__).parent / 'unifi_poller' / 'devices.json'
+PIHOLE_JSON = Path(__file__).parent / 'pihole.json'
+PIHOLE_MAX_AGE_SEC = 900  # ignore pihole.json if stale — IPs get reassigned, wrong name is worse than no name
 
 DEVICE_FIELDS = [
     'kismet.device.base.macaddr',
@@ -28,6 +30,7 @@ DEVICE_FIELDS = [
     'kismet.device.base.signal/kismet.common.signal.last_signal',
     'kismet.device.base.channel',
     'kismet.device.base.manuf',
+    'kismet.device.base.crypt',
     'dot11.device/dot11.device.last_beaconed_ssid_record/dot11.advertisedssid.ssid',
     'dot11.device/dot11.device.probed_ssid_map',
 ]
@@ -68,6 +71,18 @@ def ensure_datasource():
     time.sleep(5)  # give the capture helper a moment to spin up
 
 
+def _load_pihole_by_ip():
+    if not PIHOLE_JSON.exists():
+        return {}
+    try:
+        pd = json.loads(PIHOLE_JSON.read_text())
+    except Exception:
+        return {}
+    if time.time() - pd.get('ts', 0) > PIHOLE_MAX_AGE_SEC:
+        return {}
+    return {c['ip']: c['name'] for c in pd.get('clients_detail', []) if c.get('name')}
+
+
 def fetch_and_write():
     now = int(time.time())
 
@@ -99,6 +114,7 @@ def fetch_and_write():
             'signal':     d.get('kismet.common.signal.last_signal', 0),
             'channel':    d.get('kismet.device.base.channel', ''),
             'manuf':      d.get('kismet.device.base.manuf', ''),
+            'crypt':      d.get('kismet.device.base.crypt', '') if 'AP' in dev_type else '',
             'first_time': d.get('kismet.device.base.first_time', 0),
             'last_time':  d.get('kismet.device.base.last_time', 0),
         })
@@ -123,17 +139,29 @@ def fetch_and_write():
         })
     alerts.sort(key=lambda a: -a['ts'])
 
-    # Cross-reference: flag MACs not seen in UniFi
-    known_macs = set()
+    # Cross-reference against UniFi: flag unknown MACs, resolve known ones to hostnames.
+    # UniFi bridges MAC->IP, which lets us also pull in Pi-hole's IP->hostname (usually
+    # a real DHCP/DNS name, better than UniFi's vendor-guessed display_name).
+    unifi_by_mac = {}
     if UNIFI_DEVICES.exists():
         try:
             ud = json.loads(UNIFI_DEVICES.read_text())
-            known_macs = {d.get('mac', '').lower() for d in ud.get('devices', [])}
+            unifi_by_mac = {u.get('mac', '').lower(): u for u in ud.get('devices', [])}
         except Exception:
             pass
 
+    pihole_by_ip = _load_pihole_by_ip()
+
     for d in devices:
-        d['known'] = d['mac'].lower() in known_macs
+        u = unifi_by_mac.get(d['mac'].lower())
+        d['known'] = u is not None
+        hostname = ''
+        if u:
+            real_hostname = u.get('hostname') or ''
+            pihole_name   = pihole_by_ip.get(u.get('ip', ''), '')
+            display_name  = u.get('display_name') or ''
+            hostname = real_hostname or pihole_name or display_name
+        d['hostname'] = hostname
 
     unknown = [d for d in devices if not d['known'] and 'Client' in d['type']]
 

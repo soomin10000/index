@@ -4,6 +4,7 @@ __pycache__/
 pihole.json
 kismet.json
 kismet_poller.log*
+pihole_poller.log*
 unifi_poller/devices.json
 unifi_poller/topology.json
 unifi_poller/topology.png

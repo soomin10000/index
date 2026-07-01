@@ -53,6 +53,11 @@
     .sig-ok    { color: #facc15; }
     .sig-weak  { color: #f87171; }
 
+    .crypt { font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 4px; white-space: nowrap; }
+    .crypt-good { background: rgba(74,222,128,0.12); color: #4ade80; }
+    .crypt-ok   { background: rgba(250,204,21,0.12); color: #facc15; }
+    .crypt-bad  { background: rgba(248,113,113,0.15); color: #f87171; }
+
     .filter-row { display: flex; gap: 0.6rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
     .filter-btn { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #555; font-size: 0.68rem; cursor: pointer; transition: all 0.2s; }
     .filter-btn.active { border-color: var(--a); color: var(--a); }
@@ -89,8 +94,8 @@
     <table>
       <thead>
         <tr>
-          <th>Type</th><th>MAC</th><th>SSID / Name</th><th>Vendor</th>
-          <th>Signal</th><th>Ch</th><th>Last seen</th><th>Probing for</th>
+          <th>Type</th><th>Host</th><th>MAC</th><th>SSID / Name</th><th>Vendor</th>
+          <th>Security</th><th>Signal</th><th>Ch</th><th>Last seen</th><th>Probing for</th>
         </tr>
       </thead>
       <tbody id="devices"></tbody>
@@ -109,6 +114,13 @@
     return 'sig-weak';
   }
 
+  function cryptClass(c) {
+    if (!c) return '';
+    if (/WEP|Open/i.test(c) && !/WPA/i.test(c)) return 'crypt-bad';
+    if (/WPA3/i.test(c)) return 'crypt-good';
+    return 'crypt-ok';
+  }
+
   function relTime(ts) {
     if (!ts) return '—';
     const diff = Math.floor(Date.now()/1000) - ts;
@@ -125,7 +137,7 @@
       if (activeFilter === 'AP' && !d.type.includes('AP')) return false;
       if (activeFilter === 'Client' && !d.type.includes('Client')) return false;
       if (activeFilter === 'unknown' && d.known) return false;
-      if (q && ![d.mac, d.ssid, d.name, d.manuf, ...(d.probes||[])].join(' ').toLowerCase().includes(q)) return false;
+      if (q && ![d.mac, d.ssid, d.name, d.manuf, d.hostname, ...(d.probes||[])].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
 
@@ -137,11 +149,15 @@
       const ssid = d.ssid || (isAP ? '<span style="color:#333">hidden</span>' : '—');
       const sig = d.signal ? `<span class="sig ${sigClass(d.signal)}">${d.signal} dBm</span>` : '—';
       const probes = (d.probes||[]).slice(0,3).join(', ') || '—';
+      const host = d.hostname ? `<span style="color:#ddd">${d.hostname}</span>` : '<span style="color:#333">—</span>';
+      const crypt = d.crypt ? `<span class="crypt ${cryptClass(d.crypt)}">${d.crypt.split(' ')[0]}</span>` : '<span style="color:#333">—</span>';
       return `<tr>
         <td><span class="badge ${badge}">${label}</span>${unknownBadge}</td>
+        <td>${host}</td>
         <td style="font-family:monospace;color:#666">${d.mac}</td>
         <td>${ssid}</td>
         <td style="color:#555">${d.manuf||'—'}</td>
+        <td>${crypt}</td>
         <td>${sig}</td>
         <td style="color:#555">${d.channel||'—'}</td>
         <td style="color:#444">${relTime(d.last_time)}</td>
