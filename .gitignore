@@ -18,3 +18,30 @@ clients.png
 dump_*.py
 plot_*.py
 end_result.txt
+
+# Local wireless lab — captures (crackable handshakes/PMKID), wordlists,
+# vendored tools, and recon notes. Never publish to the public repo.
+wireless-lab/
+
+# Python virtualenvs (never commit — includes bundled binaries like Playwright)
+.venv/
+venv/
+
+# hcpy — vendored third-party Home Connect tool with its own .git
+hcpy/
+
+# Sibling project repos — each has its own git remote, not part of this repo
+How_hot_is_harold/
+bad_parents/
+bbc_spoofer/
+next_train/
+now_playing/
+weather/
+whats_darren_doing/
+
+# steve monitor runtime outputs + stray artifacts
+steve.json
+steve_state.json
+steve_poller.log
+snapshot.json
+bbc_news.png

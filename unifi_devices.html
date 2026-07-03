@@ -300,8 +300,19 @@
 </div>
 
 <script>
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
 let allDevices = [], globalMaxDns = 1;
+let renderedDevices = [];
 let activeFilter = 'all';
+
+document.getElementById('tbody').addEventListener('click', (ev) => {
+  const tr = ev.target.closest('tr[data-idx]');
+  if (!tr) return;
+  const d = renderedDevices[Number(tr.dataset.idx)];
+  if (d) openDetail(d);
+});
 
 function sigClass(v) {
   if (v == null) return '';
@@ -356,8 +367,9 @@ function applyFilters() {
     return 0;
   });
 
+  renderedDevices = devs;
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = devs.map(d => {
+  tbody.innerHTML = devs.map((d, i) => {
     const linkBadge = d.flagged
       ? `<span class="link-badge link-flagged">⚠ FLAGGED</span>`
       : d.is_wired
@@ -367,8 +379,8 @@ function applyFilters() {
     const sigV  = d.signal   != null ? d.signal.toFixed(0) + ' dBm' : '—';
     const retV  = d.retry_pct != null ? d.retry_pct.toFixed(1) + '%' : '—';
     const ssidAp = d.is_wired
-      ? `<span class="td-ap">${d.ap || '—'}</span>`
-      : `<span class="td-ssid">${d.ssid || '—'}</span><br><span class="td-ap">${d.ap || '—'}</span>`;
+      ? `<span class="td-ap">${esc(d.ap) || '—'}</span>`
+      : `<span class="td-ssid">${esc(d.ssid) || '—'}</span><br><span class="td-ap">${esc(d.ap) || '—'}</span>`;
 
     const hnClass = d.flagged ? 'flagged' : d.guessed ? 'guessed' : '';
     let bubble = '';
@@ -395,10 +407,10 @@ function applyFilters() {
       ? `<span style="color:${pctColor};font-weight:bold">${d.dns_pct}%</span>`
       : `<span style="color:#1a3a50">—</span>`;
 
-    return `<tr class="${d.flagged ? 'flagged' : ''}" onclick='openDetail(${JSON.stringify(d)})'>
-      <td><span class="hn-wrap"><span class="td-hostname ${hnClass}">${d.flagged ? '⚠ ' : ''}${d.display_name || d.hostname || '—'}</span>${bubble}</span></td>
-      <td><span class="td-ip">${d.ip || '—'}</span></td>
-      <td><span class="td-vendor">${d.vendor || '—'}</span></td>
+    return `<tr class="${d.flagged ? 'flagged' : ''}" data-idx="${i}">
+      <td><span class="hn-wrap"><span class="td-hostname ${hnClass}">${d.flagged ? '⚠ ' : ''}${esc(d.display_name || d.hostname || '—')}</span>${bubble}</span></td>
+      <td><span class="td-ip">${esc(d.ip) || '—'}</span></td>
+      <td><span class="td-vendor">${esc(d.vendor) || '—'}</span></td>
       <td>${ssidAp}</td>
       <td>${linkBadge}</td>
       <td><span class="signal-val ${sigClass(d.signal)}">${sigV}</span></td>
@@ -511,7 +523,7 @@ async function openDetail(d) {
     ['DNS BLOCKED', d.dns_blocked != null ? `${d.dns_blocked.toLocaleString()} (${d.dns_pct}%)` : '—'],
   ];
   document.getElementById('detail-meta').innerHTML = meta.map(([k,v]) =>
-    `<div class="dmeta-row"><span class="dmeta-key">${k}</span><span class="dmeta-val">${v}</span></div>`
+    `<div class="dmeta-row"><span class="dmeta-key">${k}</span><span class="dmeta-val">${esc(v)}</span></div>`
   ).join('');
 
   // Pi-hole inline summary
@@ -588,7 +600,7 @@ async function openDetail(d) {
         const dt = new Date(e.ts * 1000).toLocaleDateString('en-GB', {day:'numeric', month:'short'});
         return `<div class="dev-event type-${e.type}">
           <span class="dev-event-time">${t}<br><span style="font-size:0.55rem;color:#2a6080">${dt}</span></span>
-          <div><div class="dev-event-title">${e.title}</div><div style="color:#4a8aaa;font-size:0.65rem">${e.message}</div></div>
+          <div><div class="dev-event-title">${esc(e.title)}</div><div style="color:#4a8aaa;font-size:0.65rem">${esc(e.message)}</div></div>
         </div>`;
       }).join('');
     }

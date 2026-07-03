@@ -123,6 +123,9 @@
 </div>
 
 <script>
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
 let allEvents = [];
 let activeFilter = 'all';
 
@@ -166,8 +169,8 @@ function render() {
       <div class="event-time">${timeStr}<span class="date">${dateStr}</span></div>
       <div class="event-dot"></div>
       <div class="event-body">
-        <div class="event-title">${e.title}</div>
-        <div class="event-msg">${e.message}</div>
+        <div class="event-title">${esc(e.title)}</div>
+        <div class="event-msg">${esc(e.message)}</div>
       </div>
     </div>`;
   }).join('');

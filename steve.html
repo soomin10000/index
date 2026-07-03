@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>steve</title>
+<script src="/chart.min.js"></script>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --chart-mem: #6f9bd9;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--copper); outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ── Topbar ── */
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  /* ── Frame / layout ── */
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  /* ── Hero: hostname plate + gauges ── */
+  .hero {
+    display: grid; grid-template-columns: minmax(200px, 280px) 1fr;
+    gap: 1.6rem; align-items: stretch;
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.6rem 1.8rem;
+  }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } }
+
+  .hero-id { display: flex; flex-direction: column; justify-content: center; }
+  .hero-id .eyebrow { margin-bottom: 0.5rem; }
+  .hero-id h1 {
+    font-size: 3rem; font-weight: 700; letter-spacing: 0.01em;
+    line-height: 1; margin-bottom: 0.6rem;
+    border-bottom: 2px solid var(--copper); padding-bottom: 0.5rem; width: fit-content;
+  }
+  .uname { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); letter-spacing: 0.02em; }
+
+  .gauges { display: flex; gap: 1.4rem; align-items: center; justify-content: space-evenly; flex-wrap: wrap; }
+  .gauge { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .gauge-dial { position: relative; width: 120px; height: 68px; }
+  .gauge-dial svg { width: 100%; height: 100%; overflow: visible; }
+  .gauge-track { fill: none; stroke: var(--inset); stroke-width: 10; stroke-linecap: round; }
+  .gauge-fill  { fill: none; stroke-width: 10; stroke-linecap: round;
+    stroke-dasharray: 157.08 157.08; transition: stroke-dashoffset 0.9s cubic-bezier(.2,.8,.2,1), stroke 0.4s; }
+  .gauge-fill.ok   { stroke: var(--ok); }
+  .gauge-fill.warn { stroke: var(--warn); }
+  .gauge-fill.down { stroke: var(--down); }
+  .gauge-tick { fill: var(--bezel-lit); }
+  .gauge-readout {
+    position: absolute; left: 0; right: 0; bottom: 2px; text-align: center;
+    font-family: var(--font-mono); font-size: 1.15rem; font-weight: 600; color: var(--ink);
+  }
+  .gauge-cap { font-size: 0.62rem; letter-spacing: 0.16em; color: var(--ink-dim); text-transform: uppercase; }
+  .gauge-sub { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); }
+
+  /* ── Trend chart ── */
+  .trend-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.4rem 1.6rem 1rem;
+  }
+  .trend-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; }
+  .legend { display: flex; gap: 1.1rem; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); margin-bottom: 0.4rem; }
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend i { width: 9px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* ── Service panel (switches) ── */
+  .switches {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 0.7rem;
+  }
+  .switch {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 5px;
+    padding: 0.85rem 0.9rem 0.75rem; text-align: left; cursor: pointer;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    transition: border-color 0.2s, transform 0.12s, box-shadow 0.2s;
+  }
+  .switch:hover { border-color: var(--bezel-lit); transform: translateY(-1px); }
+  .switch:active { transform: translateY(0); }
+  .switch-top { display: flex; align-items: center; gap: 0.5rem; }
+  .switch-led { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint); flex-shrink: 0; }
+  .switch-led.on   { background: var(--ok);   box-shadow: 0 0 6px 1px color-mix(in srgb, var(--ok) 60%, transparent); }
+  .switch-led.warn { background: var(--warn); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--warn) 60%, transparent); }
+  .switch-led.down { background: var(--down); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--down) 70%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  .switch-label { font-size: 0.76rem; font-weight: 600; letter-spacing: 0.01em; word-break: break-word; }
+  .switch-status { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.05em; color: var(--ink-dim); }
+  .switch-status.ok   { color: var(--ok); }
+  .switch-status.warn { color: var(--warn); }
+  .switch-status.down { color: var(--down); }
+  .switch.busy { opacity: 0.55; pointer-events: none; }
+
+  .advisory {
+    margin-top: 0.9rem; font-family: var(--font-mono); font-size: 0.68rem; color: var(--down);
+  }
+
+  /* ── Process manifests ── */
+  .manifests { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+  @media (max-width: 700px) { .manifests { grid-template-columns: 1fr; } }
+  .manifest-card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1.2rem 1.4rem; }
+  .rows { font-family: var(--font-mono); font-size: 0.72rem; }
+  .rows .row {
+    display: grid; grid-template-columns: 3.2rem 1fr 3rem 3rem; gap: 0.6rem;
+    padding: 0.4rem 0; border-bottom: 1px solid var(--inset); color: var(--ink-dim);
+  }
+  .rows .row:last-child { border-bottom: none; }
+  .rows .row span:first-child { color: var(--ink-faint); }
+  .rows .row .proc-name { color: var(--ink); }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">STEVE</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <section class="hero">
+    <div class="hero-id">
+      <div class="eyebrow">HOST</div>
+      <h1 id="hostname">steve</h1>
+      <div class="uname" id="uname">—</div>
+    </div>
+    <div class="gauges" id="gauges"></div>
+  </section>
+
+  <section class="trend-card">
+    <div class="trend-head">
+      <div class="eyebrow" style="margin-bottom:0">TREND · LAST 48H</div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <canvas id="ch-history" height="70"></canvas>
+  </section>
+
+  <section>
+    <div class="eyebrow">SERVICE PANEL — click to restart</div>
+    <div class="switches" id="switches"></div>
+    <div class="advisory" id="other-failed"></div>
+  </section>
+
+  <section class="manifests">
+    <div class="manifest-card">
+      <div class="eyebrow">TOP CPU</div>
+      <div class="rows" id="top-cpu"></div>
+    </div>
+    <div class="manifest-card">
+      <div class="eyebrow">TOP MEMORY</div>
+      <div class="rows" id="top-mem"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ARC_LEN = 157.08; // half-circumference for r=50
+
+  function gaugeSVG() {
+    return `
+      <div class="gauge-dial">
+        <svg viewBox="0 0 120 70">
+          <path class="gauge-track" d="M 10 60 A 50 50 0 0 1 110 60" />
+          <path class="gauge-fill"  d="M 10 60 A 50 50 0 0 1 110 60" style="stroke-dashoffset:${ARC_LEN}" />
+          <circle class="gauge-tick" cx="10"    cy="60"    r="1.6" />
+          <circle class="gauge-tick" cx="24.6"  cy="24.6"  r="1.6" />
+          <circle class="gauge-tick" cx="60"    cy="10"    r="1.6" />
+          <circle class="gauge-tick" cx="95.4"  cy="24.6"  r="1.6" />
+          <circle class="gauge-tick" cx="110"   cy="60"    r="1.6" />
+        </svg>
+        <div class="gauge-readout"></div>
+      </div>
+      <div class="gauge-cap"></div>
+      <div class="gauge-sub"></div>
+    `;
+  }
+
+  function ensureGauges() {
+    const box = document.getElementById('gauges');
+    if (box.children.length) return;
+    ['load', 'mem', 'disk'].forEach(id => {
+      const g = document.createElement('div');
+      g.className = 'gauge'; g.id = 'gauge-' + id;
+      g.innerHTML = gaugeSVG();
+      box.appendChild(g);
+    });
+  }
+
+  function setGauge(id, pct, cls, readout, cap, sub) {
+    const g = document.getElementById('gauge-' + id);
+    const fill = g.querySelector('.gauge-fill');
+    fill.classList.remove('ok', 'warn', 'down');
+    fill.classList.add(cls);
+    const clamped = Math.max(0, Math.min(100, pct));
+    fill.style.strokeDashoffset = ARC_LEN * (1 - clamped / 100);
+    g.querySelector('.gauge-readout').textContent = readout;
+    g.querySelector('.gauge-cap').textContent = cap;
+    g.querySelector('.gauge-sub').textContent = sub;
+  }
+
+  function fmtUptime(s) {
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  // ── History chart ── (colors resolved from :root so there's one source of truth)
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = name => rootStyle.getPropertyValue(name).trim();
+  const CHART_GRID = 'rgba(234,231,223,0.08)';
+  const CHART_LABEL = cssVar('--ink-dim');
+  const C_LOAD = cssVar('--warn');
+  const C_MEM  = cssVar('--chart-mem');
+  const C_DISK = cssVar('--ok');
+
+  Chart.defaults.color = CHART_LABEL;
+  Chart.defaults.borderColor = CHART_GRID;
+  Chart.defaults.font.family = "ui-monospace, 'DejaVu Sans Mono', monospace";
+  Chart.defaults.font.size = 10;
+
+  const baseOpts = {
+    responsive: true,
+    animation: { duration: 350 },
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: '#141516', borderColor: cssVar('--bezel'), borderWidth: 1,
+        titleColor: cssVar('--ink'), bodyColor: cssVar('--ink-dim'), padding: 9 } },
+    scales: {
+      x: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL, maxTicksLimit: 10 } },
+      y: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL }, beginAtZero: true },
+    },
+  };
+
+  let historyChart = null;
+  function renderHistory(points, cpus) {
+    const labels = points.map(p => {
+      const dt = new Date(p.ts * 1000);
+      return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0');
+    });
+    const data = {
+      labels,
+      datasets: [
+        { label: 'load', data: points.map(p => Math.round(p.load1 / cpus * 100)), borderColor: C_LOAD, backgroundColor: C_LOAD + '10', borderWidth: 1.3, fill: false, tension: 0.25, pointRadius: 0 },
+        { label: 'mem',  data: points.map(p => p.mem_pct),  borderColor: C_MEM,  backgroundColor: C_MEM + '12', borderWidth: 1.3, fill: true,  tension: 0.25, pointRadius: 0 },
+        { label: 'disk', data: points.map(p => p.disk_pct), borderColor: C_DISK, backgroundColor: C_DISK + '0a', borderWidth: 1.3, fill: true,  tension: 0.25, pointRadius: 0 },
+      ],
+    };
+    if (historyChart) { historyChart.data = data; historyChart.update(); return; }
+    historyChart = new Chart(document.getElementById('ch-history'), { type: 'line', data, options: baseOpts });
+    document.getElementById('legend').innerHTML = `
+      <span><i style="background:${C_LOAD}"></i>load / cpu</span>
+      <span><i style="background:${C_MEM}"></i>mem</span>
+      <span><i style="background:${C_DISK}"></i>disk</span>
+    `;
+  }
+
+  async function loadHistory(cpus) {
+    try {
+      const r = await fetch('/api/steve/history');
+      const d = await r.json();
+      renderHistory(d.points || [], cpus || 1);
+    } catch {}
+  }
+
+  // ── Service switches (restart behind a browser confirm dialog) ──
+  function switchTile(s) {
+    const isDown = s.active !== 'active';
+    const isWarn = !isDown && s.restarts > 0;
+    const ledCls = isDown ? 'down' : isWarn ? 'warn' : 'on';
+    const statusCls = isDown ? 'down' : isWarn ? 'warn' : 'ok';
+    const statusText = isDown ? (s.sub || s.active).toUpperCase() : (isWarn ? `OK · ${s.restarts} RESTARTS` : 'OK');
+    const btn = document.createElement('button');
+    btn.className = 'switch';
+    btn.dataset.service = s.name;
+    btn.innerHTML = `
+      <div class="switch-top"><span class="switch-led ${ledCls}"></span><span class="switch-label">${s.name}</span></div>
+      <span class="switch-status ${statusCls}">${statusText}</span>
+    `;
+    btn.addEventListener('click', () => handleSwitchClick(btn, s.name));
+    return btn;
+  }
+
+  async function handleSwitchClick(btn, name) {
+    if (!window.confirm(`Restart ${name}?`)) return;
+    btn.classList.add('busy');
+    const statusEl = btn.querySelector('.switch-status');
+    statusEl.textContent = 'RESTARTING…';
+    try {
+      const r = await fetch('/api/steve/restart', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service: name }),
+      });
+      const d = await r.json();
+      statusEl.textContent = d.ok ? 'RESTARTED' : 'FAILED';
+    } catch {
+      statusEl.textContent = 'FAILED';
+    }
+    setTimeout(load, 1400);
+    setTimeout(() => btn.classList.remove('busy'), 2200);
+  }
+
+  function procRow(p) {
+    return `<div class="row"><span>${p.pid}</span><span class="proc-name">${p.name}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
+  }
+
+  async function load() {
+    ensureGauges();
+    try {
+      const r = await fetch('/api/steve');
+      const d = await r.json();
+      if (d.error) {
+        document.getElementById('status-text').textContent = 'ERROR';
+        document.getElementById('status-lamp').className = 'lamp down';
+        return;
+      }
+
+      const down = d.services.filter(s => s.active !== 'active');
+      const lamp = document.getElementById('status-lamp');
+      const statusText = document.getElementById('status-text');
+      lamp.className = 'lamp ' + (down.length ? 'down' : 'on');
+      statusText.textContent = down.length ? `${down.length} DOWN` : 'ALL SYSTEMS UP';
+
+      document.getElementById('hostname').textContent = d.hostname;
+      document.getElementById('uname').textContent =
+        `${d.load.cpus} cores · up ${fmtUptime(d.uptime_seconds)}`;
+
+      const loadPct = d.load['1m'] / d.load.cpus * 100;
+      const loadCls = loadPct > 100 ? 'down' : loadPct > 70 ? 'warn' : 'ok';
+      setGauge('load', loadPct, loadCls, d.load['1m'].toFixed(2), 'LOAD 1M', `${d.load['5m']} / ${d.load['15m']} · 5m/15m`);
+
+      const memCls = d.mem.percent > 90 ? 'down' : d.mem.percent > 75 ? 'warn' : 'ok';
+      setGauge('mem', d.mem.percent, memCls, d.mem.percent + '%', 'MEMORY', `${d.mem.used_mb.toLocaleString()} / ${d.mem.total_mb.toLocaleString()} MB`);
+
+      const diskCls = d.disk.percent > 90 ? 'down' : d.disk.percent > 75 ? 'warn' : 'ok';
+      setGauge('disk', d.disk.percent, diskCls, d.disk.percent + '%', 'DISK /', `${d.disk.used_gb} / ${d.disk.total_gb} GB`);
+
+      const switchBox = document.getElementById('switches');
+      switchBox.innerHTML = '';
+      d.services.forEach(s => switchBox.appendChild(switchTile(s)));
+
+      const otherFailed = document.getElementById('other-failed');
+      otherFailed.textContent = d.other_failed && d.other_failed.length
+        ? `Also failed (outside home stack): ${d.other_failed.join(', ')}` : '';
+
+      document.getElementById('top-cpu').innerHTML = (d.top_cpu || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
+      document.getElementById('top-mem').innerHTML = (d.top_mem || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
+
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+      loadHistory(d.load.cpus);
+    } catch (e) {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  load();
+  setInterval(load, 15000);
+</script>
+</body>
+</html>

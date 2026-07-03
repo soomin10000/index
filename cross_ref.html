@@ -191,6 +191,9 @@
 </div>
 
 <script>
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
 const GRID  = '#0a1e30';
 const LABEL = '#3a7090';
 const TEAL  = '#00e5cc';
@@ -306,14 +309,14 @@ function renderTable() {
     const retries = d.retry_pct != null
       ? `<span style="color:${d.retry_pct > 15 ? '#ff4444' : d.retry_pct > 8 ? '#f0a030' : '#3a7090'}">${d.retry_pct.toFixed(1)}%</span>`
       : `<span class="null-val">—</span>`;
-    const apCell = [d.ap, d.ssid].filter(Boolean).join(' · ') || '—';
+    const apCell = esc([d.ap, d.ssid].filter(Boolean).join(' · ') || '—');
     const nameHtml = d.guessed
-      ? `<div class="name-cell guessed">${d.display_name} <span style="color:#2a5570">?</span></div>`
-      : `<div class="name-cell hostname">${d.display_name || d.hostname || d.ip}</div>`;
+      ? `<div class="name-cell guessed">${esc(d.display_name)} <span style="color:#2a5570">?</span></div>`
+      : `<div class="name-cell hostname">${esc(d.display_name || d.hostname || d.ip)}</div>`;
     return `<tr class="${d.flagged ? 'flagged' : ''}">
       <td>
         ${nameHtml}
-        ${d.vendor ? `<div class="vendor">${d.vendor}</div>` : ''}
+        ${d.vendor ? `<div class="vendor">${esc(d.vendor)}</div>` : ''}
       </td>
       <td class="ap-cell">${apCell}</td>
       <td>${sigBadge}</td>

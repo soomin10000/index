@@ -32,8 +32,8 @@
     }
     .subnav-item:hover { color: #00ffcc; border-color: #006644; }
     .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
-    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
-    #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #5a8fb8; }
+    #status { font-size: 0.62rem; color: #5a8fb8; letter-spacing: 0.08em; }
 
     .page { max-width: 1300px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
 
@@ -45,19 +45,19 @@
       background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
       border-radius: 12px; padding: 0.9rem 1.1rem;
     }
-    .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 0.35rem; }
+    .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #5a8fb8; margin-bottom: 0.35rem; }
     .stat-val   { font-size: 1.9rem; font-weight: bold; letter-spacing: -1px; }
-    .stat-sub   { font-size: 0.62rem; color: #3a7090; margin-top: 0.25rem; }
+    .stat-sub   { font-size: 0.62rem; color: #5a8fb8; margin-top: 0.25rem; }
     .c-dl   { color: #4e9af1; }
     .c-ul   { color: #00cc88; }
     .c-ping { color: #cc88ff; }
-    .c-date { color: #3a7090; }
+    .c-date { color: #5a8fb8; }
 
     .chart-card {
       background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
       border-radius: 12px; padding: 1.1rem 1.2rem; margin-bottom: 1rem;
     }
-    .chart-title { font-size: 0.62rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 1rem; }
+    .chart-title { font-size: 0.62rem; letter-spacing: 0.14em; color: #5a8fb8; margin-bottom: 1rem; }
 
     #trigger-btn {
       background: rgba(4,14,30,0.9); border: 1px solid #0a4060;
@@ -68,7 +68,7 @@
     #trigger-btn:hover { background: #0a2a40; border-color: #00e5cc; }
     #trigger-btn:disabled { opacity: 0.4; cursor: default; }
 
-    #updated { font-size: 0.6rem; color: #2a5570; margin-top: 1rem; text-align: right; }
+    #updated { font-size: 0.6rem; color: #5583a3; margin-top: 1rem; text-align: right; }
   </style>
 </head>
 <body>
@@ -104,7 +104,7 @@
 
 <script>
 const GRID   = '#0a1e30';
-const LABEL  = '#3a7090';
+const LABEL  = '#5a8fb8';
 const BLUE   = '#4e9af1';
 const GREEN  = '#00cc88';
 const PURPLE = '#cc88ff';
@@ -148,8 +148,8 @@ async function load() {
   const latest = results[results.length - 1];
   const avgDl  = Math.round(dl.reduce((a, v) => a + v, 0) / dl.length);
   const avgUl  = Math.round(ul.reduce((a, v) => a + v, 0) / ul.length);
-  const minDl  = Math.min(...dl);
-  const maxDl  = Math.max(...dl);
+  const minDl  = Math.round(Math.min(...dl));
+  const maxDl  = Math.round(Math.max(...dl));
   const avgPing = (ping.reduce((a, v) => a + v, 0) / ping.length).toFixed(1);
   const latestDate = new Date(latest.ts * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' });
 
@@ -251,7 +251,9 @@ async function triggerTest() {
   btn.disabled = true;
   btn.textContent = 'RUNNING...';
   try {
-    const r = await fetch('/api/speedtest/trigger', { method: 'POST' });
+    const r = await fetch('/api/speedtest/trigger', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
     const d = await r.json();
     if (d.ok) {
       btn.textContent = 'TRIGGERED ✓';

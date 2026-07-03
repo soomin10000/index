@@ -1,9 +1,12 @@
 """
-Dashboard — reads from unifi_poller.db and plots flag history.
+Dashboard — reads from unifi_poller.db and plots network history.
 
 Called by poller: dashboard.render()
 Run standalone:   python3 dashboard.py
 Saves to: dashboard.png
+
+Styled to match the "Signal Room" web console (/unifi): ink-slate surface,
+phosphor-cyan hero trace, reserved status colours, clean thin marks (no glow).
 """
 
 import sqlite3
@@ -16,44 +19,55 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import matplotlib.ticker as mticker
-import matplotlib.patheffects as pe
 import numpy as np
 
-# ── Theme ─────────────────────────────────────────────────────────────────────
+# ── Theme (matches unifi.html console) ─────────────────────────────────────────
 
-BG      = "#020a18"
-PANEL   = "#040e22"
-GRID    = "#0a1e30"
-SPINE   = "#0d2640"
-LABEL   = "#2a6080"
-TITLE   = "#3a90c0"
-FONT    = "DejaVu Sans Mono"
+BG     = "#0a0e13"   # page surface
+PANEL  = "#111820"   # axes surface
+GRID   = "#1b2531"   # hairline grid
+SPINE  = "#26333f"   # baseline
+TICK   = "#8a97a4"   # tick labels
+MUTE   = "#586773"   # axis labels / captions
+INK    = "#e6edf3"   # titles
+ACCENT = "#35d0d6"   # hero trace (matches web download sparkline)
+FONT   = "DejaVu Sans Mono"
 
+# status palette — reserved, only for thresholds / zones (never a series)
+GOOD, WARN, CRIT = "#3fb950", "#d6a419", "#f85149"
+
+# categorical series order — the skill's CVD-validated dark ordering
 PALETTE = [
-    "#00e5cc", "#4e9af1", "#f0a030", "#c97bd1",
-    "#6dbf67", "#e05c5c", "#4ecdc4", "#f7dc6f",
+    "#3987e5",  # blue
+    "#199e70",  # aqua
+    "#c98500",  # yellow
+    "#9085e9",  # violet
+    "#d55181",  # magenta
+    "#d95926",  # orange
+    "#57b6c9",  # slate-cyan
+    "#8aa0b0",  # grey-blue
 ]
 
 plt.rcParams.update({
     "figure.facecolor":      BG,
     "axes.facecolor":        PANEL,
     "axes.edgecolor":        SPINE,
-    "axes.labelcolor":       LABEL,
-    "axes.titlecolor":       TITLE,
-    "xtick.color":           LABEL,
-    "ytick.color":           LABEL,
-    "text.color":            LABEL,
+    "axes.labelcolor":       MUTE,
+    "axes.titlecolor":       INK,
+    "xtick.color":           TICK,
+    "ytick.color":           TICK,
+    "text.color":            MUTE,
     "grid.color":            GRID,
-    "grid.linewidth":        0.7,
+    "grid.linewidth":        0.8,
     "grid.linestyle":        "-",
     "legend.framealpha":     0,
-    "legend.labelcolor":     LABEL,
+    "legend.labelcolor":     TICK,
     "font.family":           FONT,
-    "font.size":             8,
-    "axes.titlesize":        9,
-    "axes.labelsize":        8,
-    "xtick.labelsize":       7,
-    "ytick.labelsize":       7,
+    "font.size":             11,
+    "axes.titlesize":        12.5,
+    "axes.labelsize":        10,
+    "xtick.labelsize":       9.5,
+    "ytick.labelsize":       9.5,
     "lines.solid_capstyle":  "round",
     "lines.solid_joinstyle": "round",
 })
@@ -61,54 +75,57 @@ plt.rcParams.update({
 _DB  = Path.home() / "unifi_poller.db"
 _OUT = Path(__file__).parent / "dashboard.png"
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Marks (clean, no glow) ─────────────────────────────────────────────────────
 
-def _glowline(ax, x, y, color, lw=2):
-    ax.plot(x, y, color=color, linewidth=lw * 5,   alpha=0.08, zorder=2, solid_capstyle="round")
-    ax.plot(x, y, color=color, linewidth=lw * 2.5, alpha=0.18, zorder=3, solid_capstyle="round")
-    ax.plot(x, y, color=color, linewidth=lw,        alpha=0.95, zorder=4, solid_capstyle="round")
+def _line(ax, x, y, color, lw=1.8, fill=False):
+    # drop gaps so min()/plotting never chokes on a NULL logged sample
+    pts = [(xi, yi) for xi, yi in zip(x, y) if yi is not None]
+    if not pts:
+        return
+    x = [p[0] for p in pts]
+    y = [p[1] for p in pts]
+    if fill:
+        ax.fill_between(x, y, _floor(ax, y), color=color, alpha=0.09, zorder=1,
+                        linewidth=0)
+    ax.plot(x, y, color=color, linewidth=lw, alpha=0.95, zorder=4)
+    # single end marker to anchor the latest reading
+    ax.scatter([x[-1]], [y[-1]], color=color, s=22, zorder=5, linewidths=0)
 
-def _glowdots(ax, x, y, color):
-    ax.scatter(x, y, color=color, s=30, zorder=6, linewidths=0)
-    ax.scatter(x, y, color=color, s=80, alpha=0.12, zorder=5, linewidths=0)
+def _floor(ax, y):
+    lo = min(y)
+    hi = max(y)
+    return lo - (hi - lo) * 0.08 - 1e-9
 
-def _shade(ax, x, y, color, invert=False):
-    baseline = max(y) * 1.05 if invert else min(0, min(y) * 1.05)
-    ax.fill_between(x, y, baseline, color=color, alpha=0.07, zorder=1)
-
-def _threshold_line(ax, value, label, invert=False):
-    ax.axhline(value, color="#ff3333", linewidth=0.8, linestyle="--", alpha=0.55, zorder=1)
-    va = "top" if invert else "bottom"
-    ax.text(0.01, value, f"  {label}", transform=ax.get_yaxis_transform(),
-            color="#ff5555", fontsize=6.5, va=va, alpha=0.8)
+def _threshold(ax, value, label, invert=False):
+    ax.axhline(value, color=CRIT, linewidth=1.0, linestyle=(0, (5, 4)), alpha=0.6, zorder=2)
+    ax.text(0.006, value, f" {label}", transform=ax.get_yaxis_transform(),
+            color=CRIT, fontsize=8.5, va="top" if invert else "bottom", alpha=0.85)
 
 def _style_ax(ax, title, ylabel):
-    ax.set_title(f"  {title}", loc="left", pad=8, fontsize=9, fontweight="bold")
-    ax.set_ylabel(ylabel, labelpad=6)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color(SPINE)
+    ax.set_title(title, loc="left", pad=10, fontsize=12.5, fontweight="bold")
+    ax.set_ylabel(ylabel, labelpad=8)
+    for s in ("top", "right", "left"):
+        ax.spines[s].set_visible(False)
     ax.spines["bottom"].set_color(SPINE)
+    ax.tick_params(length=0)
+    ax.margins(x=0.01)
     ax.set_axisbelow(True)
-    ax.grid(True)
+    ax.grid(True, axis="y")
+    ax.grid(False, axis="x")
 
-def _fmt_legend(ax, names, colors):
-    handles = [
-        plt.Line2D([0], [0], color=c, linewidth=2, label=n,
-                   path_effects=[pe.Stroke(linewidth=4, foreground=c, alpha=0.2), pe.Normal()])
-        for n, c in zip(names, colors)
-    ]
-    leg = ax.legend(handles=handles, loc="upper right",
-                    handlelength=1.8, handletextpad=0.5,
-                    borderpad=0.6, labelspacing=0.4)
-    leg.get_frame().set_facecolor(PANEL)
-    leg.get_frame().set_edgecolor(SPINE)
+def _legend(ax, names, colors):
+    # placed in the gap ABOVE the axes so it never overlaps dense traces
+    handles = [plt.Line2D([0], [0], color=c, linewidth=2.4, label=n)
+               for n, c in zip(names, colors)]
+    ax.legend(handles=handles, loc="lower right", bbox_to_anchor=(1.0, 1.005),
+              ncol=min(len(names), 4), frameon=False,
+              handlelength=1.4, handletextpad=0.5, columnspacing=1.4,
+              labelspacing=0.3, fontsize=9)
 
 
-# ── Main render ───────────────────────────────────────────────────────────────
+# ── Main render ─────────────────────────────────────────────────────────────────
 
 def render():
-    """Render dashboard PNG from the SQLite log."""
     conn = sqlite3.connect(_DB)
     weak_rows  = conn.execute(
         "SELECT ts, hostname, signal, retry_pct FROM weak_client_log ORDER BY ts"
@@ -146,128 +163,92 @@ def render():
     if radios:
         panels += ["congestion"]
     if speed_rows:
-        panels += ["speedtest"]
-
+        panels += ["throughput", "latency"]
     if not panels:
         return
 
     fig, axes = plt.subplots(
         len(panels), 1,
-        figsize=(15, 4.2 * len(panels)),
-        gridspec_kw={"hspace": 0.6},
+        figsize=(12, 3.25 * len(panels)),
+        gridspec_kw={"hspace": 0.78},
     )
     if len(panels) == 1:
         axes = [axes]
 
-    xfmt = mdates.DateFormatter("%H:%M\n%d %b")
+    xfmt = mdates.DateFormatter("%d %b\n%H:%M")
+
+    TITLES = {
+        "signal": "SIGNAL STRENGTH", "retry": "TX RETRY RATE",
+        "congestion": "CHANNEL UTILISATION", "throughput": "WAN THROUGHPUT",
+        "latency": "WAN LATENCY",
+    }
+    YLABELS = {
+        "signal": "dBm", "retry": "%", "congestion": "%",
+        "throughput": "Mbps", "latency": "ms",
+    }
 
     for ax, panel in zip(axes, panels):
-        _style_ax(ax, {
-            "signal":     "SIGNAL STRENGTH",
-            "retry":      "TX RETRY RATE",
-            "congestion": "CHANNEL UTILISATION",
-            "speedtest":  "SPEED TEST",
-        }[panel], {
-            "signal":     "dBm",
-            "retry":      "%",
-            "congestion": "%",
-            "speedtest":  "Mbps / ms",
-        }[panel])
+        _style_ax(ax, TITLES[panel], YLABELS[panel])
         ax.xaxis.set_major_formatter(xfmt)
 
-        if panel == "signal":
+        if panel in ("signal", "retry"):
             names  = list(clients.keys())
             colors = PALETTE[:len(names)]
+            key = "signal" if panel == "signal" else "retry_pct"
             for name, color in zip(names, colors):
-                d = clients[name]
-                _glowline(ax, d["ts"], d["signal"], color)
-                _shade(ax, d["ts"], d["signal"], color, invert=True)
-                _glowdots(ax, d["ts"], d["signal"], color)
-            _threshold_line(ax, -70, "−70 dBm weak threshold", invert=True)
-            ax.invert_yaxis()
-            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d dBm"))
-            _fmt_legend(ax, names, colors)
-
-        elif panel == "retry":
-            names  = list(clients.keys())
-            colors = PALETTE[:len(names)]
-            for name, color in zip(names, colors):
-                d = clients[name]
-                _glowline(ax, d["ts"], d["retry_pct"], color)
-                _shade(ax, d["ts"], d["retry_pct"], color)
-                _glowdots(ax, d["ts"], d["retry_pct"], color)
-            _threshold_line(ax, 10, "10% retry threshold")
-            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.1f%%"))
-            _fmt_legend(ax, names, colors)
+                _line(ax, clients[name]["ts"], clients[name][key], color)
+            if panel == "signal":
+                _threshold(ax, -70, "−70 dBm weak", invert=True)
+                ax.invert_yaxis()
+                ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+            else:
+                _threshold(ax, 10, "10% retry")
+                ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.0f"))
+            _legend(ax, names, colors)
 
         elif panel == "congestion":
             names  = list(radios.keys())
-            colors = [PALETTE[(i + 3) % len(PALETTE)] for i in range(len(names))]
-
-            ax.axhspan(0,   50, color="#00ff88", alpha=0.03, zorder=0)
-            ax.axhspan(50,  70, color="#ffaa00", alpha=0.05, zorder=0)
-            ax.axhspan(70, 100, color="#ff2222", alpha=0.07, zorder=0)
-            ax.axhline(50, color="#ffaa00", linewidth=0.4, alpha=0.3, zorder=1)
-            ax.axhline(70, color="#ff3333", linewidth=0.8, linestyle="--", alpha=0.55, zorder=1)
-            ax.text(0.01, 70, "  70% congestion threshold", transform=ax.get_yaxis_transform(),
-                    color="#ff5555", fontsize=6.5, va="bottom", alpha=0.8)
-            ax.text(0.01, 50, "  50%", transform=ax.get_yaxis_transform(),
-                    color="#cc8800", fontsize=6, va="bottom", alpha=0.5)
-
+            colors = PALETTE[:len(names)]
+            ax.axhspan(70, 100, color=CRIT, alpha=0.05, zorder=0)
+            ax.axhspan(50,  70, color=WARN, alpha=0.05, zorder=0)
             for name, color in zip(names, colors):
-                d = radios[name]
-                ts, vals = d["ts"], d["cu_total"]
-                ax.plot(ts, vals, color=color, linewidth=0.6, alpha=0.3, zorder=2)
-                arr = np.array(vals, dtype=float)
-                w   = min(7, len(arr))
+                vals = np.array(radios[name]["cu_total"], dtype=float)
+                w = min(7, len(vals))
                 if w > 1:
-                    kernel = np.ones(w) / w
-                    smooth = np.convolve(arr, kernel, mode="same")
-                    smooth[:w//2]  = arr[:w//2]
-                    smooth[-w//2:] = arr[-w//2:]
+                    smooth = np.convolve(vals, np.ones(w) / w, mode="same")
+                    smooth[:w // 2] = vals[:w // 2]
+                    smooth[-w // 2:] = vals[-w // 2:]
                 else:
-                    smooth = arr
-                _glowline(ax, ts, smooth, color, lw=2)
-                _shade(ax, ts, smooth, color)
-                _glowdots(ax, ts, smooth, color)
-
+                    smooth = vals
+                _line(ax, radios[name]["ts"], smooth, color)
+            _threshold(ax, 70, "70% congested")
             ax.set_ylim(0, 100)
             ax.yaxis.set_major_locator(mticker.MultipleLocator(25))
-            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d%%"))
-            _fmt_legend(ax, names, colors)
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+            _legend(ax, names, colors)
 
-        elif panel == "speedtest":
-            _glowline(ax, speed_ts, speed_dl, PALETTE[0], lw=2)
-            _shade(ax, speed_ts, speed_dl, PALETTE[0])
-            _glowdots(ax, speed_ts, speed_dl, PALETTE[0])
-            _glowline(ax, speed_ts, speed_ul, PALETTE[1], lw=2)
-            _shade(ax, speed_ts, speed_ul, PALETTE[1])
-            _glowdots(ax, speed_ts, speed_ul, PALETTE[1])
-
-            ax2 = ax.twinx()
-            ax2.set_facecolor(PANEL)
-            ax2.spines["top"].set_visible(False)
-            ax2.spines["right"].set_color(SPINE)
-            ax2.spines["left"].set_color(SPINE)
-            ax2.spines["bottom"].set_color(SPINE)
-            _glowline(ax2, speed_ts, speed_ping, PALETTE[2], lw=1.2)
-            _glowdots(ax2, speed_ts, speed_ping, PALETTE[2])
-            ax2.set_ylabel("ping ms", color=LABEL, fontsize=7, fontfamily=FONT, labelpad=6)
-            ax2.tick_params(colors=LABEL, labelsize=7)
-            for lbl in ax2.get_yticklabels():
-                lbl.set_color(PALETTE[2])
-                lbl.set_fontfamily(FONT)
-            ax2.yaxis.set_major_formatter(mticker.FormatStrFormatter("%dms"))
+        elif panel == "throughput":
+            _line(ax, speed_ts, speed_dl, ACCENT, fill=True)
+            _line(ax, speed_ts, speed_ul, PALETTE[0], fill=True)
             ax.set_ylim(bottom=0)
-            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d Mbps"))
-            _fmt_legend(ax, ["Download", "Upload", "Ping"], PALETTE[:3])
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+            _legend(ax, ["Download", "Upload"], [ACCENT, PALETTE[0]])
 
-    fig.text(0.012, 0.995, "UNIFI NETWORK MONITOR", ha="left", va="top",
-             fontsize=11, fontweight="bold", color=TITLE)
-    fig.text(0.012, 0.975, f"generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-             ha="left", va="top", fontsize=7, color=LABEL)
+        elif panel == "latency":
+            _line(ax, speed_ts, speed_ping, PALETTE[2], fill=True)
+            ax.set_ylim(bottom=0)
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
 
-    plt.savefig(_OUT, dpi=150, bbox_inches="tight", facecolor=BG)
+    # header
+    fig.text(0.012, 0.995, "●", ha="left", va="top",
+             fontsize=13, fontweight="bold", color=ACCENT)
+    fig.text(0.026, 0.995, " SIGNAL ROOM", ha="left", va="top",
+             fontsize=13, fontweight="bold", color=INK)
+    fig.text(0.012, 0.975,
+             f"network history · generated {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+             ha="left", va="top", fontsize=9, color=MUTE)
+
+    plt.savefig(_OUT, dpi=130, bbox_inches="tight", facecolor=BG)
     plt.close(fig)
 
 

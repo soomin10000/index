@@ -3,10 +3,11 @@
 import json
 import os
 import sqlite3
+import subprocess
 import time
 import urllib.request
 import urllib.error
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 BASE = os.path.dirname(__file__)
@@ -57,7 +58,40 @@ def _unifi_status():
 
 PIHOLE_JSON  = Path(__file__).parent / 'pihole.json'
 KISMET_JSON  = Path(__file__).parent / 'kismet.json'
+STEVE_JSON   = Path(__file__).parent / 'steve.json'
+STEVE_DB     = Path(__file__).parent / 'steve_history.db'
 DEVICES_JSON = UNIFI_DIR / 'devices.json'
+
+from steve_poller import SERVICES as STEVE_SERVICES
+
+
+def _steve_history():
+    if not STEVE_DB.exists():
+        return {'points': []}
+    try:
+        conn = sqlite3.connect(STEVE_DB)
+        rows = conn.execute(
+            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
+        ).fetchall()
+        conn.close()
+        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
+    except Exception as e:
+        return {'points': [], 'error': str(e)}
+
+
+def _restart_steve_service(name):
+    if name not in STEVE_SERVICES:
+        return {'ok': False, 'error': 'unknown service'}
+    try:
+        result = subprocess.run(
+            ['sudo', '-n', 'systemctl', 'restart', f'{name}.service'],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return {'ok': False, 'error': result.stderr.strip() or f'exit {result.returncode}'}
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
 
 
 def _kismet_data():
@@ -260,6 +294,12 @@ class Handler(BaseHTTPRequestHandler):
             self._file('pihole.html', 'text/html; charset=utf-8')
         elif path == '/api/pihole':
             self._abs_file(Path(__file__).parent / 'pihole.json', 'application/json')
+        elif path == '/steve':
+            self._file('steve.html', 'text/html; charset=utf-8')
+        elif path == '/api/steve':
+            self._abs_file(STEVE_JSON, 'application/json')
+        elif path == '/api/steve/history':
+            self._json(_steve_history())
         elif path == '/chart.min.js':
             self._file('chart.min.js', 'application/javascript')
         elif path == '/api/unifi/events':
@@ -278,8 +318,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split('?')[0]
+        # These endpoints change state (trigger a speedtest, restart a service). Requiring
+        # an application/json Content-Type means a cross-origin request needs a CORS
+        # preflight, which we don't answer — so a malicious page can't trigger them via a
+        # plain <form> (text/plain and form-urlencoded are CORS "simple" types that skip
+        # preflight and would otherwise reach this handler with no browser pushback).
+        if path in ('/api/speedtest/trigger', '/api/steve/restart'):
+            ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+            if ctype != 'application/json':
+                self.send_error(400, 'Content-Type must be application/json')
+                return
         if path == '/api/speedtest/trigger':
             self._json(_trigger_gateway_speedtest())
+        elif path == '/api/steve/restart':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length else b'{}'
+            try:
+                name = json.loads(body).get('service', '')
+            except Exception:
+                name = ''
+            self._json(_restart_steve_service(name))
         else:
             self.send_error(404)
 
@@ -334,6 +392,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    srv = HTTPServer(('0.0.0.0', PORT), Handler)
+    srv = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
     print(f'Home menu running on http://0.0.0.0:{PORT}')
     srv.serve_forever()
