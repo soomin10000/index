@@ -58,11 +58,14 @@
     .crypt-ok   { background: rgba(250,204,21,0.12); color: #facc15; }
     .crypt-bad  { background: rgba(248,113,113,0.15); color: #f87171; }
 
-    .filter-row { display: flex; gap: 0.6rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
+    .filter-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
     .filter-btn { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #555; font-size: 0.68rem; cursor: pointer; transition: all 0.2s; }
     .filter-btn.active { border-color: var(--a); color: var(--a); }
     input[type=search] { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #ccc; font-size: 0.68rem; outline: none; width: 200px; }
     input[type=search]::placeholder { color: #333; }
+    .stale-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.68rem; color: #555; margin-left: auto; cursor: pointer; user-select: none; }
+    .stale-toggle input { accent-color: var(--a); }
+    .row-count { font-size: 0.65rem; color: #333; margin-bottom: 0.5rem; }
   </style>
 </head>
 <body>
@@ -78,7 +81,10 @@
   <div class="stats" id="stats"></div>
 
   <div class="section" id="alerts-section" style="display:none">
-    <div class="section-title">🚨 Alerts</div>
+    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>🚨 Alerts</span>
+      <button id="ack-alerts" class="filter-btn" style="text-transform:none;letter-spacing:normal">Acknowledge all</button>
+    </div>
     <div id="alerts"></div>
   </div>
 
@@ -90,7 +96,9 @@
       <button class="filter-btn" data-filter="Client">Clients</button>
       <button class="filter-btn" data-filter="unknown">Unknown</button>
       <input type="search" id="search" placeholder="Search MAC, SSID, vendor…">
+      <label class="stale-toggle"><input type="checkbox" id="show-stale"> Show inactive (30m+)</label>
     </div>
+    <div class="row-count" id="row-count"></div>
     <table>
       <thead>
         <tr>
@@ -104,8 +112,14 @@
 
 </div>
 <script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  const STALE_SECONDS = 1800;
+
   let allDevices = [];
   let activeFilter = 'all';
+  let lastAlertTs = 0;
 
   function sigClass(s) {
     if (!s || s === 0) return '';
@@ -132,8 +146,11 @@
 
   function renderDevices() {
     const q = document.getElementById('search').value.toLowerCase();
+    const showStale = document.getElementById('show-stale').checked;
+    const now = Math.floor(Date.now()/1000);
     const tbody = document.getElementById('devices');
     const rows = allDevices.filter(d => {
+      if (!showStale && (!d.last_time || now - d.last_time > STALE_SECONDS)) return false;
       if (activeFilter === 'AP' && !d.type.includes('AP')) return false;
       if (activeFilter === 'Client' && !d.type.includes('Client')) return false;
       if (activeFilter === 'unknown' && d.known) return false;
@@ -141,22 +158,25 @@
       return true;
     });
 
+    document.getElementById('row-count').textContent =
+      `Showing ${rows.length} of ${allDevices.length} devices${showStale ? '' : ' (inactive 30m+ hidden)'}`;
+
     tbody.innerHTML = rows.map(d => {
       const isAP = d.type.includes('AP');
       const badge = isAP ? 'badge-ap' : d.type.includes('Client') ? 'badge-client' : 'badge-other';
       const label = isAP ? 'AP' : d.type.includes('Client') ? 'Client' : d.type;
       const unknownBadge = (!d.known && d.type.includes('Client')) ? ' <span class="badge badge-unknown">unknown</span>' : '';
-      const ssid = d.ssid || (isAP ? '<span style="color:#333">hidden</span>' : '—');
+      const ssid = d.ssid ? esc(d.ssid) : (isAP ? '<span style="color:#333">hidden</span>' : '—');
       const sig = d.signal ? `<span class="sig ${sigClass(d.signal)}">${d.signal} dBm</span>` : '—';
-      const probes = (d.probes||[]).slice(0,3).join(', ') || '—';
-      const host = d.hostname ? `<span style="color:#ddd">${d.hostname}</span>` : '<span style="color:#333">—</span>';
-      const crypt = d.crypt ? `<span class="crypt ${cryptClass(d.crypt)}">${d.crypt.split(' ')[0]}</span>` : '<span style="color:#333">—</span>';
+      const probes = (d.probes||[]).slice(0,3).map(esc).join(', ') || '—';
+      const host = d.hostname ? `<span style="color:#ddd">${esc(d.hostname)}</span>` : '<span style="color:#333">—</span>';
+      const crypt = d.crypt ? `<span class="crypt ${cryptClass(d.crypt)}">${esc(d.crypt.split(' ')[0])}</span>` : '<span style="color:#333">—</span>';
       return `<tr>
-        <td><span class="badge ${badge}">${label}</span>${unknownBadge}</td>
+        <td><span class="badge ${badge}">${esc(label)}</span>${unknownBadge}</td>
         <td>${host}</td>
-        <td style="font-family:monospace;color:#666">${d.mac}</td>
+        <td style="font-family:monospace;color:#666">${esc(d.mac)}</td>
         <td>${ssid}</td>
-        <td style="color:#555">${d.manuf||'—'}</td>
+        <td style="color:#555">${esc(d.manuf||'—')}</td>
         <td>${crypt}</td>
         <td>${sig}</td>
         <td style="color:#555">${d.channel||'—'}</td>
@@ -170,17 +190,21 @@
     const d = await fetch('/api/kismet').then(r => r.json());
     if (d.error) { document.getElementById('meta').textContent = d.error; return; }
 
-    allDevices = d.devices || [];
-    const aps     = allDevices.filter(x => x.type.includes('AP')).length;
-    const clients = allDevices.filter(x => x.type.includes('Client')).length;
-    const unknown = allDevices.filter(x => !x.known && x.type.includes('Client')).length;
-    const alerts  = d.alerts || [];
+    allDevices = (d.devices || []).slice().sort((a, b) => (b.last_time||0) - (a.last_time||0));
+    const active  = allDevices.filter(x => x.last_time && (d.ts - x.last_time) <= STALE_SECONDS);
+    const aps     = active.filter(x => x.type.includes('AP')).length;
+    const clients = active.filter(x => x.type.includes('Client')).length;
+    const unknown = active.filter(x => !x.known && x.type.includes('Client')).length;
+    const allAlerts = d.alerts || [];
+    const ackTs = Number(localStorage.getItem('kismet_alerts_ack_ts') || 0);
+    const alerts = allAlerts.filter(a => a.ts > ackTs);
+    lastAlertTs = allAlerts.reduce((m, a) => Math.max(m, a.ts), ackTs);
 
     document.getElementById('meta').textContent =
-      `Updated ${relTime(d.ts)} · Kismet up ${Math.floor((d.uptime_sec||0)/60)}m`;
+      `Updated ${relTime(d.ts)} · Kismet up ${Math.floor((d.uptime_sec||0)/60)}m · ${d.device_count} seen all-time`;
 
     document.getElementById('stats').innerHTML = [
-      [d.device_count, 'Total devices'],
+      [active.length, 'Active (30m)'],
       [aps, 'Access points'],
       [clients, 'Clients'],
       [unknown, 'Unknown clients'],
@@ -188,27 +212,44 @@
     ].map(([v,l]) => `<div class="stat"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
 
     if (alerts.length) {
+      const groups = new Map();
+      alerts.forEach(a => {
+        const normText = a.text.replace(/\(\d+ failures?\)/i, '').trim();
+        const key = `${a.header}|${a.class}|${normText}`;
+        const g = groups.get(key);
+        if (!g || a.ts > g.ts) groups.set(key, { ...a, count: (g?.count||0) + 1, ts: g ? Math.max(g.ts, a.ts) : a.ts });
+        else g.count++;
+      });
+      const grouped = [...groups.values()].sort((a,b) => b.ts - a.ts).slice(0, 8);
+
       document.getElementById('alerts-section').style.display = '';
-      document.getElementById('alerts').innerHTML = alerts.map(a => `
+      document.getElementById('alerts').innerHTML = grouped.map(a => `
         <div class="alert-item">
-          <div class="alert-header">${a.header} <span style="font-weight:400;color:#555">[${a.class}]</span></div>
-          <div class="alert-text">${a.text}</div>
-          <div class="alert-meta">${new Date(a.ts*1000).toLocaleString()} ${a.source_mac ? '· ' + a.source_mac : ''}</div>
+          <div class="alert-header">${esc(a.header)} <span style="font-weight:400;color:#555">[${esc(a.class)}]</span>${a.count > 1 ? ` <span style="font-weight:400;color:#888">×${a.count}</span>` : ''}</div>
+          <div class="alert-text">${esc(a.text)}</div>
+          <div class="alert-meta">${a.count > 1 ? 'last ' : ''}${new Date(a.ts*1000).toLocaleString()} ${a.source_mac ? '· ' + esc(a.source_mac) : ''}</div>
         </div>`).join('');
+    } else {
+      document.getElementById('alerts-section').style.display = 'none';
     }
 
     renderDevices();
   }
 
-  document.querySelectorAll('.filter-btn').forEach(btn => {
+  document.querySelectorAll('.filter-row .filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.filter-row .filter-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activeFilter = btn.dataset.filter;
       renderDevices();
     });
   });
   document.getElementById('search').addEventListener('input', renderDevices);
+  document.getElementById('show-stale').addEventListener('change', renderDevices);
+  document.getElementById('ack-alerts').addEventListener('click', () => {
+    localStorage.setItem('kismet_alerts_ack_ts', String(lastAlertTs));
+    load();
+  });
 
   load();
   setInterval(load, 30000);
