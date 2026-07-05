@@ -33,6 +33,11 @@ DEVICE_FIELDS = [
     'kismet.device.base.crypt',
     'dot11.device/dot11.device.last_beaconed_ssid_record/dot11.advertisedssid.ssid',
     'dot11.device/dot11.device.probed_ssid_map',
+    'dot11.device/dot11.device.last_bssid',
+    'kismet.device.base.packets.total',
+    'kismet.device.base.packets.data',
+    'kismet.device.base.signal/kismet.common.signal.min_signal',
+    'kismet.device.base.signal/kismet.common.signal.max_signal',
 ]
 
 
@@ -93,8 +98,12 @@ def fetch_and_write():
     device_count = status.get('kismet.system.devices.count', 0)
     start_sec    = status.get('kismet.system.timestamp.start_sec', now)
 
-    # All devices with field filter
-    raw = _post('/devices/views/all/devices.json', {'fields': DEVICE_FIELDS})
+    # Devices active in the last hour, not Kismet's entire lifetime device list — that
+    # view never expires anything, so it grows to tens of thousands of long-gone ghost
+    # devices (mostly randomized-MAC probe noise) within days, bloating kismet.json and
+    # the per-request /api/cross_ref anomaly scan. first_time/last_time on each device
+    # still reflect its full history, so the lurker/duration logic downstream is unaffected.
+    raw = _post('/devices/last-time/-3600/devices.json', {'fields': DEVICE_FIELDS})
 
     devices = []
     for d in raw:
@@ -106,17 +115,22 @@ def fetch_and_write():
         probe_list = list(probes.keys()) if isinstance(probes, dict) else []
 
         devices.append({
-            'mac':        mac,
-            'type':       dev_type,
-            'name':       name,
-            'ssid':       ssid,
-            'probes':     probe_list,
-            'signal':     d.get('kismet.common.signal.last_signal', 0),
-            'channel':    d.get('kismet.device.base.channel', ''),
-            'manuf':      d.get('kismet.device.base.manuf', ''),
-            'crypt':      d.get('kismet.device.base.crypt', '') if 'AP' in dev_type else '',
-            'first_time': d.get('kismet.device.base.first_time', 0),
-            'last_time':  d.get('kismet.device.base.last_time', 0),
+            'mac':         mac,
+            'type':        dev_type,
+            'name':        name,
+            'ssid':        ssid,
+            'probes':      probe_list,
+            'assoc_bssid': d.get('dot11.device.last_bssid', ''),
+            'signal':      d.get('kismet.common.signal.last_signal', 0),
+            'signal_min':  d.get('kismet.common.signal.min_signal', 0),
+            'signal_max':  d.get('kismet.common.signal.max_signal', 0),
+            'pkt_total':   d.get('kismet.device.base.packets.total', 0),
+            'pkt_data':    d.get('kismet.device.base.packets.data', 0),
+            'channel':     d.get('kismet.device.base.channel', ''),
+            'manuf':       d.get('kismet.device.base.manuf', ''),
+            'crypt':       d.get('kismet.device.base.crypt', '') if 'AP' in dev_type else '',
+            'first_time':  d.get('kismet.device.base.first_time', 0),
+            'last_time':   d.get('kismet.device.base.last_time', 0),
         })
 
     # Sort: APs first, then by signal descending

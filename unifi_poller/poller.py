@@ -7,6 +7,7 @@ Run with:
 """
 
 import argparse
+import functools
 import json
 import logging
 import logging.handlers
@@ -57,22 +58,26 @@ _POLLER_DIR = Path(__file__).parent
 
 # ── Vendor lookup & device type guessing ─────────────────────────────────────
 
-_vendor_cache = {}
 _mac_lookup = None
 
 def _vendor(mac):
     global _mac_lookup
-    if mac in _vendor_cache:
-        return _vendor_cache[mac]
+    if _mac_lookup is None:
+        from mac_vendor_lookup import MacLookup
+        _mac_lookup = MacLookup()
+    return _vendor_cached(mac)
+
+
+# Randomized-MAC clients (most phones, per-SSID) mean this cache would otherwise
+# grow forever — one-off entries that are never looked up again. Bound it with an
+# LRU so stale random MACs get evicted instead of accumulating for the process's
+# entire lifetime.
+@functools.lru_cache(maxsize=4096)
+def _vendor_cached(mac):
     try:
-        if _mac_lookup is None:
-            from mac_vendor_lookup import MacLookup
-            _mac_lookup = MacLookup()
-        v = _mac_lookup.lookup(mac)
+        return _mac_lookup.lookup(mac)
     except Exception:
-        v = ""
-    _vendor_cache[mac] = v
-    return v
+        return ""
 
 
 # Ordered list of (keywords, label) — first match wins
@@ -193,12 +198,15 @@ def write_devices_json(devices, stations, db=None):
                 guessed      = bool(guess or vendor)
 
             kd = known_devs.get(mac, {})
+            ipv6 = [a for a in sta.get("ipv6_addresses", []) or sta.get("last_ipv6", [])
+                    if not a.startswith("fe80:")]  # drop link-local, keep routable/privacy addresses
             out.append({
                 "mac":          mac,
                 "hostname":     hostname,
                 "display_name": display_name,
                 "guessed":      guessed,
                 "ip":           sta.get("ip", ""),
+                "ipv6":         ipv6,
                 "vendor":       vendor,
                 "ssid":         sta.get("essid", ""),
                 "ap":           ap_by_mac.get(ap_mac, ap_mac),
