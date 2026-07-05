@@ -2,410 +2,499 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Network Cross-Reference</title>
-  <script src="/chart.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cross-Ref · Network Intelligence</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: #020a18;
-      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
-      color: #5a9ab8;
-      min-height: 100vh;
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0a0e13; --panel:#111820; --panel-2:#0d131a; --inset:#0b1016;
+      --border:#1c2732; --border-2:#26333f;
+      --ink:#e6edf3; --dim:#8a97a4; --mute:#586773; --faint:#313c46;
+      --accent:#35d0d6; --accent-dim:#17575b;
+      --good:#3fb950; --warn:#d6a419; --crit:#f85149;
+      --sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      --mono:'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
     }
+    body { font-family:var(--sans); background:var(--bg); color:var(--ink); min-height:100vh;
+      font-variant-numeric:tabular-nums; line-height:1.4;
+      background-image:linear-gradient(var(--panel-2) 1px,transparent 1px),linear-gradient(90deg,var(--panel-2) 1px,transparent 1px);
+      background-size:48px 48px; background-position:-1px -1px; }
+    .wrap { max-width:1320px; margin:0 auto; padding:16px; }
+    a { color:inherit; text-decoration:none; }
+    .eyebrow { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.16em; color:var(--mute); }
+    .num { font-family:var(--mono); }
 
-    body::after {
-      content: ''; position: fixed; inset: 0;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px,
-        rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
-      pointer-events: none; z-index: 100;
+    /* header */
+    .console { position:relative; background:linear-gradient(180deg,var(--panel),var(--panel-2));
+      border:1px solid var(--border); border-radius:4px; padding:16px 20px; overflow:hidden; margin-bottom:14px; }
+    .console::after { content:''; position:absolute; left:0; right:0; bottom:0; height:2px;
+      background:linear-gradient(90deg,transparent,var(--accent),transparent); animation:sweep 4.5s linear infinite; }
+    @keyframes sweep { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+    .console-top { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .home-chip { font-family:var(--mono); font-size:11px; color:var(--dim); border:1px solid var(--border-2);
+      border-radius:3px; padding:3px 8px; transition:.15s; }
+    .home-chip:hover { color:var(--ink); border-color:var(--accent-dim); }
+    .wordmark { display:flex; align-items:baseline; gap:9px; }
+    .wordmark .mark { font-family:var(--mono); font-weight:600; font-size:14px; letter-spacing:0.14em; }
+    .wordmark .mark b { color:var(--accent); font-weight:600; }
+    .wordmark .sub { font-size:11px; color:var(--mute); }
+    .subnav { display:flex; gap:4px; margin-left:auto; flex-wrap:wrap; }
+    .pill { font-size:11px; letter-spacing:0.06em; color:var(--dim); padding:4px 11px; border-radius:3px;
+      border:1px solid transparent; transition:.15s; }
+    .pill:hover { color:var(--ink); background:rgba(255,255,255,0.03); }
+    .pill.active { color:var(--accent); border-color:var(--accent-dim); background:rgba(53,208,214,0.06); }
+    .tally { display:flex; gap:16px; margin-top:14px; font-family:var(--mono); font-size:12px; align-items:baseline; flex-wrap:wrap; }
+    .tally b { font-size:20px; font-weight:600; margin-right:5px; }
+    .tally .c-crit b{color:var(--crit)} .tally .c-warn b{color:var(--warn)} .tally .c-info b{color:var(--accent)} .tally .c-dev b{color:var(--ink)}
+    .tally [data-sev] { cursor:pointer; padding:2px 7px; border-radius:3px; transition:.15s; }
+    .tally [data-sev]:hover { background:rgba(255,255,255,.04); }
+    .tally .c-crit.active { background:rgba(248,81,73,.12); outline:1px solid var(--crit); }
+    .tally .c-warn.active { background:rgba(214,164,25,.12); outline:1px solid var(--warn); }
+    .tally .c-info.active { background:rgba(53,208,214,.12); outline:1px solid var(--accent); }
+    .status-line { display:flex; align-items:center; gap:8px; margin-top:9px; font-family:var(--mono); font-size:11px; color:var(--mute); }
+    .status-line .dot { width:6px; height:6px; border-radius:50%; background:var(--good); flex-shrink:0; }
+    .status-line.stale .dot { background:var(--warn); }
+    .status-line.stale { color:var(--warn); }
+    .status-line.error .dot { background:var(--crit); }
+    .status-line.error { color:var(--crit); }
+
+    .grid { display:grid; grid-template-columns:1fr 360px; gap:14px; align-items:start; }
+    .col { display:flex; flex-direction:column; gap:14px; min-width:0; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+    .panel-head { display:flex; align-items:center; gap:10px; padding:11px 15px; border-bottom:1px solid var(--border); background:var(--panel-2); }
+    .panel-head .count { font-family:var(--mono); font-size:11px; color:var(--mute); margin-left:auto; }
+    .panel-head input { font-family:var(--mono); font-size:11px; background:var(--inset); border:1px solid var(--border-2);
+      border-radius:3px; color:var(--ink); padding:4px 9px; width:150px; }
+    .panel-head input::placeholder { color:var(--mute); }
+    .panel-head input:focus { outline:none; border-color:var(--accent-dim); }
+
+    /* anomaly feed */
+    .anoms { display:flex; flex-direction:column; }
+    .anom { display:grid; grid-template-columns:3px 1fr auto; gap:12px; padding:12px 15px;
+      border-bottom:1px solid rgba(28,39,50,.55); cursor:pointer; transition:background .12s; }
+    .anom:last-child { border-bottom:none; }
+    .anom:hover { background:rgba(53,208,214,.035); }
+    .anom.na { cursor:default; }
+    .anom .bar { border-radius:2px; }
+    .anom.critical .bar{background:var(--crit)} .anom.warn .bar{background:var(--warn)} .anom.info .bar{background:var(--accent)}
+    .anom .title { font-size:13px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .kind { font-family:var(--mono); font-size:9px; letter-spacing:.08em; text-transform:uppercase;
+      padding:1px 6px; border-radius:3px; color:var(--dim); border:1px solid var(--border-2); }
+    .anom .detail { font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:3px; word-break:break-word; }
+    .anom .chev { align-self:center; color:var(--faint); font-size:16px; }
+    .clear { padding:26px 15px; text-align:center; font-family:var(--mono); font-size:12px; color:var(--good); }
+
+    /* ssid broadcast map */
+    .ssid-block { padding:12px 15px; border-bottom:1px solid rgba(28,39,50,.55); }
+    .ssid-block:last-child { border-bottom:none; }
+    .ssid-name { font-family:var(--mono); font-size:13px; font-weight:600; color:var(--accent); margin-bottom:8px; display:flex; gap:8px; align-items:baseline; }
+    .ssid-name span { font-size:10px; color:var(--mute); font-weight:400; }
+    .bssid { display:grid; grid-template-columns:1fr auto; gap:4px 10px; font-family:var(--mono); font-size:11px;
+      padding:3px 0; color:var(--dim); }
+    .bssid .m { color:var(--ink); }
+    .bssid .meta { color:var(--mute); text-align:right; white-space:nowrap; }
+
+    /* table */
+    .tbl-scroll { overflow-x:auto; overflow-y:visible; }
+    table.dev { width:100%; border-collapse:collapse; font-size:12.5px; }
+    table.dev thead th { position:sticky; top:0; z-index:2; background:var(--panel-2);
+      font-family:var(--sans); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.1em;
+      color:var(--mute); text-align:left; padding:8px 14px; white-space:nowrap; border-bottom:1px solid var(--border); cursor:pointer; }
+    table.dev thead th.r { text-align:right; } table.dev thead th:hover { color:var(--dim); }
+    table.dev tbody td { padding:8px 14px; border-bottom:1px solid rgba(28,39,50,.55); white-space:nowrap; vertical-align:middle; }
+    table.dev tbody tr { cursor:pointer; } table.dev tbody tr:hover td { background:rgba(53,208,214,.035); }
+    .d-name { font-weight:500; color:var(--ink); display:flex; align-items:center; gap:8px; }
+    .d-name .st { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .d-vendor { color:var(--mute); font-size:10.5px; font-family:var(--sans); }
+    .mono { font-family:var(--mono); color:var(--dim); }
+    .r { text-align:right; }
+    .chip { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:3px; margin-left:6px; }
+    .lan { font-family:var(--mono); font-size:10px; color:var(--mute); border:1px solid var(--border-2); border-radius:3px; padding:1px 6px; }
+
+    /* dossier drawer */
+    #overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
+    #overlay.open { opacity:1; pointer-events:auto; }
+    #dossier { position:fixed; top:0; right:0; height:100%; width:400px; max-width:92vw; z-index:50;
+      background:var(--panel); border-left:1px solid var(--border-2); transform:translateX(100%);
+      transition:transform .22s ease; overflow-y:auto; }
+    #dossier.open { transform:none; }
+    .dh { padding:16px 18px; border-bottom:1px solid var(--border); background:var(--panel-2); position:sticky; top:0; }
+    .dh .close { float:right; color:var(--mute); font-size:20px; cursor:pointer; line-height:1; }
+    .dh .close:hover { color:var(--ink); }
+    .dh .dtitle { font-size:17px; font-weight:700; color:var(--ink); padding-right:24px; word-break:break-word; }
+    .dh .dmac { font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:4px; }
+    .dh .badge { display:inline-block; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+      padding:2px 8px; border-radius:3px; margin-top:8px; }
+    .badge.managed{color:var(--good);background:rgba(63,185,80,.12)} .badge.rf{color:var(--accent);background:rgba(53,208,214,.1)}
+    .dsec { padding:14px 18px; border-bottom:1px solid rgba(28,39,50,.55); }
+    .dsec h3 { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.14em; color:var(--accent); margin-bottom:10px; }
+    .drow { display:flex; justify-content:space-between; gap:12px; padding:4px 0; font-size:12.5px; }
+    .drow .k { color:var(--mute); } .drow .v { font-family:var(--mono); color:var(--ink); text-align:right; word-break:break-word; }
+    .none { color:var(--faint); font-family:var(--mono); font-size:11.5px; }
+    .btn { font-family:var(--mono); font-size:12px; color:var(--accent); background:rgba(53,208,214,.08);
+      border:1px solid var(--accent-dim); border-radius:3px; padding:7px 14px; cursor:pointer; transition:.15s; }
+    .btn:hover:not(:disabled) { background:rgba(53,208,214,.16); }
+    .btn:disabled { opacity:.5; cursor:default; }
+    .cap-status { margin-top:8px; font-family:var(--mono); font-size:11px; color:var(--mute); }
+    .cap-status.ok { color:var(--good); } .cap-status.error { color:var(--crit); }
+    .cap-types { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+    .cap-chip { font-family:var(--mono); font-size:10.5px; color:var(--dim); border:1px solid var(--border-2);
+      border-radius:3px; padding:3px 8px; }
+    .cap-chip b { color:var(--ink); margin-left:4px; }
+    .cap-sub { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.1em;
+      color:var(--mute); margin-top:12px; margin-bottom:2px; }
+    .btn-ghost { margin-top:12px; display:block; width:100%; text-align:center; color:var(--dim);
+      background:transparent; border-color:var(--border-2); }
+    .btn-ghost:hover:not(:disabled) { color:var(--ink); background:rgba(255,255,255,.04); }
+
+    @media (max-width:1000px){ .grid{grid-template-columns:1fr} }
+    @media (max-width:620px){
+      .wrap{padding:10px} .subnav{width:100%;margin-left:0}
+      .tbl-scroll{overflow-x:visible}
+      table.dev th:nth-child(2), table.dev td:nth-child(2),
+      table.dev th:nth-child(5), table.dev td:nth-child(5){ display:none }
+      table.dev tbody td{ padding:8px 10px }
+      .panel-head input{ width:100px }
     }
-
-    nav {
-      display: flex; align-items: center; gap: 1rem;
-      padding: 0.55rem 1.2rem;
-      border-bottom: 1px solid #041828;
-      background: rgba(2,10,24,0.95);
-      backdrop-filter: blur(8px);
-      position: sticky; top: 0; z-index: 50;
-    }
-    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none;
-             letter-spacing: 0.12em; transition: color .2s; }
-    nav a:hover { color: #00ffcc; }
-    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
-    #status { margin-left: auto; font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
-
-    .page { max-width: 1500px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
-
-    /* Stat strip */
-    .stat-strip {
-      display: flex; gap: 0.8rem; margin-bottom: 1.4rem; flex-wrap: wrap;
-    }
-    .stat-pill {
-      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
-      border-radius: 8px; padding: 0.55rem 1rem;
-      font-size: 0.65rem; letter-spacing: 0.1em;
-    }
-    .stat-pill span { font-size: 1.3rem; font-weight: bold; display: block; margin-bottom: 2px; }
-    .c-blue   { color: #4e9af1; }
-    .c-red    { color: #ff4444; }
-    .c-green  { color: #00cc88; }
-    .c-teal   { color: #00e5cc; }
-    .c-orange { color: #f0a030; }
-
-    /* Charts row */
-    .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem; }
-    @media (max-width: 900px) { .chart-row { grid-template-columns: 1fr; } }
-    .chart-card {
-      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
-      border-radius: 12px; padding: 1rem 1.2rem;
-    }
-    .chart-title { font-size: 0.6rem; letter-spacing: 0.14em; color: #3a7090; margin-bottom: 0.9rem; }
-
-    /* Filters */
-    .filter-row { display: flex; gap: 0.5rem; margin-bottom: 0.9rem; flex-wrap: wrap; align-items: center; }
-    .filter-btn {
-      background: rgba(4,14,30,0.7); border: 1px solid #0a2a40;
-      color: #3a7090; font-family: inherit; font-size: 0.6rem; letter-spacing: 0.1em;
-      padding: 0.3rem 0.7rem; border-radius: 6px; cursor: pointer; transition: all .2s;
-    }
-    .filter-btn:hover, .filter-btn.active { background: #0a2a40; color: #00e5cc; border-color: #00e5cc; }
-    .filter-label { font-size: 0.6rem; color: #2a5570; letter-spacing: 0.1em; }
-    #search {
-      background: rgba(4,14,30,0.7); border: 1px solid #0a2a40;
-      color: #5a9ab8; font-family: inherit; font-size: 0.65rem;
-      padding: 0.3rem 0.7rem; border-radius: 6px; outline: none; width: 180px;
-    }
-    #search::placeholder { color: #2a5570; }
-    #search:focus { border-color: #3a7090; }
-
-    /* Table */
-    .tbl-wrap { overflow-x: auto; }
-    table { width: 100%; border-collapse: separate; border-spacing: 0; }
-    th {
-      font-size: 0.56rem; letter-spacing: 0.14em; color: #3a7090;
-      padding: 0.5rem 0.8rem; text-align: left; white-space: nowrap;
-      border-bottom: 1px solid #0a2a40; cursor: pointer; user-select: none;
-    }
-    th:hover { color: #00e5cc; }
-    th.sorted { color: #00e5cc; }
-    td {
-      font-size: 0.7rem; padding: 0.55rem 0.8rem;
-      border-bottom: 1px solid rgba(10,42,64,0.4); white-space: nowrap;
-    }
-    tr:hover td { background: rgba(10,30,55,0.6); }
-    tr.flagged td { border-left: 2px solid #ff4444; }
-
-    .name-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
-    .hostname { color: #aaddff; }
-    .guessed  { color: #5a9ab8; font-style: italic; }
-    .vendor   { color: #3a7090; font-size: 0.6rem; }
-    .ap-cell  { color: #5a9ab8; font-size: 0.65rem; }
-    .null-val { color: #1a3a50; }
-
-    /* Signal bar */
-    .sig-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
-    .sig-bar { height: 6px; border-radius: 3px; min-width: 4px; }
-
-    /* DNS bar */
-    .dns-bar-wrap { display: flex; align-items: center; gap: 0.4rem; }
-    .dns-bar-bg { background: #0a1e30; height: 5px; border-radius: 3px; flex: 1; min-width: 50px; overflow: hidden; }
-    .dns-bar-fill { height: 100%; border-radius: 3px; }
-
-    /* Blocked % badge */
-    .pct-badge {
-      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
-      font-size: 0.65rem; font-weight: bold;
-    }
-
-    /* Insight tags */
-    .tag {
-      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 4px;
-      font-size: 0.55rem; letter-spacing: 0.06em; margin-right: 2px;
-    }
-    .tag-chatty  { background: #1a3020; color: #00cc88; border: 1px solid #00cc8840; }
-    .tag-noisy   { background: #1a2030; color: #4e9af1; border: 1px solid #4e9af140; }
-    .tag-blocked { background: #2a1010; color: #ff4444; border: 1px solid #ff444440; }
-    .tag-clean   { background: #0a1a0a; color: #44aa44; border: 1px solid #44aa4440; }
-    .tag-iot     { background: #1a1030; color: #cc88ff; border: 1px solid #cc88ff40; }
-
-    #updated { font-size: 0.58rem; color: #2a5570; margin-top: 1.2rem; text-align: right; }
+    @media (prefers-reduced-motion:reduce){ .console::after{animation:none;opacity:.4} }
   </style>
 </head>
 <body>
-
-<nav>
-  <a href="/">← HOME</a>
-  <a href="/unifi">OVERVIEW</a>
-  <a href="/unifi/map">MAP</a>
-  <a href="/unifi/devices">DEVICES</a>
-  <a href="/unifi/events">EVENTS</a>
-  <a href="/pihole">PI-HOLE</a>
-  <span class="brand">· CROSS-REF ·</span>
-  <span id="status">LOADING...</span>
-</nav>
-
-<div class="page">
-  <div class="stat-strip" id="stats"></div>
-
-  <div class="chart-row">
-    <div class="chart-card">
-      <div class="chart-title">DNS QUERIES PER DEVICE (TOP 20 — MATCHED ONLY)</div>
-      <canvas id="ch-queries" height="200"></canvas>
+<div class="wrap">
+  <div class="console">
+    <div class="console-top">
+      <a href="/" class="home-chip">← home</a>
+      <div class="wordmark"><span class="mark">◍ CROSS&#8209;<b>REF</b></span><span class="sub">network intelligence · UniFi × Pi-hole × Kismet</span></div>
+      <nav class="subnav">
+        <a href="/unifi" class="pill">Signal Room</a>
+        <a href="/cross_ref" class="pill active">Cross-Ref</a>
+        <a href="/kismet" class="pill">Wireless</a>
+        <a href="/pihole" class="pill">Pi-hole</a>
+      </nav>
     </div>
-    <div class="chart-card">
-      <div class="chart-title">BLOCKED % PER DEVICE (TOP 20 BY BLOCK RATE)</div>
-      <canvas id="ch-blocked" height="200"></canvas>
+    <div class="tally">
+      <span class="c-crit" data-sev="critical" onclick="toggleSevFilter('critical')"><b id="t-crit">—</b>critical</span>
+      <span class="c-warn" data-sev="warn" onclick="toggleSevFilter('warn')"><b id="t-warn">—</b>warnings</span>
+      <span class="c-info" data-sev="info" onclick="toggleSevFilter('info')"><b id="t-info">—</b>notes</span>
+      <span class="c-dev" style="margin-left:auto"><b id="t-dev">—</b>correlated devices</span>
+    </div>
+    <div class="status-line" id="status"><span class="dot"></span>loading…</div>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <div class="panel">
+        <div class="panel-head"><span class="eyebrow">Correlated devices</span><input id="dev-search" type="text" placeholder="filter…"><span class="count" id="dev-count"></span></div>
+        <div class="tbl-scroll">
+          <table class="dev">
+            <thead><tr>
+              <th data-k="display_name">Device</th>
+              <th data-k="ip">Address</th>
+              <th data-k="ssid">Link</th>
+              <th class="r" data-k="dns_total">DNS</th>
+              <th class="r" data-k="signal">Signal</th>
+            </tr></thead>
+            <tbody id="dev-body"><tr><td colspan="5" class="none" style="padding:24px;text-align:center">loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="eyebrow">Anomaly feed · cross-layer</span><span class="count" id="anom-count"></span></div>
+        <div class="anoms" id="anoms"><div class="clear" style="color:var(--mute)">scanning…</div></div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="panel">
+        <div class="panel-head"><span class="eyebrow">SSID broadcast map</span><span class="count" id="ssid-count"></span></div>
+        <div id="ssid-map"><div class="clear" style="color:var(--mute)">loading…</div></div>
+      </div>
     </div>
   </div>
-
-  <div class="filter-row">
-    <span class="filter-label">FILTER:</span>
-    <button class="filter-btn active" onclick="setFilter('all',this)">ALL</button>
-    <button class="filter-btn" onclick="setFilter('matched',this)">DNS MATCHED</button>
-    <button class="filter-btn" onclick="setFilter('chatty',this)">CHATTY</button>
-    <button class="filter-btn" onclick="setFilter('high_block',this)">HIGH BLOCK %</button>
-    <button class="filter-btn" onclick="setFilter('flagged',this)">WIFI FLAGGED</button>
-    <input id="search" type="text" placeholder="search hostname…" oninput="renderTable()">
-    <span class="filter-label" id="row-count"></span>
-  </div>
-
-  <div class="tbl-wrap">
-    <table id="tbl">
-      <thead>
-        <tr>
-          <th onclick="sortBy('display_name')">DEVICE</th>
-          <th onclick="sortBy('ap')">AP · SSID</th>
-          <th onclick="sortBy('signal')">SIGNAL</th>
-          <th onclick="sortBy('retry_pct')">RETRIES</th>
-          <th onclick="sortBy('dns_total')">DNS QUERIES</th>
-          <th onclick="sortBy('dns_pct')">BLOCKED %</th>
-          <th>INSIGHTS</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-
-  <div id="updated"></div>
 </div>
 
+<div id="overlay" onclick="closeDossier()"></div>
+<aside id="dossier"></aside>
+
 <script>
-const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+  const ESC={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>ESC[c]);
+  const $=id=>document.getElementById(id);
+  const lc=s=>String(s||'').toLowerCase();
+  const fmt=n=>n==null?'—':Number(n).toLocaleString('en-GB');
+  function ago(ts){ if(!ts)return'—'; const s=Math.max(0,Math.floor(Date.now()/1000-ts));
+    if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
 
-const GRID  = '#0a1e30';
-const LABEL = '#3a7090';
-const TEAL  = '#00e5cc';
-const RED   = '#ff4444';
-const BLUE  = '#4e9af1';
-const GREEN = '#00cc88';
+  let DATA={devices:[],anomalies:[],ssid_broadcasts:{},rf_index:{}};
+  let byMac={}, rfIdx={};
+  let sortK='dns_total', sortDir=-1;
+  let sevFilter=null, searchQ='', lastLoadTs=0, lastError=null;
 
-Chart.defaults.color       = LABEL;
-Chart.defaults.borderColor = GRID;
-Chart.defaults.font.family = "'DejaVu Sans Mono', monospace";
-Chart.defaults.font.size   = 10;
-
-const TIP = {
-  backgroundColor: '#08182a', borderColor: '#1a4060', borderWidth: 1,
-  titleColor: '#aaddff', bodyColor: '#5a9ab8', padding: 10,
-};
-
-let allData = [], charts = {}, sortKey = 'dns_total', sortDir = -1, activeFilter = 'all';
-
-// Compute per-device DNS queries/24h — normalise by query count
-let globalMaxDns = 1;
-
-function setFilter(f, btn) {
-  activeFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderTable();
-}
-
-function sortBy(key) {
-  if (sortKey === key) sortDir *= -1; else { sortKey = key; sortDir = -1; }
-  document.querySelectorAll('th').forEach(th => th.classList.remove('sorted'));
-  event.target.classList.add('sorted');
-  renderTable();
-}
-
-function sigColor(s) {
-  if (s == null) return '#2a5570';
-  if (s >= -65) return '#00cc88';
-  if (s >= -75) return '#f0a030';
-  return '#ff4444';
-}
-function sigWidth(s) {
-  if (s == null) return 0;
-  return Math.max(4, Math.round((s + 100) / 45 * 80));
-}
-function pctColor(p) {
-  if (p == null) return '#2a5570';
-  if (p < 10) return '#00cc88';
-  if (p < 25) return '#f0a030';
-  return '#ff4444';
-}
-
-function insights(d, avg) {
-  const tags = [];
-  if (d.dns_total != null) {
-    if (d.dns_total > avg * 2.5) tags.push('<span class="tag tag-chatty">CHATTY</span>');
-    if (d.dns_pct >= 30) tags.push('<span class="tag tag-blocked">HIGH ADS</span>');
-    if (d.dns_pct === 0 && d.dns_total > 50) tags.push('<span class="tag tag-clean">AD-FREE</span>');
+  async function load(){
+    try{
+      const res=await fetch('/api/cross_ref');
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      DATA=await res.json();
+      lastError=null; lastLoadTs=Date.now();
+    }catch(e){
+      lastError=e.message||'fetch failed';
+      updateStatus();
+      return;
+    }
+    byMac={}; (DATA.devices||[]).forEach(d=>{ if(d.mac) byMac[lc(d.mac)]=d; });
+    rfIdx={}; Object.entries(DATA.rf_index||{}).forEach(([m,v])=>rfIdx[lc(m)]=Object.assign({mac:m},v));
+    renderTally(); renderAnoms(); renderSsid(); renderTable(); updateStatus();
   }
-  if (d.guessed) tags.push('<span class="tag tag-iot">IOT?</span>');
-  if (d.flagged)  tags.push('<span class="tag tag-noisy">WEAK WIFI</span>');
-  return tags.join('');
-}
 
-function renderTable() {
-  const q = (document.getElementById('search').value || '').toLowerCase();
+  function updateStatus(){
+    const el=$('status');
+    if(lastError){
+      el.className='status-line error';
+      el.innerHTML=`<span class="dot"></span>fetch failed — ${esc(lastError)} · retrying every 60s`;
+      return;
+    }
+    if(!lastLoadTs){ el.className='status-line'; el.innerHTML='<span class="dot"></span>loading…'; return; }
+    const secs=Math.floor((Date.now()-lastLoadTs)/1000);
+    const stale=secs>90;
+    el.className='status-line'+(stale?' stale':'');
+    el.innerHTML=`<span class="dot"></span>updated ${secs<5?'just now':secs+'s ago'}${stale?' · refresh may have stalled':''}`;
+  }
+  setInterval(updateStatus, 1000);
 
-  let rows = allData.filter(d => {
-    if (q && !(d.display_name || '').toLowerCase().includes(q) &&
-             !(d.hostname || '').toLowerCase().includes(q) &&
-             !(d.vendor || '').toLowerCase().includes(q)) return false;
-    if (activeFilter === 'matched'    && d.dns_total == null)    return false;
-    if (activeFilter === 'chatty'     && (d.dns_total == null || d.dns_total < globalMaxDns * 0.05)) return false;
-    if (activeFilter === 'high_block' && (d.dns_pct == null || d.dns_pct < 25))  return false;
-    if (activeFilter === 'flagged'    && !d.flagged) return false;
-    return true;
-  });
+  function toggleSevFilter(s){ sevFilter=(sevFilter===s)?null:s; renderTally(); renderAnoms(); }
 
-  rows.sort((a, b) => {
-    const av = a[sortKey] ?? (sortDir > 0 ? Infinity : -Infinity);
-    const bv = b[sortKey] ?? (sortDir > 0 ? Infinity : -Infinity);
-    return typeof av === 'string' ? av.localeCompare(bv) * sortDir : (av - bv) * sortDir;
-  });
+  function renderTally(){
+    const a=DATA.anomalies||[]; const c=s=>a.filter(x=>x.severity===s).length;
+    $('t-crit').textContent=c('critical'); $('t-warn').textContent=c('warn'); $('t-info').textContent=c('info');
+    $('t-dev').textContent=(DATA.devices||[]).length;
+    document.querySelectorAll('[data-sev]').forEach(el=>el.classList.toggle('active', el.dataset.sev===sevFilter));
+  }
 
-  const matched = rows.filter(d => d.dns_total != null);
-  const avg = matched.length
-    ? matched.reduce((s, d) => s + d.dns_total, 0) / matched.length
-    : 1;
+  function renderAnoms(){
+    const all=DATA.anomalies||[];
+    const a=sevFilter?all.filter(x=>x.severity===sevFilter):all;
+    $('anom-count').innerHTML=sevFilter
+      ? `${a.length} of ${all.length} flags · <a href="javascript:void 0" onclick="toggleSevFilter(null)" style="color:var(--accent);text-decoration:underline">clear filter</a>`
+      : `${all.length} flags`;
+    if(!all.length){ $('anoms').innerHTML='<div class="clear">✓ No anomalies — all layers agree</div>'; return; }
+    if(!a.length){ $('anoms').innerHTML=`<div class="clear" style="color:var(--mute)">no ${esc(sevFilter)} anomalies right now</div>`; return; }
+    $('anoms').innerHTML=a.map(x=>{
+      const clickable=!!x.mac;
+      return `<div class="anom ${esc(x.severity)} ${clickable?'':'na'}" ${clickable?`onclick="openDossier('${esc(lc(x.mac))}')"`:''}>
+        <div class="bar"></div>
+        <div>
+          <div class="title">${esc(x.title)}<span class="kind">${esc((x.kind||'').replace(/_/g,' '))}</span></div>
+          <div class="detail">${esc(x.detail)}</div>
+        </div>
+        ${clickable?'<div class="chev">›</div>':'<div></div>'}
+      </div>`;
+    }).join('');
+  }
 
-  const tbody = document.getElementById('tbody');
-  tbody.innerHTML = rows.map(d => {
-    const sc = sigColor(d.signal);
-    const sw = sigWidth(d.signal);
-    const pc = pctColor(d.dns_pct);
-    const dnsBar = d.dns_total != null
-      ? `<div class="dns-bar-wrap">
-           <div class="dns-bar-bg">
-             <div class="dns-bar-fill" style="width:${Math.round(d.dns_total/globalMaxDns*100)}%;background:${BLUE}88"></div>
-           </div>
-           <span style="color:#aaddff">${d.dns_total.toLocaleString()}</span>
-         </div>`
-      : `<span class="null-val">—</span>`;
-    const pctBadge = d.dns_pct != null
-      ? `<span class="pct-badge" style="background:${pc}22;color:${pc}">${d.dns_pct}%</span>`
-      : `<span class="null-val">—</span>`;
-    const sigBadge = d.signal != null
-      ? `<div class="sig-bar-wrap">
-           <div class="sig-bar" style="width:${sw}px;background:${sc}"></div>
-           <span style="color:${sc}">${d.signal} dBm</span>
-         </div>`
-      : `<span class="null-val">wired</span>`;
-    const retries = d.retry_pct != null
-      ? `<span style="color:${d.retry_pct > 15 ? '#ff4444' : d.retry_pct > 8 ? '#f0a030' : '#3a7090'}">${d.retry_pct.toFixed(1)}%</span>`
-      : `<span class="null-val">—</span>`;
-    const apCell = esc([d.ap, d.ssid].filter(Boolean).join(' · ') || '—');
-    const nameHtml = d.guessed
-      ? `<div class="name-cell guessed">${esc(d.display_name)} <span style="color:#2a5570">?</span></div>`
-      : `<div class="name-cell hostname">${esc(d.display_name || d.hostname || d.ip)}</div>`;
-    return `<tr class="${d.flagged ? 'flagged' : ''}">
-      <td>
-        ${nameHtml}
-        ${d.vendor ? `<div class="vendor">${esc(d.vendor)}</div>` : ''}
-      </td>
-      <td class="ap-cell">${apCell}</td>
-      <td>${sigBadge}</td>
-      <td>${retries}</td>
-      <td>${dnsBar}</td>
-      <td>${pctBadge}</td>
-      <td>${insights(d, avg)}</td>
-    </tr>`;
-  }).join('');
+  function cryptShort(c){ c=String(c||''); if(!c)return'?'; if(/WPA3/.test(c))return'WPA3';
+    if(/WPA2/.test(c))return'WPA2'; if(/WPA1|WEP/.test(c))return'WEP/1'; if(/Open/i.test(c))return'OPEN'; return c.split(' ')[0]; }
 
-  document.getElementById('row-count').textContent = `${rows.length} devices`;
-}
+  function renderSsid(){
+    const b=DATA.ssid_broadcasts||{}; const keys=Object.keys(b);
+    $('ssid-count').textContent=keys.length+' of yours';
+    if(!keys.length){ $('ssid-map').innerHTML='<div class="clear" style="color:var(--mute)">no SSIDs</div>'; return; }
+    $('ssid-map').innerHTML=keys.map(ssid=>{
+      const list=b[ssid]||[];
+      return `<div class="ssid-block">
+        <div class="ssid-name">${esc(ssid)}<span>${list.length} BSSID${list.length!==1?'s':''}</span></div>
+        ${list.map(x=>{
+          const cs=cryptShort(x.crypt), weak=cs==='OPEN'||cs==='WEP/1';
+          return `<div class="bssid">
+            <span class="m">${esc(x.mac)}</span>
+            <span class="meta" style="${weak?'color:var(--crit)':''}">${esc(cs)} · ch${esc(x.channel||'?')} · ${x.signal??'?'} dBm</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+  }
 
-function mkBarH(canvasId, labels, values, color, maxVal) {
-  if (charts[canvasId]) charts[canvasId].destroy();
-  charts[canvasId] = new Chart(document.getElementById(canvasId), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{ data: values, backgroundColor: color + '44', borderColor: color,
-                   borderWidth: 1, borderRadius: 3 }],
-    },
-    options: {
-      responsive: true,
-      indexAxis: 'y',
-      animation: { duration: 500 },
-      plugins: { legend: { display: false }, tooltip: { ...TIP } },
-      scales: {
-        x: { grid: { color: GRID }, ticks: { color: LABEL }, max: maxVal },
-        y: { grid: { color: GRID }, ticks: { color: LABEL, font: { size: 9 } } },
-      },
-    },
-  });
-}
+  function signalCell(d){
+    const dbm=d.is_wired?null:d.signal;
+    if(dbm==null||dbm===0) return '<span class="lan">'+(d.is_wired?'WIRED':'—')+'</span>';
+    const col=dbm>=-67?'var(--good)':dbm>=-74?'var(--warn)':'var(--crit)';
+    return `<span class="mono" style="color:${col}">${dbm} dBm</span>`;
+  }
 
-async function load() {
-  const r = await fetch('/api/cross_ref?t=' + Date.now());
-  const d = await r.json();
+  function renderTable(){
+    let devs=(DATA.devices||[]).slice();
+    const total=devs.length;
+    if(searchQ){
+      devs=devs.filter(d=>lc([d.display_name,d.hostname,d.ip,d.mac,d.vendor,d.ssid,d.ap].filter(Boolean).join(' ')).includes(searchQ));
+    }
+    devs.sort((a,b)=>{
+      const av=a[sortK], bv=b[sortK];
+      if(av==null&&bv==null)return 0; if(av==null)return 1; if(bv==null)return -1;
+      if(typeof av==='number'&&typeof bv==='number') return (av-bv)*sortDir;
+      return String(av).localeCompare(String(bv))*sortDir;
+    });
+    $('dev-count').textContent=devs.length+(searchQ?` of ${total}`:'')+' online';
+    $('dev-body').innerHTML=devs.map(d=>{
+      const name=esc(d.display_name||d.hostname||d.ip||d.mac||'unknown');
+      const flagged=!!d.flagged, weak=!d.is_wired&&d.signal!=null&&d.signal<-74;
+      const st=flagged?'var(--crit)':weak?'var(--warn)':'var(--good)';
+      const link=d.is_wired?'<span class="lan">WIRED</span>':(d.ssid||d.ap)?`<span class="mono" style="color:var(--accent)">${esc(d.ssid||'—')}</span> <span class="mono">· ${esc(d.ap||'—')}</span>`:'<span class="none">—</span>';
+      let dns='<span class="none">—</span>';
+      if(d.dns_total!=null){ const p=d.dns_pct||0, pc=p>=25?'var(--crit)':p>=8?'var(--warn)':'var(--good)';
+        dns=`<span class="mono" style="color:var(--ink)">${fmt(d.dns_total)}</span><span class="chip" style="color:${pc};background:rgba(0,0,0,.25)">${p}%</span>`; }
+      return `<tr onclick="openDossier('${esc(lc(d.mac||d.ip))}')">
+        <td><div class="d-name"><span class="st" style="background:${st}"></span>${name}</div>${d.vendor?`<span class="d-vendor">${esc(d.vendor)}</span>`:''}</td>
+        <td class="mono">${esc(d.ip||'—')}</td>
+        <td>${link}</td>
+        <td class="r">${dns}</td>
+        <td class="r">${signalCell(d)}</td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="5" class="none" style="padding:24px;text-align:center">no devices</td></tr>';
+  }
 
-  allData = d.devices || [];
-  const s = d.summary || {};
+  document.querySelectorAll('th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+    const k=th.dataset.k; if(sortK===k)sortDir*=-1; else{sortK=k; sortDir=(k==='dns_total'||k==='signal')?-1:1;} renderTable();
+  }));
+  $('dev-search').addEventListener('input', e=>{ searchQ=lc(e.target.value.trim()); renderTable(); });
 
-  globalMaxDns = Math.max(...allData.map(x => x.dns_total || 0), 1);
+  // ── dossier ──────────────────────────────────────────────────────
+  function drow(k,v){ return `<div class="drow"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
+  function openDossier(key){
+    key=lc(key);
+    const d=byMac[key]||(DATA.devices||[]).find(x=>lc(x.ip)===key)||{};
+    const rf=rfIdx[key]||{};
+    const managed=!!(d.mac&&!d.is_wired&&d.ssid) || !!d.ap;
+    const name=esc(d.display_name||d.hostname||rf.mac||key);
+    const macTxt=esc(d.mac||rf.mac||key);
+    const badge=managed?'<span class="badge managed">managed client</span>':'<span class="badge rf">RF-only / unrecognised</span>';
 
-  // Stat pills
-  const matched = allData.filter(x => x.dns_total != null);
-  const coverage = allData.length ? Math.round(matched.length / allData.length * 100) : 0;
-  const avgQ = matched.length ? Math.round(matched.reduce((a, x) => a + x.dns_total, 0) / matched.length) : 0;
-  const chatty = matched.filter(x => x.dns_total > avgQ * 2.5).length;
+    const identity=[
+      drow('Vendor', esc(d.vendor||rf.manuf||'—')),
+      drow('IP', esc(d.ip||'—')),
+      (d.ip_alt&&d.ip_alt.length)?drow('Other IPs (rotated)', esc(d.ip_alt.join(', '))):'',
+      drow('First seen', d.first_seen?ago(d.first_seen):(rf.first_time?ago(rf.first_time):'—')),
+      drow('Last seen', d.last_seen?ago(d.last_seen):(rf.last_time?ago(rf.last_time):'—')),
+    ].join('');
 
-  document.getElementById('stats').innerHTML = `
-    <div class="stat-pill"><span class="c-blue">${allData.length}</span>TOTAL DEVICES</div>
-    <div class="stat-pill"><span class="c-teal">${matched.length}</span>DNS MATCHED</div>
-    <div class="stat-pill"><span class="c-green">${coverage}%</span>COVERAGE</div>
-    <div class="stat-pill"><span class="c-orange">${avgQ.toLocaleString()}</span>AVG QUERIES / DEVICE</div>
-    <div class="stat-pill"><span class="c-red">${chatty}</span>CHATTY DEVICES</div>
-    <div class="stat-pill"><span class="c-red">${s.percent_blocked || 0}%</span>GLOBAL BLOCK RATE</div>
-  `;
-  document.getElementById('status').textContent =
-    `${matched.length}/${allData.length} DEVICES MATCHED · ${s.percent_blocked || 0}% BLOCKED`;
+    const link=(d.ssid||d.ap||d.is_wired!=null)?[
+      drow('Connection', d.is_wired?'Wired':'Wireless'),
+      d.ssid?drow('SSID', esc(d.ssid)):'',
+      d.ap?drow('Access point', esc(d.ap)):'',
+      d.signal!=null?drow('Signal', d.signal+' dBm'):'',
+      d.retry_pct!=null?drow('TX retries', d.retry_pct+'%'):'',
+      d.flagged?drow('Status', '<span style="color:var(--crit)">flagged</span>'):'',
+    ].join(''):'<div class="none">not on your UniFi network</div>';
 
-  // Charts — top 20 by DNS volume (matched only)
-  const top20 = [...matched].sort((a, b) => b.dns_total - a.dns_total).slice(0, 20);
-  mkBarH('ch-queries',
-    top20.map(d => d.display_name || d.hostname || d.ip),
-    top20.map(d => d.dns_total),
-    BLUE, globalMaxDns);
+    const dns=d.dns_total!=null?[
+      drow('Queries', fmt(d.dns_total)),
+      drow('Blocked', fmt(d.dns_blocked)+' ('+(d.dns_pct||0)+'%)'),
+    ].join(''):'<div class="none">no Pi-hole data for this client</div>';
 
-  // Top 20 by block % (with at least 50 queries for meaningful %)
-  const top20blk = [...matched]
-    .filter(d => d.dns_total >= 50 && d.dns_pct != null)
-    .sort((a, b) => b.dns_pct - a.dns_pct)
-    .slice(0, 20);
-  mkBarH('ch-blocked',
-    top20blk.map(d => d.display_name || d.hostname || d.ip),
-    top20blk.map(d => d.dns_pct),
-    RED, 100);
+    const rfSig=d.rf_signal||rf.signal, rfCh=d.rf_channel||rf.channel, rfCr=d.rf_crypt||rf.crypt,
+          rfTy=d.rf_type||rf.type, rfKn=(d.rf_known!=null?d.rf_known:rf.known),
+          rfRand=rf.mac_random, rfProbes=(rf.probes||[]).filter(Boolean),
+          rfAssoc=rf.assoc_ssid, rfMin=rf.signal_min, rfMax=rf.signal_max,
+          rfPktT=rf.pkt_total, rfPktD=rf.pkt_data;
+    const rfHtml=(rfSig||rfCh||rfCr||rfTy)?[
+      rfSig?drow('RF signal', rfSig+' dBm'):'',
+      (rfMin&&rfMax)?drow('Signal range', rfMin+' to '+rfMax+' dBm'):'',
+      rfCh?drow('Channel', esc(rfCh)):'',
+      rfTy?drow('Type', esc(rfTy)):'',
+      rfCr?drow('Encryption', esc(rfCr)):'',
+      rfKn!=null?drow('Kismet knows it', rfKn?'yes':'no'):'',
+      rfRand!=null?drow('MAC address', rfRand?'<span style="color:var(--crit)">randomized (private)</span>':'vendor-assigned (real OUI)'):'',
+      rfAssoc?drow('Associated with', '<span style="color:var(--accent)">'+esc(rfAssoc)+'</span>'):'',
+      rfProbes.length?drow('Probed SSIDs', rfProbes.map(esc).join(', ')):'',
+      rfPktT?drow('Packets seen', fmt(rfPktT)+(rfPktD?' ('+fmt(rfPktD)+' data)':'')):'',
+    ].join(''):'<div class="none">not seen by Kismet (wired / out of RF range)</div>';
 
-  renderTable();
+    const canCapture = !!(d.mac);
+    const captureHtml = canCapture
+      ? `<button id="cap-btn" class="btn" onclick="startCapture('${esc(d.mac)}')">Capture traffic (10s)</button>
+         <div id="cap-status" class="cap-status"></div>
+         <div id="cap-result"></div>`
+      : '<div class="none">only available for devices on your network</div>';
 
-  const ts = new Date(d.ts * 1000).toLocaleTimeString('en-GB');
-  document.getElementById('updated').textContent = `Pi-hole data as of: ${ts}`;
-}
+    $('dossier').innerHTML=`
+      <div class="dh">
+        <span class="close" onclick="closeDossier()">✕</span>
+        <div class="dtitle">${name}</div>
+        <div class="dmac">${macTxt}</div>
+        ${badge}
+      </div>
+      <div class="dsec"><h3>Identity</h3>${identity}</div>
+      <div class="dsec"><h3>Link · UniFi</h3>${link}</div>
+      <div class="dsec"><h3>Behaviour · Pi-hole</h3>${dns}</div>
+      <div class="dsec"><h3>Radio · Kismet</h3>${rfHtml}</div>
+      <div class="dsec"><h3>Diagnostics</h3>${captureHtml}</div>`;
+    $('dossier').classList.add('open'); $('overlay').classList.add('open');
+  }
+  function closeDossier(){ $('dossier').classList.remove('open'); $('overlay').classList.remove('open'); }
 
-load().catch(e => {
-  document.getElementById('status').textContent = 'ERROR: ' + e.message;
-  console.error(e);
-});
-setInterval(load, 60000);
+  async function startCapture(mac){
+    const btn=$('cap-btn'), status=$('cap-status'), result=$('cap-result');
+    if(!btn) return;
+    btn.disabled=true;
+    result.innerHTML='';
+    let secs=10;
+    status.className='cap-status'; status.textContent=`capturing… ${secs}s`;
+    const tick=setInterval(()=>{ secs--; if(secs>=0) status.textContent=`capturing… ${secs}s`; }, 1000);
+    try{
+      const res=await fetch('/api/capture', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({mac})});
+      clearInterval(tick);
+      const j=await res.json();
+      if(!j.ok){
+        status.className='cap-status error'; status.textContent='failed — '+(j.error||'unknown error');
+      }else{
+        status.className='cap-status ok'; status.textContent=`${j.summary.frame_count} frames over ${j.summary.duration_s}s`;
+        result.innerHTML=renderCaptureSummary(j.summary, mac, j.pcap_b64);
+      }
+    }catch(e){
+      clearInterval(tick);
+      status.className='cap-status error'; status.textContent='failed — '+e.message;
+    }finally{
+      btn.disabled=false;
+    }
+  }
+
+  function downloadCapture(mac, b64){
+    const bytes=Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+    const blob=new Blob([bytes], {type:'application/vnd.tcpdump.pcap'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=`capture-${mac.replace(/:/g,'')}.pcap`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderCaptureSummary(s, mac, pcapB64){
+    if(!s.frame_count) return '<div class="none">no packets captured for this device in the window</div>';
+    const typeBar=Object.entries(s.type_counts||{}).map(([k,v])=>
+      `<span class="cap-chip">${esc(k)} <b>${v}</b></span>`).join('');
+    const details=Object.entries(s.detail_counts||{}).map(([k,v])=>
+      `<div class="drow"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join('');
+    const peers=(s.top_peers||[]).map(p=>
+      `<div class="drow"><span class="k">${esc(p.peer)}</span><span class="v">${p.count}</span></div>`).join('')
+      || '<div class="none">none seen</div>';
+    const sig=s.signal ? `${s.signal.min} to ${s.signal.max} dBm (avg ${s.signal.avg})` : '—';
+    return `
+      <div class="cap-types">${typeBar}</div>
+      ${drow('Retries', `${s.retry_count} (${s.retry_pct}%)`)}
+      ${drow('Signal', sig)}
+      ${s.channel_freq_mhz ? drow('Channel freq', s.channel_freq_mhz+' MHz') : ''}
+      ${s.ssids_seen && s.ssids_seen.length ? drow('SSIDs seen', s.ssids_seen.map(esc).join(', ')) : ''}
+      <div class="cap-sub">Frame types</div>
+      ${details}
+      <div class="cap-sub">Talked with</div>
+      ${peers}
+      <button class="btn btn-ghost" onclick="downloadCapture('${esc(mac)}','${pcapB64}')">Download raw .pcap</button>
+    `;
+  }
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape')closeDossier(); });
+
+  load();
+  setInterval(load, 60000);
 </script>
 </body>
 </html>

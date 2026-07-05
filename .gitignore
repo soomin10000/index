@@ -45,3 +45,7 @@ steve_state.json
 steve_poller.log
 snapshot.json
 bbc_news.png
+
+# server runtime logs
+server.log
+unifi_poller/server.log
