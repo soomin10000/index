@@ -37,6 +37,9 @@ def main():
         if domain in existing:
             msms[domain] = existing[domain]
             print(f"  exists  {domain} (msm {existing[domain]})")
+        elif domain in msms:
+            # Account listing may be unavailable (403); trust the state file.
+            print(f"  exists  {domain} (msm {msms[domain]}, from state file)")
         else:
             msm_id = at.create_dns_measurement(domain)
             msms[domain] = msm_id

@@ -69,8 +69,8 @@ def classify(group, ph_ips, external_ips, own_ips):
     if group == "block":
         return "unblocked", "block canary resolves to real IPs via Pi-hole"
 
-    # own probe reaches 8.8.8.8 through our uplink — it can be tampered with
-    # even while Pi-hole's own upstream (unbound, direct) stays clean
+    # own probe reaches the public resolver through our uplink — it can be tampered
+    # with even while Pi-hole's own upstream (unbound, direct) stays clean
     own_nets = {_slash24(ip) for ip in own_ips}
     own_diverges = (own_ips and external_ips and not scattered
                     and not (own_nets & ext_nets))

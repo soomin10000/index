@@ -26,7 +26,10 @@ ATLAS_DOMAINS = {
     "dit.whatsapp.net":    "block",
 }
 
-RESOLVER = "8.8.8.8"
+# Quad9 unfiltered (no ad/malware blocking, so block canaries resolve here).
+# Not 8.8.8.8/8.8.4.4/1.1.1.1: Atlas caps concurrent measurements per target
+# platform-wide at 25 and those are saturated (hit 2026-07-07).
+RESOLVER = "9.9.9.10"
 EXTERNAL_PROBES = 3
 INTERVAL = 3600
 
@@ -61,14 +64,29 @@ class AtlasClient:
                 "connected": (p.get("status") or {}).get("name") == "Connected"}
 
     def credits(self):
-        c = self._get("credits/")
+        # Needs its own key grant; a schedule-only key gets 403 here.
+        try:
+            c = self._get("credits/")
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403:
+                return {"balance": None, "daily_income": None}
+            raise
         return {"balance": c.get("current_balance"),
                 "daily_income": c.get("estimated_daily_income")}
 
     def list_my_measurements(self):
-        """domain -> measurement id for our ongoing cross-check measurements."""
-        r = self._get("measurements/my/", search=DESC_PREFIX.rstrip(":"),
-                      status__in="0,1,2", page_size=100)
+        """domain -> measurement id for our ongoing cross-check measurements.
+
+        403 (key lacks the list grant) -> {}: the bootstrap then relies on
+        data/atlas_state.json alone for idempotency, so don't delete it.
+        """
+        try:
+            r = self._get("measurements/my/", search=DESC_PREFIX.rstrip(":"),
+                          status__in="0,1,2", page_size=100)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403:
+                return {}
+            raise
         out = {}
         for m in r.get("results", []):
             desc = m.get("description") or ""
@@ -99,7 +117,13 @@ class AtlasClient:
             "is_oneoff": False,
         }
         r = self.s.post(f"{BASE}/measurements/", json=payload, timeout=30)
-        r.raise_for_status()
+        if not r.ok:
+            try:
+                detail = r.json()
+            except ValueError:
+                detail = r.text[:500]
+            raise SystemExit(f"measurement create failed ({r.status_code}) "
+                             f"for {domain}: {detail}")
         return r.json()["measurements"][0]
 
     def latest_results(self, msm_id):
