@@ -107,6 +107,9 @@ class AtlasClient:
                 "query_argument": domain,
                 "target": resolver,
                 "use_probe_resolver": False,
+                # Atlas leaves RD unset by default and recursive resolvers
+                # answer REFUSED to non-recursive queries (hit 2026-07-07)
+                "set_rd_bit": True,
                 "description": DESC_PREFIX + domain,
                 "interval": interval,
             }],
