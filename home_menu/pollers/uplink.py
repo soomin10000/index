@@ -225,6 +225,87 @@ def check_exposure(session, state, ip):
     }
 
 
+def _asn_for_ip(session, ip, cache):
+    """IP -> origin ASN via RIPEstat, memoised in the state cache."""
+    if ip in cache:
+        return cache[ip]
+    try:
+        d = session.get(f"{STAT}/network-info/data.json",
+                        params={"resource": ip}, timeout=20).json()["data"]
+        asn = int(d["asns"][0]) if d.get("asns") else None
+    except Exception:
+        asn = None
+    cache[ip] = asn
+    return asn
+
+
+def _is_private(ip):
+    o = ip.split(".")
+    return (o[0] == "10" or (o[0] == "172" and 16 <= int(o[1]) <= 31)
+            or (o[0] == "192" and o[1] == "168")) if len(o) == 4 else False
+
+
+def check_reverse_path(session, state, ip):
+    """How the world routes back to us: the transit ASNs of the last few
+    responsive hops before our (silent) address, aggregated across probes.
+    Alerts when that near-us AS set changes — the reverse of the BGP origin
+    watch, which only sees who *announces* us."""
+    rev = state.setdefault("reverse", {})
+    if not rev.get("msm_id"):
+        return {"status": "unmanaged", "note": "no measurement"}
+    r = session.get(f"{BASE}/measurements/{rev['msm_id']}/latest/", timeout=60)
+    r.raise_for_status()
+    results = r.json()
+    cache = state.setdefault("asn_cache", {})
+
+    hop_counts, transit = [], {}
+    for res in results:
+        hops = res.get("result", [])
+        responsive = [h for h in hops
+                      if any(p.get("from") for p in h.get("result", []))]
+        if responsive:
+            hop_counts.append(responsive[-1].get("hop", len(hops)))
+        # the last two responsive hops = ISP border + its upstream
+        for h in responsive[-2:]:
+            for p in h.get("result", []):
+                fip = p.get("from")
+                if not fip or _is_private(fip):
+                    continue
+                asn = _asn_for_ip(session, fip, cache)
+                if asn and asn != EXPECTED_ASN:
+                    transit.setdefault(asn, set()).add(res.get("prb_id"))
+
+    as_set = sorted(transit)
+    fp = ",".join(str(a) for a in as_set)
+    prev_fp = rev.get("fingerprint")
+    changed = prev_fp is not None and fp != prev_fp
+    rev["fingerprint"] = fp
+    names = state.setdefault("asn_names", {})
+    return {
+        "status": "changed" if changed else "ok",
+        "msm_id": rev["msm_id"],
+        "probes": len(results),
+        "median_hops": int(statistics.median(hop_counts)) if hop_counts else None,
+        "transit": [{"asn": a, "probes": len(transit[a]),
+                     "holder": _asn_holder(session, a, names)} for a in as_set],
+        "prev_fingerprint": prev_fp if changed else None,
+    }
+
+
+def _asn_holder(session, asn, cache):
+    key = str(asn)
+    if key in cache:
+        return cache[key]
+    try:
+        d = session.get(f"{STAT}/as-overview/data.json",
+                        params={"resource": f"AS{asn}"}, timeout=20).json()["data"]
+        holder = (d.get("holder") or "").split(",")[0][:40] or None
+    except Exception:
+        holder = None
+    cache[key] = holder
+    return holder
+
+
 def fetch_and_write():
     now = int(time.time())
     start = now - WINDOW
@@ -243,6 +324,11 @@ def fetch_and_write():
     except Exception as e:
         exposure = {"status": "unknown", "note": f"fetch failed: {e}"}
 
+    try:
+        reverse = check_reverse_path(s, state, probe.get("address_v4"))
+    except Exception as e:
+        reverse = {"status": "unknown", "note": f"fetch failed: {e}"}
+
     # notify once per transition into a bad state, like the probe events
     if bgp["status"] == "alert" and state.get("bgp_last_status") != "alert":
         _notify("Uplink BGP", "; ".join(bgp["notes"]))
@@ -252,6 +338,10 @@ def fetch_and_write():
                                    f"external probes {exposure.get('responded')} — "
                                    "open resolver / port forward?")
     state["exposure_last_status"] = exposure["status"]
+    if reverse["status"] == "changed":
+        _notify("Uplink reverse-path", f"transit AS set changed: was "
+                                       f"[{reverse.get('prev_fingerprint')}] now "
+                                       f"[{','.join(str(t['asn']) for t in reverse['transit'])}]")
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
     series = bucket_series(fetch_pings(s, start), start, now)
@@ -265,6 +355,7 @@ def fetch_and_write():
         "probe": probe | {"uptime_pct": uptime_pct},
         "bgp": bgp,
         "exposure": exposure,
+        "reverse": reverse,
         "targets": sorted(ROOT_MSMS.values()),
         "series": series,
         "events": events[-50:],

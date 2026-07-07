@@ -143,6 +143,14 @@
     </div>
   </details>
 
+  <div class="section-title">REVERSE PATH — TRANSIT ASNS ROUTING BACK TO US</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>TRANSIT ASN</th><th>NETWORK</th><th>PROBES VIA</th></tr></thead>
+      <tbody id="transit-rows"></tbody>
+    </table>
+  </div>
+
   <div class="section-title">CONNECTION DIARY — PROBE TRANSITIONS (OUTSIDE-IN)</div>
   <div class="tbl-wrap">
     <table>
@@ -330,6 +338,7 @@
     if (!up) banners.push(`⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)`);
     if (d.bgp?.status === 'alert') banners.push(`⚠ BGP: ${(d.bgp.notes || []).map(esc).join(' · ')}`);
     if (d.exposure?.status === 'open') banners.push(`⚠ EXPOSURE: UDP/53 on ${esc(d.exposure.target)} answered probes ${(d.exposure.responded || []).map(esc).join(', ')} — open resolver / port forward?`);
+    if (d.reverse?.status === 'changed') banners.push(`⚠ REVERSE PATH: transit AS set changed (was AS${esc(d.reverse.prev_fingerprint)})`);
     document.getElementById('banner').innerHTML =
       banners.map(b => `<div class="err-banner">${b}</div>`).join('');
 
@@ -378,6 +387,26 @@
     }));
 
     renderEvents(d.events || []);
+
+    const transit = d.reverse?.transit || [];
+    const trBody = document.getElementById('transit-rows');
+    if (transit.length) {
+      trBody.replaceChildren(...transit.map(t => {
+        const tr = document.createElement('tr');
+        const a = document.createElement('td'); a.className = 'when'; a.textContent = 'AS' + t.asn;
+        const n = document.createElement('td'); n.textContent = t.holder || '—';
+        const p = document.createElement('td'); p.textContent = t.probes;
+        tr.append(a, n, p);
+        return tr;
+      }));
+    } else {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 3;
+      td.textContent = d.reverse?.probes ? 'No transit ASNs resolved yet.'
+                                         : 'First traceroutes pending (within the hour).';
+      tr.appendChild(td);
+      trBody.replaceChildren(tr);
+    }
 
     const age = Math.round((Date.now() / 1000 - d.ts) / 60);
     document.getElementById('status').textContent =
