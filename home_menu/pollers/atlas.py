@@ -29,7 +29,7 @@ STATE_FILE = DATA / "atlas_state.json"
 PIHOLE_IP = "192.168.1.246"
 BLOCK_SENTINELS = {"0.0.0.0", "::"}
 # statuses that warrant a notification when a domain transitions into them
-ALERT_STATUSES = {"divergent", "own_path_divergent", "unexpected_block"}
+ALERT_STATUSES = {"divergent", "own_path_divergent", "unexpected_block", "unblocked"}
 
 
 def _load_state():
