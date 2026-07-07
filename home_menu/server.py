@@ -15,11 +15,14 @@ import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-BASE = os.path.dirname(__file__)
+BASE   = Path(__file__).parent
+PAGES  = BASE / 'pages'
+STATIC = BASE / 'static'
+DATA   = BASE / 'data'
 PORT = 8080
 
 UNIFI_DB   = Path.home() / 'unifi_poller.db'
-UNIFI_DIR  = Path.home() / 'projects' / 'unifi_poller'
+UNIFI_DATA = DATA / 'unifi'
 
 PROXIES = {
     '/api/harold':  'http://localhost:5000/api/status',
@@ -61,11 +64,11 @@ def _unifi_status():
         return {'error': str(e)}
 
 
-PIHOLE_JSON  = Path(__file__).parent / 'pihole.json'
-KISMET_JSON  = Path(__file__).parent / 'kismet.json'
-STEVE_JSON   = Path(__file__).parent / 'steve.json'
-STEVE_DB     = Path(__file__).parent / 'steve_history.db'
-DEVICES_JSON = UNIFI_DIR / 'devices.json'
+PIHOLE_JSON  = DATA / 'pihole.json'
+KISMET_JSON  = DATA / 'kismet.json'
+STEVE_JSON   = DATA / 'steve.json'
+STEVE_DB     = DATA / 'steve_history.db'
+DEVICES_JSON = UNIFI_DATA / 'devices.json'
 
 KISMET_URL  = os.environ.get('KISMET_URL', 'http://localhost:2501')
 KISMET_USER = os.environ.get('KISMET_USER')
@@ -77,7 +80,9 @@ KISMET_PASS = os.environ.get('KISMET_PASS')
 CROSS_REF_USER = os.environ.get('CROSS_REF_USER')
 CROSS_REF_PASS = os.environ.get('CROSS_REF_PASS')
 
-from steve_poller import SERVICES as STEVE_SERVICES
+import sys
+sys.path.insert(0, str(BASE / 'pollers'))
+from steve import SERVICES as STEVE_SERVICES
 
 
 def _steve_history():
@@ -112,7 +117,7 @@ def _restart_steve_service(name):
 def _kismet_bytes():
     """Raw file bytes — avoid parsing+re-serializing JSON we're just forwarding to the client."""
     if not KISMET_JSON.exists():
-        return json.dumps({'error': 'no kismet.json — run kismet_poller.py'}).encode()
+        return json.dumps({'error': 'no kismet.json — run pollers/kismet.py'}).encode()
     try:
         return KISMET_JSON.read_bytes()
     except Exception as e:
@@ -285,6 +290,7 @@ def _compute_cross_ref():
 
     unifi_devices = ud.get('devices', [])
     ph_clients    = ph.get('clients_detail', [])
+    ip_mac        = ph.get('ip_mac', {})  # Pi-hole network table: ip -> hardware MAC
 
     # Build lookups: ip→client and name→[clients] (name may be ambiguous)
     by_ip   = {c['ip']: c for c in ph_clients}
@@ -301,8 +307,12 @@ def _compute_cross_ref():
         hostname = (dev.get('hostname') or dev.get('display_name') or '').lower()
 
         # A device can appear under several Pi-hole rows: its IPv4 plus every rotating
-        # IPv6 privacy address UniFi has seen it use — merge all of them together.
-        matched = [c for c in (by_ip.get(a) for a in (ip, *ipv6s)) if c]
+        # IPv6 privacy address — merge all of them. Pi-hole's own MAC table catches
+        # addresses the device has already rotated away from, which UniFi no longer lists.
+        mac_key = (dev.get('mac') or '').lower()
+        matched = [c for c in ph_clients if mac_key and ip_mac.get(c['ip']) == mac_key]
+        matched += [c for c in (by_ip.get(a) for a in (ip, *ipv6s))
+                    if c and c not in matched]
         if not matched and hostname:
             names = by_name.get(hostname, [])
             # Only trust hostname match when it's unique (not "iphone" matching 6 entries)
@@ -315,7 +325,6 @@ def _compute_cross_ref():
         else:
             ph_total = ph_blocked = ph_pct = ph_ip = None
 
-        mac_key = (dev.get('mac') or '').lower()
         ks_dev  = kismet_by_mac.get(mac_key, {})
         result.append({
             **dev,
@@ -342,33 +351,46 @@ def _compute_cross_ref():
             unifi_ips.add(d['ip'])
         unifi_ips.update(d.get('ipv6') or [])
     unifi_names = [(d.get('hostname') or '').lower() for d in unifi_devices if d.get('hostname')]
+    unifi_macs  = {(d.get('mac') or '').lower() for d in unifi_devices if d.get('mac')}
     unmatched = [c for c in ph_clients
                  if c['ip'] not in unifi_ips
+                 and ip_mac.get(c['ip']) not in unifi_macs
                  and not any(_hostnames_match(c['name'], n) for n in unifi_names)]
 
-    # Cluster unmatched clients by (fuzzy) name so the same device doesn't fragment
-    # into several rows just because its name differs slightly across IPs.
-    groups = []  # [(representative_name_or_ip, [clients])]
+    # Cluster unmatched clients — same MAC (Pi-hole network table) is the strongest
+    # signal, then (fuzzy) name — so a device doesn't fragment into several rows
+    # across its rotating IPv6 privacy addresses or slight name differences.
+    groups = []      # [(name_key_or_ip, [clients])]
+    mac_members = {} # mac -> members list (aliases entries in groups)
     for c in unmatched:
-        name = (c['name'] or '').lower()
-        if not name:
-            groups.append((c['ip'], [c]))  # unnamed clients stay separate, by IP
+        mac = ip_mac.get(c['ip'])
+        if mac and mac in mac_members:
+            mac_members[mac].append(c)
             continue
-        for key, members in groups:
-            if key and _hostnames_match(name, key):
-                members.append(c)
-                break
-        else:
-            groups.append((name, [c]))
+        name = (c['name'] or '').lower()
+        members = None
+        if name:
+            for key, ms in groups:
+                if key and _hostnames_match(name, key):
+                    members = ms
+                    ms.append(c)
+                    break
+        if members is None:
+            members = [c]
+            # unnamed clients keyed by IP so they never fuzzy-match a name
+            groups.append((name or c['ip'], members))
+        if mac:
+            mac_members[mac] = members
 
     for _, group in groups:
         ipv4 = [c for c in group if ':' not in c['ip']]
         primary = max(ipv4 or group, key=lambda c: c['total'])  # prefer a stable IPv4 over a rotating IPv6
+        name    = primary['name'] or next((c['name'] for c in group if c['name']), '')
         total   = sum(c['total'] for c in group)
         blocked = sum(c['blocked'] for c in group)
         other_ips = sorted({c['ip'] for c in group} - {primary['ip']})
         result.append({
-            'mac': None, 'hostname': primary['name'], 'display_name': primary['name'] or primary['ip'],
+            'mac': ip_mac.get(primary['ip']), 'hostname': name, 'display_name': name or primary['ip'],
             'ip': primary['ip'], 'ip_alt': other_ips,
             'vendor': '', 'ssid': '', 'ap': '', 'signal': None,
             'retry_pct': None, 'is_wired': None, 'flagged': False,
@@ -650,11 +672,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/unifi/map':
             self._file('unifi_map.html', 'text/html; charset=utf-8')
         elif path == '/vis-network.min.js':
-            self._file('vis-network.min.js', 'application/javascript')
+            self._abs_file(STATIC / 'vis-network.min.js', 'application/javascript')
         elif path == '/api/unifi/graph':
-            self._abs_file(UNIFI_DIR / 'topology.json', 'application/json')
+            self._abs_file(UNIFI_DATA / 'topology.json', 'application/json')
         elif path == '/api/unifi/devices':
-            self._abs_file(UNIFI_DIR / 'devices.json', 'application/json')
+            self._abs_file(DEVICES_JSON, 'application/json')
         elif path == '/unifi/devices':
             self._file('unifi_devices.html', 'text/html; charset=utf-8')
         elif path.startswith('/api/unifi/device'):
@@ -682,7 +704,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/pihole':
             self._file('pihole.html', 'text/html; charset=utf-8')
         elif path == '/api/pihole':
-            self._abs_file(Path(__file__).parent / 'pihole.json', 'application/json')
+            self._abs_file(PIHOLE_JSON, 'application/json')
         elif path == '/steve':
             self._file('steve.html', 'text/html; charset=utf-8')
         elif path == '/api/steve':
@@ -690,7 +712,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/api/steve/history':
             self._json(_steve_history())
         elif path == '/chart.min.js':
-            self._file('chart.min.js', 'application/javascript')
+            self._abs_file(STATIC / 'chart.min.js', 'application/javascript')
         elif path == '/api/unifi/events':
             body = json.dumps(_unifi_events()).encode()
             self.send_response(200)
@@ -701,13 +723,17 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/unifi/events':
             self._file('unifi_events.html', 'text/html; charset=utf-8')
         elif path in ('/unifi/topology.png', '/unifi/dashboard.png'):
-            self._abs_file(UNIFI_DIR / path.split('/')[-1], 'image/png')
+            self._abs_file(UNIFI_DATA / path.split('/')[-1], 'image/png')
         else:
             self.send_error(404)
 
     def do_POST(self):
         path = self.path.split('?')[0]
-        if path == '/api/capture' and not self._require_cross_ref_auth():
+        # All state-changing endpoints need the login: the Content-Type check below only
+        # stops cross-site requests from a browser, not a hostile LAN host POSTing directly
+        # (restart rides passwordless sudo; speedtest saturates the WAN on demand).
+        if path in ('/api/capture', '/api/steve/restart', '/api/speedtest/trigger') \
+                and not self._require_cross_ref_auth():
             return
         # These endpoints change state (trigger a speedtest, restart a service). Requiring
         # an application/json Content-Type means a cross-origin request needs a CORS
@@ -722,12 +748,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/speedtest/trigger':
             self._json(_trigger_gateway_speedtest())
         elif path == '/api/steve/restart':
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length) if length else b'{}'
-            try:
-                name = json.loads(body).get('service', '')
-            except Exception:
-                name = ''
+            name = self._body_json().get('service', '')
             if name == 'home-menu':
                 # Restarting the service that's handling this very request kills the
                 # process before a synchronous reply can be sent — the client just sees
@@ -743,16 +764,26 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._json(_restart_steve_service(name))
         elif path == '/api/capture':
-            length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(length) if length else b'{}'
-            try:
-                mac = json.loads(body).get('mac', '')
-            except Exception:
-                mac = ''
+            mac = self._body_json().get('mac', '')
             result, err = _capture_traffic(mac)
             self._json({'ok': False, 'error': err} if err else {'ok': True, **result})
         else:
             self.send_error(404)
+
+    def _body_json(self):
+        """Parsed JSON request body, or {} on anything malformed. Bounded so a huge
+        (or garbage) Content-Length can't make us allocate an arbitrary buffer."""
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+        except ValueError:
+            return {}
+        if not 0 < length <= 65536:
+            return {}
+        try:
+            data = json.loads(self.rfile.read(length))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
 
     def _json(self, data):
         body = json.dumps(data).encode()
@@ -793,7 +824,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _file(self, name, ct):
         try:
-            with open(os.path.join(BASE, name), 'rb') as f:
+            with open(PAGES / name, 'rb') as f:
                 body = f.read()
             self.send_response(200)
             self.send_header('Content-Type', ct)

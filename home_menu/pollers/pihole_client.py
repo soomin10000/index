@@ -58,3 +58,14 @@ class PiholeClient:
 
     def blocked_clients(self, count=200):
         return self._get("stats/top_clients", blocked="true", count=count).get("clients", [])
+
+    def network_devices(self, max_devices=300, max_addresses=50):
+        return self._get("network/devices", max_devices=max_devices,
+                         max_addresses=max_addresses).get("devices", [])
+
+    def logout(self):
+        # Pi-hole caps concurrent API sessions ("api_seats_exceeded") — free the seat
+        if self._sid:
+            requests.delete(f"{self.url}/api/auth",
+                            headers={"X-FTL-SID": self._sid}, timeout=10)
+            self._sid = None

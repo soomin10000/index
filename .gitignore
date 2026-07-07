@@ -1,31 +1,31 @@
 __pycache__/
 *.pyc
 *.pyo
-pihole.json
-kismet.json
-kismet_poller.log*
-pihole_poller.log*
-unifi_poller/devices.json
-unifi_poller/topology.json
-unifi_poller/topology.png
-unifi_poller/dashboard.png
-unifi_poller/poller.log*
-*.db
-handoff.md
-HANDOFF.md
-*.service
-clients.png
-dump_*.py
-plot_*.py
-end_result.txt
-
-# Local wireless lab — captures (crackable handshakes/PMKID), wordlists,
-# vendored tools, and recon notes. Never publish to the public repo.
-wireless-lab/
 
 # Python virtualenvs (never commit — includes bundled binaries like Playwright)
 .venv/
 venv/
+
+# home_menu runtime outputs (poller JSON/DB in data/, unrotated logs in logs/)
+home_menu/data/
+home_menu/logs/
+
+# systemd units are installed copies; unifi-poller.service carries an API key
+# and this repo is PUBLIC, so ignore them all — except the secret-free menu unit.
+*.service
+!home_menu/home-menu.service
+
+# scratch / one-off analysis files
+handoff.md
+HANDOFF.md
+dump_*.py
+plot_*.py
+end_result.txt
+bbc_news.png
+
+# Local wireless lab — captures (crackable handshakes/PMKID), wordlists,
+# vendored tools, and recon notes. Never publish to the public repo.
+wireless-lab/
 
 # hcpy — vendored third-party Home Connect tool with its own .git
 hcpy/
@@ -38,14 +38,3 @@ next_train/
 now_playing/
 weather/
 whats_darren_doing/
-
-# steve monitor runtime outputs + stray artifacts
-steve.json
-steve_state.json
-steve_poller.log
-snapshot.json
-bbc_news.png
-
-# server runtime logs
-server.log
-unifi_poller/server.log

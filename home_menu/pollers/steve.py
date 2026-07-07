@@ -20,9 +20,12 @@ except ImportError:
     def _notify(title, message, **kwargs):
         print(f"notify_sender unavailable — would have sent: [{title}] {message}")
 
-OUT        = Path(__file__).parent / "steve.json"
-STATE_FILE = Path(__file__).parent / "steve_state.json"
-DB_FILE    = Path(__file__).parent / "steve_history.db"
+DATA = Path(__file__).resolve().parent.parent / "data"
+LOGS = Path(__file__).resolve().parent.parent / "logs"
+
+OUT        = DATA / "steve.json"
+STATE_FILE = DATA / "steve_state.json"
+DB_FILE    = DATA / "steve_history.db"
 HISTORY_RETENTION_SECONDS = 48 * 3600
 
 # The home-stack services running on steve — not the generic OS units.
@@ -47,10 +50,10 @@ LOG_SIZE_CRIT_MB = 800
 WATCHED_LOGS = [
     "/var/log/syslog",
     "/var/log/kern.log",
-    str(Path(__file__).parent / "kismet_poller.log"),
-    str(Path(__file__).parent / "pihole_poller.log"),
-    str(Path(__file__).parent / "steve_poller.log"),
-    str(Path(__file__).parent / "server.log"),
+    str(LOGS / "kismet.log"),
+    str(LOGS / "pihole.log"),
+    str(LOGS / "steve.log"),
+    str(LOGS / "unifi.log"),
 ]
 
 

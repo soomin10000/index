@@ -73,7 +73,7 @@ plt.rcParams.update({
 })
 
 _DB  = Path.home() / "unifi_poller.db"
-_OUT = Path(__file__).parent / "dashboard.png"
+_OUT = Path(__file__).resolve().parents[2] / "data" / "unifi" / "dashboard.png"
 
 # ── Marks (clean, no glow) ─────────────────────────────────────────────────────
 

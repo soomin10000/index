@@ -14,11 +14,12 @@ KISMET_PASS  = os.environ.get('KISMET_PASS')
 KISMET_IFACE = os.environ.get('KISMET_IFACE', 'wlx00c0cabaea2c')
 
 if not KISMET_USER or not KISMET_PASS:
-    raise SystemExit('Set KISMET_USER and KISMET_PASS env vars before running kismet_poller.py')
+    raise SystemExit('Set KISMET_USER and KISMET_PASS env vars before running pollers/kismet.py')
 
-OUT = Path(__file__).parent / 'kismet.json'
-UNIFI_DEVICES = Path(__file__).parent / 'unifi_poller' / 'devices.json'
-PIHOLE_JSON = Path(__file__).parent / 'pihole.json'
+DATA = Path(__file__).resolve().parent.parent / 'data'
+OUT = DATA / 'kismet.json'
+UNIFI_DEVICES = DATA / 'unifi' / 'devices.json'
+PIHOLE_JSON = DATA / 'pihole.json'
 PIHOLE_MAX_AGE_SEC = 900  # ignore pihole.json if stale — IPs get reassigned, wrong name is worse than no name
 
 DEVICE_FIELDS = [

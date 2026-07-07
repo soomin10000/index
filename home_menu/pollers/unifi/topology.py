@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 _DIR = Path(__file__).parent
+_OUT = Path(__file__).resolve().parents[2] / "data" / "unifi"
 
 NODE_Y_GAP   = 3.5
 CLIENT_Y_GAP = 2.8
@@ -197,7 +198,7 @@ def render(devices, stations, wlans):
                  color="#224466", fontfamily="monospace", fontweight="bold", loc="left")
 
     plt.tight_layout()
-    plt.savefig(_DIR / "topology.png", dpi=150, bbox_inches="tight", facecolor=BG)
+    plt.savefig(_OUT / "topology.png", dpi=150, bbox_inches="tight", facecolor=BG)
     plt.close(fig)
 
     # ── Export JSON ───────────────────────────────────────────────────────────
@@ -250,7 +251,7 @@ def render(devices, stations, wlans):
     for (src, dst), style in zip(edges, edge_styles):
         graph_edges.append({"from": src, "to": dst, "wired": style == "solid"})
 
-    (_DIR / "topology.json").write_text(
+    (_OUT / "topology.json").write_text(
         json.dumps({"nodes": graph_nodes, "edges": graph_edges}, indent=2)
     )
 

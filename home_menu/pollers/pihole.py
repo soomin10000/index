@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from pihole_client import PiholeClient
 
-OUT = Path(__file__).parent / "pihole.json"
+OUT = Path(__file__).resolve().parent.parent / "data" / "pihole.json"
 
 
 def fetch_and_write():
@@ -21,8 +21,21 @@ def fetch_and_write():
     t_clients  = ph.top_clients(200)
     bl_clients = ph.blocked_clients(200)
     upstreams  = ph.upstreams()
+    net_devs   = ph.network_devices()
+    ph.logout()
 
     q = summary.get("queries", {})
+
+    # ip -> mac from Pi-hole's network table, so consumers can join a device's
+    # rotating IPv6 privacy addresses back to the same hardware as its IPv4.
+    # Pi-hole invents "ip-x.x.x.x" pseudo-MACs for off-subnet clients — skip those.
+    ip_mac = {}
+    for nd in net_devs:
+        mac = (nd.get("hwaddr") or "").lower()
+        if ":" not in mac:
+            continue
+        for a in nd.get("ips", []):
+            ip_mac[a["ip"]] = mac
 
     # blocked count keyed by IP only — name fallback causes false matches
     blocked_by_ip = {c["ip"]: c["count"] for c in bl_clients}
@@ -62,6 +75,7 @@ def fetch_and_write():
         "top_blocked":    t_blocked,
         "top_clients":    t_clients[:10],
         "clients_detail": clients_detail,
+        "ip_mac":         ip_mac,
         "upstreams":      real_upstreams,
     }
 

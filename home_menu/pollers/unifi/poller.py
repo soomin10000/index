@@ -40,8 +40,8 @@ except ImportError:
     def _notify(title, message, **kwargs):
         log.warning("notify_sender unavailable — would have sent: [%s] %s", title, message)
 
-LOG_FILE    = Path(__file__).parent / "poller.log"
-DEVICES_OUT = Path(__file__).parent / "devices.json"
+LOG_FILE    = Path(__file__).resolve().parents[2] / "logs" / "unifi.log"
+DEVICES_OUT = Path(__file__).resolve().parents[2] / "data" / "unifi" / "devices.json"
 
 log = logging.getLogger("unifi_poller")
 log.setLevel(logging.INFO)
@@ -240,7 +240,7 @@ def _regenerate_visuals(devices, stations, wlans):
     except Exception as e:
         log.warning("Failed to regenerate dashboard: %s", e)
 
-    # pihole_poller.py now runs on its own cron schedule (needs PIHOLE_PASSWORD,
+    # pollers/pihole.py now runs on its own cron schedule (needs PIHOLE_PASSWORD,
     # which unifi-poller.service's systemd environment doesn't have and we can't
     # add without an interactive sudo password to edit the unit file).
 

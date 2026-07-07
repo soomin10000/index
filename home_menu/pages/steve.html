@@ -424,7 +424,7 @@
   }
 
   function procRow(p) {
-    return `<div class="row"><span>${p.pid}</span><span class="proc-name">${p.name}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
+    return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
   }
 
   // ── Alerts (each acknowledged individually — an ack is "id -> onset ts",

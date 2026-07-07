@@ -410,7 +410,7 @@
       const accent = temp >= 30 ? '#ff4500' : temp >= 20 ? '#ff8c00' : '#42a5f5';
       setCard('harold', {
         val: temp ?? '—', unit: '°C',
-        sub: `${dot(on ? 'dot-on' : 'dot-off')}${on ? 'On' : 'Off'}${mode ? ' · '+mode : ''}`,
+        sub: `${dot(on ? 'dot-on' : 'dot-off')}${on ? 'On' : 'Off'}${mode ? ' · '+esc(mode) : ''}`,
         accent, lamp: on ? 'on' : undefined,
       });
     } catch { setCard('harold', { val: 'Offline', unit: '' }, true); }
@@ -422,12 +422,12 @@
       const svcs = d.trainServices || [];
       const next = svcs.find(s => s.etd !== 'Cancelled');
       if (!next) { setCard('train', { val: 'None', sub: 'No services', lamp: 'warn' }); return; }
-      const dest = next.destination?.[0]?.locationName ?? '?';
+      const dest = esc(next.destination?.[0]?.locationName ?? '?');
       const std = next.std ?? '—', etd = next.etd ?? '—';
       const time = (etd && etd !== 'On time' && etd !== '—') ? etd : std;
       const onTime = etd === 'On time';
-      const status = onTime ? 'On time' : etd !== '—' && etd !== 'On time' ? `Exp ${etd}` : '';
-      const plat = next.platform ? ` · Plat ${next.platform}` : '';
+      const status = onTime ? 'On time' : etd !== '—' && etd !== 'On time' ? `Exp ${esc(etd)}` : '';
+      const plat = next.platform ? ` · Plat ${esc(next.platform)}` : '';
       setCard('train', {
         val: time,
         sub: `${dot(onTime ? 'dot-on' : 'dot-off')}${dest}${status ? ' · '+status : ''}${plat}`,
@@ -457,7 +457,7 @@
       const d = await get('/api/darren');
       const state = d.operation_state ?? 'Unknown';
       const rem = mins(d.remaining_seconds);
-      const parts = [d.program, d.program_phase !== 'None' ? d.program_phase : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
+      const parts = [esc(d.program), d.program_phase !== 'None' ? esc(d.program_phase) : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
       const accent = { Run:'#26c6da', Finished:'var(--ok)', Error:'var(--down)', Ready:'var(--ink-dim)', Inactive:'var(--ink-faint)' }[state] ?? 'var(--ink-dim)';
       const lamp   = { Run:'on', Finished:'on', Error:'down' }[state];
       setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent, lamp });
@@ -473,7 +473,7 @@
       const feels = d.apparent_temperature != null ? Math.round(d.apparent_temperature) : null;
       const wind  = d.wind_speed_10m != null ? Math.round(d.wind_speed_10m) : null;
       const dir   = d.wind_direction_10m != null ? compassDir(d.wind_direction_10m) : '';
-      const parts = [d.description, feels != null ? `Feels ${feels}°C` : null, wind != null ? `${wind} mph ${dir}` : null].filter(Boolean);
+      const parts = [esc(d.description), feels != null ? `Feels ${feels}°C` : null, wind != null ? `${wind} mph ${dir}` : null].filter(Boolean);
       const emoji = wmoEmoji(d.weather_code ?? 0, !!d.is_day);
       document.getElementById('w-emoji').textContent = emoji;
       setCard('weather', { val: temp ?? '—', unit: '°C', sub: parts.join(' · '), lamp: 'on' });
