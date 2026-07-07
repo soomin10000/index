@@ -47,6 +47,15 @@ EXPOSURE_DESC = "home-exposure-check"
 EXPOSURE_PROBES = 3
 EXPOSURE_INTERVAL = 3600
 
+# NTP integrity: query the same public NTP servers from our probe and a handful
+# of world-wide probes. Our probe's measured offset to a server should track the
+# world consensus; if it drifts off on its own, something is rewriting NTP on
+# our path. Atlas NTP offset/rtt are reported in milliseconds.
+NTP_SERVERS = {"162.159.200.123": "time.cloudflare.com",
+               "216.239.35.0": "time.google.com"}
+NTP_DELTA_MS = 100.0     # our offset may diverge from the world by this much
+NTP_ABS_MS = 1000.0      # an absolute offset this large is alarming by itself
+
 
 def _load_state():
     try:
@@ -306,6 +315,82 @@ def _asn_holder(session, asn, cache):
     return holder
 
 
+def _probe_ntp(res):
+    """One probe's view of a server: median offset (ms), stratum, reachability.
+    Successful NTP samples carry an "offset"; timeouts carry "x" instead."""
+    offs = [r["offset"] for r in res.get("result", [])
+            if isinstance(r, dict) and "offset" in r]
+    return {
+        "prb_id": res.get("prb_id"),
+        "offset": round(statistics.median(offs), 2) if offs else None,
+        "stratum": res.get("stratum"),
+        "reachable": bool(offs),
+    }
+
+
+def fetch_ntp(session, state):
+    """Cross-check our probe's clock offset to public NTP servers against a
+    world-wide consensus. Each server is queried from our probe and a few WW
+    probes; if our offset to a server is an outlier while the rest of the world
+    agrees, something is rewriting NTP on our path (or our clock has slipped)."""
+    servers_cfg = state.get("ntp", {}).get("servers", {})
+    if not servers_cfg:
+        return {"status": "unmanaged", "note": "no measurements"}
+
+    out, alert = [], False
+    for host, msm_id in servers_cfg.items():
+        row = {"host": host, "name": NTP_SERVERS.get(host, host), "msm_id": msm_id}
+        try:
+            results = session.get(f"{BASE}/measurements/{msm_id}/latest/",
+                                  timeout=60).json()
+        except Exception as e:
+            out.append(row | {"status": "unknown", "notes": [str(e)]})
+            continue
+
+        views = [_probe_ntp(r) for r in results]
+        ours = next((v for v in views if v["prb_id"] == PROBE_ID), None)
+        others = [v["offset"] for v in views
+                  if v["prb_id"] != PROBE_ID and v["offset"] is not None]
+        consensus = round(statistics.median(others), 2) if others else None
+
+        notes, delta = [], None
+        if not results:
+            status = "pending"
+        elif ours is None or not ours["reachable"]:
+            status = "unreachable"
+            notes.append("our probe got no NTP reply")
+        else:
+            if consensus is not None:
+                delta = round(ours["offset"] - consensus, 2)
+                if abs(delta) > NTP_DELTA_MS:
+                    notes.append(f"our offset {ours['offset']}ms vs world "
+                                 f"{consensus}ms (Δ{delta}ms)")
+            if abs(ours["offset"]) > NTP_ABS_MS:
+                notes.append(f"absolute offset {ours['offset']}ms")
+            st = ours["stratum"]
+            if st in (0, None) or (st and st > 4):
+                notes.append(f"stratum {st}")
+            status = "alert" if notes else "ok"
+
+        if status == "alert":
+            alert = True
+        out.append(row | {
+            "status": status,
+            "our_offset": ours["offset"] if ours else None,
+            "consensus": consensus, "delta": delta,
+            "stratum": ours["stratum"] if ours else None,
+            "peers": len(others), "notes": notes,
+        })
+
+    if alert:
+        overall = "alert"
+    elif out and all(s["status"] == "pending" for s in out):
+        overall = "pending"
+    else:
+        overall = "ok"
+    return {"status": overall, "servers": out}
+
+
 def fetch_and_write():
     now = int(time.time())
     start = now - WINDOW
@@ -329,6 +414,11 @@ def fetch_and_write():
     except Exception as e:
         reverse = {"status": "unknown", "note": f"fetch failed: {e}"}
 
+    try:
+        ntp = fetch_ntp(s, state)
+    except Exception as e:
+        ntp = {"status": "unknown", "note": f"fetch failed: {e}"}
+
     # notify once per transition into a bad state, like the probe events
     if bgp["status"] == "alert" and state.get("bgp_last_status") != "alert":
         _notify("Uplink BGP", "; ".join(bgp["notes"]))
@@ -342,6 +432,11 @@ def fetch_and_write():
         _notify("Uplink reverse-path", f"transit AS set changed: was "
                                        f"[{reverse.get('prev_fingerprint')}] now "
                                        f"[{','.join(str(t['asn']) for t in reverse['transit'])}]")
+    if ntp["status"] == "alert" and state.get("ntp_last_status") != "alert":
+        bad = "; ".join(f"{s['name']}: {', '.join(s['notes'])}"
+                        for s in ntp["servers"] if s["status"] == "alert")
+        _notify("Uplink NTP", f"clock/NTP integrity: {bad}")
+    state["ntp_last_status"] = ntp["status"]
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
     series = bucket_series(fetch_pings(s, start), start, now)
@@ -356,6 +451,7 @@ def fetch_and_write():
         "bgp": bgp,
         "exposure": exposure,
         "reverse": reverse,
+        "ntp": ntp,
         "targets": sorted(ROOT_MSMS.values()),
         "series": series,
         "events": events[-50:],

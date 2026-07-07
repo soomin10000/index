@@ -151,6 +151,14 @@
     </table>
   </div>
 
+  <div class="section-title">NTP INTEGRITY — OUR CLOCK OFFSET VS WORLD CONSENSUS</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>NTP SERVER</th><th>OUR OFFSET</th><th>WORLD</th><th>Δ (SKEW)</th><th>STRATUM</th><th>STATUS</th></tr></thead>
+      <tbody id="ntp-rows"></tbody>
+    </table>
+  </div>
+
   <div class="section-title">CONNECTION DIARY — PROBE TRANSITIONS (OUTSIDE-IN)</div>
   <div class="tbl-wrap">
     <table>
@@ -339,8 +347,19 @@
     if (d.bgp?.status === 'alert') banners.push(`⚠ BGP: ${(d.bgp.notes || []).map(esc).join(' · ')}`);
     if (d.exposure?.status === 'open') banners.push(`⚠ EXPOSURE: UDP/53 on ${esc(d.exposure.target)} answered probes ${(d.exposure.responded || []).map(esc).join(', ')} — open resolver / port forward?`);
     if (d.reverse?.status === 'changed') banners.push(`⚠ REVERSE PATH: transit AS set changed (was AS${esc(d.reverse.prev_fingerprint)})`);
+    if (d.ntp?.status === 'alert') banners.push(`⚠ NTP: ${(d.ntp.servers || []).filter(s => s.status === 'alert').map(s => esc(s.name) + ' — ' + (s.notes || []).map(esc).join(', ')).join(' · ')}`);
     document.getElementById('banner').innerHTML =
       banners.map(b => `<div class="err-banner">${b}</div>`).join('');
+
+    const ntp = d.ntp || {};
+    const ntpSrv = (ntp.servers || []).filter(s => s.our_offset !== null && s.our_offset !== undefined);
+    const worstDelta = ntpSrv.reduce((m, s) => Math.abs(s.delta ?? 0) > Math.abs(m) ? (s.delta ?? 0) : m, 0);
+    const ntpVal = ntp.status === 'ok' ? 'SYNCED' : ntp.status === 'alert' ? 'SKEW'
+                 : ntp.status === 'unmanaged' ? 'OFF' : '…';
+    const ntpCls = ntp.status === 'ok' ? 'c-green' : ntp.status === 'alert' ? 'c-red' : 'c-amber';
+    const ntpSub = ntpSrv.length
+      ? `Δ ${worstDelta >= 0 ? '+' : ''}${worstDelta.toFixed(1)} ms vs world · ${ntpSrv.length} server${ntpSrv.length > 1 ? 's' : ''}`
+      : (ntp.note || 'first results pending');
 
     document.getElementById('stats').innerHTML = `
       <div class="stat-card">
@@ -372,6 +391,11 @@
         <div class="stat-label">BGP PREFIX</div>
         <div class="stat-val ${d.bgp?.status === 'ok' ? 'c-green' : d.bgp?.status === 'alert' ? 'c-red' : 'c-amber'}">${d.bgp?.status === 'ok' ? 'OK' : d.bgp?.status === 'alert' ? 'ALERT' : '?'}</div>
         <div class="stat-sub">${esc(d.bgp?.prefix ?? 'unknown')} · AS${esc(d.bgp?.origins?.join(',+') ?? '?')} · RPKI ${esc(d.bgp?.rpki ?? '?')} · ${esc(d.bgp?.visibility ?? '?')} peers</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">CLOCK (NTP)</div>
+        <div class="stat-val ${ntpCls}">${ntpVal}</div>
+        <div class="stat-sub">${esc(ntpSub)}</div>
       </div>
     `;
 
@@ -406,6 +430,33 @@
                                          : 'First traceroutes pending (within the hour).';
       tr.appendChild(td);
       trBody.replaceChildren(tr);
+    }
+
+    const ntpBody = document.getElementById('ntp-rows');
+    const ntpRows = (d.ntp?.servers || []);
+    if (ntpRows.length) {
+      const off = (v, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = v; return td; };
+      ntpBody.replaceChildren(...ntpRows.map(s => {
+        const tr = document.createElement('tr');
+        const name = document.createElement('td'); name.className = 'when'; name.textContent = s.name;
+        const ms = v => (v === null || v === undefined) ? '—' : (v >= 0 ? '+' : '') + v + ' ms';
+        const dCls = s.delta === null || s.delta === undefined ? '' :
+                     Math.abs(s.delta) > 100 ? 'c-red' : Math.abs(s.delta) > 25 ? 'c-amber' : 'c-green';
+        const stat = document.createElement('td');
+        const pill = document.createElement('span');
+        const good = s.status === 'ok';
+        pill.className = 'pill ' + (good ? 'pill-up' : 'pill-down');
+        pill.textContent = good ? '✓ OK' : s.status === 'pending' ? '… PENDING' : '⚠ ' + String(s.status).toUpperCase();
+        if (s.status === 'pending') { pill.className = 'pill'; pill.style.color = '#ffaa00'; }
+        stat.appendChild(pill);
+        tr.append(name, off(ms(s.our_offset)), off(ms(s.consensus)), off(ms(s.delta), dCls),
+                  off(s.stratum ?? '—'), stat);
+        return tr;
+      }));
+    } else {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 6; td.textContent = 'First NTP results pending (within the hour).';
+      tr.appendChild(td); ntpBody.replaceChildren(tr);
     }
 
     const age = Math.round((Date.now() / 1000 - d.ts) / 60);
