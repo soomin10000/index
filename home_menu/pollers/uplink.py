@@ -50,7 +50,7 @@ EXPOSURE_INTERVAL = 3600
 # NTP integrity: query the same public NTP servers from our probe and a handful
 # of world-wide probes. Our probe's measured offset to a server should track the
 # world consensus; if it drifts off on its own, something is rewriting NTP on
-# our path. Atlas NTP offset/rtt are reported in milliseconds.
+# our path. Atlas reports NTP offset in seconds; we convert to ms for display.
 NTP_SERVERS = {"162.159.200.123": "time.cloudflare.com",
                "216.239.35.0": "time.google.com"}
 NTP_DELTA_MS = 100.0     # our offset may diverge from the world by this much
@@ -287,8 +287,12 @@ def check_reverse_path(session, state, ip):
     as_set = sorted(transit)
     fp = ",".join(str(a) for a in as_set)
     prev_fp = rev.get("fingerprint")
-    changed = prev_fp is not None and fp != prev_fp
-    rev["fingerprint"] = fp
+    # only a change between two non-empty sets is real; empty->populated is the
+    # first baseline, and populated->empty is a transient resolution miss
+    changed = bool(prev_fp) and bool(fp) and fp != prev_fp
+    # don't overwrite a known-good baseline with a momentary empty read
+    if fp:
+        rev["fingerprint"] = fp
     names = state.setdefault("asn_names", {})
     return {
         "status": "changed" if changed else "ok",
@@ -317,8 +321,9 @@ def _asn_holder(session, asn, cache):
 
 def _probe_ntp(res):
     """One probe's view of a server: median offset (ms), stratum, reachability.
-    Successful NTP samples carry an "offset"; timeouts carry "x" instead."""
-    offs = [r["offset"] for r in res.get("result", [])
+    Atlas reports NTP offset in seconds -> convert to ms. Successful samples
+    carry an "offset"; timeouts carry "x" instead."""
+    offs = [r["offset"] * 1000 for r in res.get("result", [])
             if isinstance(r, dict) and "offset" in r]
     return {
         "prb_id": res.get("prb_id"),
