@@ -40,6 +40,13 @@ WINDOW = 24 * 3600
 BUCKET = 900          # aggregate to 15-min points -> 96 per day
 MAX_EVENTS = 200
 
+# Exposure check: external probes send a DNS query AT our public IP hourly.
+# Everything should time out — any response means an open resolver or a
+# router forwarding UDP/53. ~720 credits/day.
+EXPOSURE_DESC = "home-exposure-check"
+EXPOSURE_PROBES = 3
+EXPOSURE_INTERVAL = 3600
+
 
 def _load_state():
     try:
@@ -160,6 +167,64 @@ def update_events(state, probe):
     return state["events"]
 
 
+def ensure_exposure_msm(state, ip):
+    """Keep one recurring DNS measurement aimed at our own public IP.
+
+    If the IP moved, stop the stale measurement first — it must never keep
+    probing an address that is no longer ours. Needs RIPE_ATLAS_KEY (from
+    the crontab env); without it, leaves whatever exists untouched.
+    """
+    exp = state.setdefault("exposure", {})
+    if not ip or (exp.get("target") == ip and exp.get("msm_id")):
+        return exp
+    key = os.environ.get("RIPE_ATLAS_KEY", "")
+    if not key:
+        return exp
+    s = requests.Session()
+    s.headers["Authorization"] = f"Key {key}"
+    if exp.get("msm_id"):
+        s.delete(f"{BASE}/measurements/{exp['msm_id']}/", timeout=30)
+    r = s.post(f"{BASE}/measurements/", timeout=30, json={
+        "definitions": [{
+            "type": "dns", "af": 4, "query_class": "IN", "query_type": "A",
+            "query_argument": "example.com", "target": ip,
+            "use_probe_resolver": False, "set_rd_bit": True,
+            "description": EXPOSURE_DESC, "interval": EXPOSURE_INTERVAL,
+        }],
+        "probes": [{"type": "area", "value": "WW", "requested": EXPOSURE_PROBES}],
+        "is_oneoff": False,
+    })
+    if r.ok:
+        exp.update(msm_id=r.json()["measurements"][0], target=ip, created=int(time.time()))
+        print(f"exposure measurement -> msm {exp['msm_id']} at {ip}")
+    else:
+        print(f"exposure measurement create failed ({r.status_code}): {r.text[:200]}")
+    return exp
+
+
+def check_exposure(session, state, ip):
+    exp = ensure_exposure_msm(state, ip)
+    if not exp.get("msm_id"):
+        return {"status": "unmanaged", "note": "no measurement (key unavailable?)"}
+    r = session.get(f"{BASE}/measurements/{exp['msm_id']}/latest/", timeout=60)
+    r.raise_for_status()
+    results = r.json()
+    # a real DNS response always carries rt/abuf; timeouts and errors don't
+    responded = [res["prb_id"] for res in results
+                 if isinstance(res.get("result"), dict)
+                 and ("rt" in res["result"] or "abuf" in res["result"])]
+    if not results:
+        return {"status": "pending", "target": exp["target"], "msm_id": exp["msm_id"],
+                "probes": 0, "responded": []}
+    return {
+        "status": "open" if responded else "closed",
+        "target": exp["target"],
+        "msm_id": exp["msm_id"],
+        "probes": len(results),
+        "responded": responded,
+    }
+
+
 def fetch_and_write():
     now = int(time.time())
     start = now - WINDOW
@@ -173,10 +238,20 @@ def fetch_and_write():
         bgp = fetch_bgp(s, probe.get("address_v4") or "212.132.242.38")
     except Exception as e:
         bgp = {"status": "unknown", "notes": [f"RIPEstat fetch failed: {e}"]}
-    # notify once per transition into alert, like the probe events
+    try:
+        exposure = check_exposure(s, state, probe.get("address_v4"))
+    except Exception as e:
+        exposure = {"status": "unknown", "note": f"fetch failed: {e}"}
+
+    # notify once per transition into a bad state, like the probe events
     if bgp["status"] == "alert" and state.get("bgp_last_status") != "alert":
         _notify("Uplink BGP", "; ".join(bgp["notes"]))
     state["bgp_last_status"] = bgp["status"]
+    if exposure["status"] == "open" and state.get("exposure_last_status") != "open":
+        _notify("Uplink exposure", f"UDP/53 on {exposure.get('target')} ANSWERED "
+                                   f"external probes {exposure.get('responded')} — "
+                                   "open resolver / port forward?")
+    state["exposure_last_status"] = exposure["status"]
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
     series = bucket_series(fetch_pings(s, start), start, now)
@@ -189,6 +264,7 @@ def fetch_and_write():
         "ts": now,
         "probe": probe | {"uptime_pct": uptime_pct},
         "bgp": bgp,
+        "exposure": exposure,
         "targets": sorted(ROOT_MSMS.values()),
         "series": series,
         "events": events[-50:],

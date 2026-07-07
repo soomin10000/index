@@ -329,6 +329,7 @@
     const banners = [];
     if (!up) banners.push(`⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)`);
     if (d.bgp?.status === 'alert') banners.push(`⚠ BGP: ${(d.bgp.notes || []).map(esc).join(' · ')}`);
+    if (d.exposure?.status === 'open') banners.push(`⚠ EXPOSURE: UDP/53 on ${esc(d.exposure.target)} answered probes ${(d.exposure.responded || []).map(esc).join(', ')} — open resolver / port forward?`);
     document.getElementById('banner').innerHTML =
       banners.map(b => `<div class="err-banner">${b}</div>`).join('');
 
@@ -352,6 +353,11 @@
         <div class="stat-label">PROBE ${esc(d.probe?.id ?? '?')} UPTIME</div>
         <div class="stat-val c-blue">${d.probe?.uptime_pct ?? '—'}<span style="font-size:1rem"> %</span></div>
         <div class="stat-sub">lifetime, since ${d.probe?.first_connected ? new Date(d.probe.first_connected * 1000).toLocaleDateString() : '?'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">PORT 53 (WAN)</div>
+        <div class="stat-val ${d.exposure?.status === 'closed' ? 'c-green' : d.exposure?.status === 'open' ? 'c-red' : 'c-amber'}">${d.exposure?.status === 'closed' ? 'CLOSED' : d.exposure?.status === 'open' ? 'OPEN' : '…'}</div>
+        <div class="stat-sub">${d.exposure?.status === 'closed' ? `no answer to ${esc(d.exposure.probes)} external probes` : d.exposure?.status === 'open' ? `ANSWERED ${esc((d.exposure.responded || []).length)} probes` : esc(d.exposure?.note || 'first results pending')}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">BGP PREFIX</div>

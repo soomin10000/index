@@ -584,13 +584,16 @@
       const up = d.probe?.connected;
       const rtt = d.last?.rtt, loss = d.last?.loss;
       const bgpAlert = d.bgp?.status === 'alert';
-      const lamp = (!up || bgpAlert) ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
-      const accent = (!up || bgpAlert) ? 'var(--down)' : '#00cc88';
+      const expOpen = d.exposure?.status === 'open';
+      const lamp = (!up || bgpAlert || expOpen) ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
+      const accent = (!up || bgpAlert || expOpen) ? 'var(--down)' : '#00cc88';
       const sub = !up
         ? `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`
         : bgpAlert
         ? `${dot('dot-red')}BGP: ${esc((d.bgp.notes || ['alert'])[0])}`
-        : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · outside-in`;
+        : expOpen
+        ? `${dot('dot-red')}UDP/53 open to the internet`
+        : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · port 53 closed`;
       setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
     } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
   }
