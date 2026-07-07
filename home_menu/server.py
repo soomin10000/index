@@ -745,6 +745,10 @@ class Handler(BaseHTTPRequestHandler):
             self._file('pihole.html', 'text/html; charset=utf-8')
         elif path == '/api/pihole':
             self._abs_file(PIHOLE_JSON, 'application/json')
+        elif path == '/atlas':
+            self._file('atlas.html', 'text/html; charset=utf-8')
+        elif path == '/api/atlas':
+            self._abs_file(DATA / 'atlas.json', 'application/json')
         elif path == '/steve':
             self._file('steve.html', 'text/html; charset=utf-8')
         elif path == '/api/steve':

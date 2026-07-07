@@ -73,7 +73,7 @@
         "harold  train    parents"
         "bbc     bbc      darren"
         "unifi   unifi    wireless"
-        "pihole  pihole   pihole"
+        "pihole  pihole   atlas"
         "steve   steve    steve";
       gap: 0.85rem;
       width: 100%;
@@ -90,6 +90,7 @@
     #c-unifi    { grid-area: unifi; }
     #c-wireless { grid-area: wireless; }
     #c-pihole  { grid-area: pihole; }
+    #c-atlas   { grid-area: atlas; }
     #c-steve   { grid-area: steve; }
 
     /* Card base — breaker module on the panel */
@@ -232,7 +233,7 @@
           "parents  darren"
           "bbc      bbc"
           "unifi    wireless"
-          "pihole   pihole"
+          "pihole   atlas"
           "steve    steve";
       }
       #c-harold .c-val { font-size: 3.2rem; }
@@ -241,7 +242,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "steve";
+          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "steve";
       }
     }
   </style>
@@ -319,6 +320,14 @@
     <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
     <div class="c-sub" id="pihole-sub"></div>
     <div class="c-foot">bazza · 192.168.1.246</div>
+  </a>
+
+  <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
+    <div class="tape">DNS integrity</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌍</span><span class="c-name">Atlas Cross-check</span></div>
+    <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
+    <div class="c-sub" id="at-sub"></div>
+    <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
   </a>
 
   <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
@@ -541,7 +550,24 @@
     } catch { setCard('steve', { val: 'Offline', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); }
+  async function atlas() {
+    try {
+      const d = await get('/api/atlas');
+      if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
+      const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block'];
+      const flagged = (d.domains || []).filter(x => FLAGS.includes(x.status));
+      const blocked = (d.domains || []).filter(x => x.status === 'blocked').length;
+      const lamp = flagged.length ? 'down' : 'on';
+      const accent = flagged.length ? 'var(--down)' : '#4dd0e1';
+      const parts = flagged.length
+        ? [`${dot('dot-red')}${flagged.map(f => esc(f.domain)).join(', ')}`]
+        : [`${dot('dot-on')}world agrees with pi-hole`];
+      parts.push(`${blocked} blocks confirmed · ${(d.credits?.balance ?? 0).toLocaleString()} credits`);
+      setCard('atlas', { val: flagged.length, unit: ' flagged', sub: parts.join('<br>'), accent, lamp });
+    } catch { setCard('atlas', { val: 'No data', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
