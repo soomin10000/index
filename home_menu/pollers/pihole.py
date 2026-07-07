@@ -9,6 +9,21 @@ sys.path.insert(0, str(Path(__file__).parent))
 from pihole_client import PiholeClient
 
 OUT = Path(__file__).resolve().parent.parent / "data" / "pihole.json"
+UNIFI_DEVICES = OUT.parent / "unifi" / "devices.json"
+UNIFI_MAX_AGE_SEC = 900  # a stale name is worse than no name — devices come and go
+
+
+def _unifi_names():
+    """mac -> display name from the UniFi poller, for clients whose hostname never
+    reaches Pi-hole (iOS private WiFi addresses, rotating IPv6 privacy addresses)."""
+    try:
+        d = json.loads(UNIFI_DEVICES.read_text())
+    except (OSError, ValueError):
+        return {}
+    if time.time() - d.get("ts", 0) > UNIFI_MAX_AGE_SEC:
+        return {}
+    return {e["mac"].lower(): e.get("display_name") or e.get("hostname") or ""
+            for e in d.get("devices", []) if e.get("mac")}
 
 
 def fetch_and_write():
@@ -30,20 +45,33 @@ def fetch_and_write():
     # rotating IPv6 privacy addresses back to the same hardware as its IPv4.
     # Pi-hole invents "ip-x.x.x.x" pseudo-MACs for off-subnet clients — skip those.
     ip_mac = {}
+    mac_name = {}    # any hostname Pi-hole knows for the same hardware
+    mac_vendor = {}
     for nd in net_devs:
         mac = (nd.get("hwaddr") or "").lower()
         if ":" not in mac:
             continue
+        if nd.get("macVendor"):
+            mac_vendor[mac] = nd["macVendor"]
         for a in nd.get("ips", []):
             ip_mac[a["ip"]] = mac
+            if a.get("name") and mac not in mac_name:
+                mac_name[mac] = a["name"]
 
     # blocked count keyed by IP only — name fallback causes false matches
     blocked_by_ip = {c["ip"]: c["count"] for c in bl_clients}
+
+    unifi_names = _unifi_names()
 
     clients_detail = []
     for c in t_clients:
         ip    = c["ip"]
         name  = c["name"] or ""
+        if not name:
+            # fill via the MAC join: Pi-hole's name for a sibling address of the
+            # same device, then UniFi's name, then plain vendor as a last resort
+            mac  = ip_mac.get(ip, "")
+            name = mac_name.get(mac) or unifi_names.get(mac) or mac_vendor.get(mac, "")
         total = c["count"]
         blocked = blocked_by_ip.get(ip, 0)
         pct     = round(blocked / total * 100, 1) if total else 0.0
