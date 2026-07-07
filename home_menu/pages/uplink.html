@@ -198,8 +198,8 @@
     });
 
     // hairline grid + y ticks (RTT panel), solid, recessive
-    for (let i = 0; i <= 4; i++) {
-      const v = yMax * i / 4, y = yR(v);
+    for (let i = 0; i <= 5; i++) {
+      const v = yMax * i / 5, y = yR(v);
       g += `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#0a2a40" stroke-width="1"/>`;
       g += `<text x="${PAD_L - 8}" y="${y + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">${v % 1 ? v.toFixed(1) : v}</text>`;
     }
@@ -326,8 +326,11 @@
     const lastRtt = d.last?.rtt, lastLoss = d.last?.loss;
     const sinceDur = d.probe?.since ? fmtDur(d.ts - d.probe.since) : '?';
 
-    document.getElementById('banner').innerHTML = up ? '' :
-      `<div class="err-banner">⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)</div>`;
+    const banners = [];
+    if (!up) banners.push(`⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)`);
+    if (d.bgp?.status === 'alert') banners.push(`⚠ BGP: ${(d.bgp.notes || []).map(esc).join(' · ')}`);
+    document.getElementById('banner').innerHTML =
+      banners.map(b => `<div class="err-banner">${b}</div>`).join('');
 
     document.getElementById('stats').innerHTML = `
       <div class="stat-card">
@@ -349,6 +352,11 @@
         <div class="stat-label">PROBE ${esc(d.probe?.id ?? '?')} UPTIME</div>
         <div class="stat-val c-blue">${d.probe?.uptime_pct ?? '—'}<span style="font-size:1rem"> %</span></div>
         <div class="stat-sub">lifetime, since ${d.probe?.first_connected ? new Date(d.probe.first_connected * 1000).toLocaleDateString() : '?'}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">BGP PREFIX</div>
+        <div class="stat-val ${d.bgp?.status === 'ok' ? 'c-green' : d.bgp?.status === 'alert' ? 'c-red' : 'c-amber'}">${d.bgp?.status === 'ok' ? 'OK' : d.bgp?.status === 'alert' ? 'ALERT' : '?'}</div>
+        <div class="stat-sub">${esc(d.bgp?.prefix ?? 'unknown')} · AS${esc(d.bgp?.origins?.join(',+') ?? '?')} · RPKI ${esc(d.bgp?.rpki ?? '?')} · ${esc(d.bgp?.visibility ?? '?')} peers</div>
       </div>
     `;
 

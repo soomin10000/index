@@ -28,7 +28,9 @@ OUT = DATA / "uplink.json"
 STATE_FILE = DATA / "uplink_state.json"
 
 BASE = "https://atlas.ripe.net/api/v2"
+STAT = "https://stat.ripe.net/data"
 PROBE_ID = int(os.environ.get("RIPE_ATLAS_PROBE_ID", "64460"))
+EXPECTED_ASN = 201838
 
 # Built-in ping measurements (one per root server, every 240s from every probe).
 # Four are plenty for a median — all are anycast so each samples a different path.
@@ -94,6 +96,51 @@ def probe_status(session):
         "since": p.get("status_since"),
         "first_connected": p.get("first_connected"),
         "total_uptime": p.get("total_uptime"),
+        "address_v4": p.get("address_v4"),
+    }
+
+
+def fetch_bgp(session, public_ip):
+    """RIPEstat watch on the prefix our uplink lives in: origin AS, RPKI,
+    more-specific announcements (classic hijack shape), RIS visibility."""
+
+    def stat(endpoint, **params):
+        r = session.get(f"{STAT}/{endpoint}/data.json", params=params, timeout=30)
+        r.raise_for_status()
+        return r.json()["data"]
+
+    ni = stat("network-info", resource=public_ip)
+    prefix = ni.get("prefix")
+    if not prefix:
+        return {"status": "unknown", "notes": ["prefix not found for " + public_ip]}
+
+    rs = stat("routing-status", resource=prefix)
+    rpki = stat("rpki-validation", resource=EXPECTED_ASN, prefix=prefix)
+
+    origins = sorted(o["origin"] for o in rs.get("origins", []))
+    vis = rs.get("visibility", {}).get("v4", {})
+    seeing, total = vis.get("ris_peers_seeing", 0), vis.get("total_ris_peers", 0)
+    more = [m["prefix"] for m in rs.get("more_specifics", [])]
+
+    notes = []
+    if origins != [EXPECTED_ASN]:
+        notes.append(f"origin AS {origins} != expected AS{EXPECTED_ASN}")
+    if rpki.get("status") != "valid":
+        notes.append(f"RPKI {rpki.get('status', '?')}")
+    if more:
+        notes.append(f"more-specific announced: {', '.join(more[:5])}")
+    if total and seeing / total < 0.9:
+        notes.append(f"visibility {seeing}/{total} RIS peers")
+
+    return {
+        "status": "alert" if notes else "ok",
+        "prefix": prefix,
+        "origins": origins,
+        "expected_asn": EXPECTED_ASN,
+        "rpki": rpki.get("status"),
+        "visibility": f"{seeing}/{total}",
+        "more_specifics": more,
+        "notes": notes,
     }
 
 
@@ -121,6 +168,15 @@ def fetch_and_write():
     probe = probe_status(s)
     state = _load_state()
     events = update_events(state, probe)
+
+    try:
+        bgp = fetch_bgp(s, probe.get("address_v4") or "212.132.242.38")
+    except Exception as e:
+        bgp = {"status": "unknown", "notes": [f"RIPEstat fetch failed: {e}"]}
+    # notify once per transition into alert, like the probe events
+    if bgp["status"] == "alert" and state.get("bgp_last_status") != "alert":
+        _notify("Uplink BGP", "; ".join(bgp["notes"]))
+    state["bgp_last_status"] = bgp["status"]
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
     series = bucket_series(fetch_pings(s, start), start, now)
@@ -132,6 +188,7 @@ def fetch_and_write():
     data = {
         "ts": now,
         "probe": probe | {"uptime_pct": uptime_pct},
+        "bgp": bgp,
         "targets": sorted(ROOT_MSMS.values()),
         "series": series,
         "events": events[-50:],

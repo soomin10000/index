@@ -583,11 +583,14 @@
       if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
       const up = d.probe?.connected;
       const rtt = d.last?.rtt, loss = d.last?.loss;
-      const lamp = !up ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
-      const accent = !up ? 'var(--down)' : '#00cc88';
-      const sub = up
-        ? `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · outside-in via atlas`
-        : `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`;
+      const bgpAlert = d.bgp?.status === 'alert';
+      const lamp = (!up || bgpAlert) ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
+      const accent = (!up || bgpAlert) ? 'var(--down)' : '#00cc88';
+      const sub = !up
+        ? `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`
+        : bgpAlert
+        ? `${dot('dot-red')}BGP: ${esc((d.bgp.notes || ['alert'])[0])}`
+        : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · outside-in`;
       setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
     } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
   }
