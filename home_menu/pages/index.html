@@ -74,7 +74,7 @@
         "bbc     bbc      darren"
         "unifi   unifi    wireless"
         "pihole  pihole   atlas"
-        "steve   steve    steve";
+        "steve   steve    uplink";
       gap: 0.85rem;
       width: 100%;
       max-width: 980px;
@@ -91,6 +91,7 @@
     #c-wireless { grid-area: wireless; }
     #c-pihole  { grid-area: pihole; }
     #c-atlas   { grid-area: atlas; }
+    #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
 
     /* Card base — breaker module on the panel */
@@ -234,6 +235,7 @@
           "bbc      bbc"
           "unifi    wireless"
           "pihole   atlas"
+          "uplink   uplink"
           "steve    steve";
       }
       #c-harold .c-val { font-size: 3.2rem; }
@@ -242,7 +244,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "steve";
+          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve";
       }
     }
   </style>
@@ -328,6 +330,14 @@
     <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
     <div class="c-sub" id="at-sub"></div>
     <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
+  </a>
+
+  <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
+    <div class="tape">WAN</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
+    <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
+    <div class="c-sub" id="up-sub"></div>
+    <div class="c-foot">RIPE Atlas probe · dns roots</div>
   </a>
 
   <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
@@ -554,7 +564,7 @@
     try {
       const d = await get('/api/atlas');
       if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
-      const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block'];
+      const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
       const flagged = (d.domains || []).filter(x => FLAGS.includes(x.status));
       const blocked = (d.domains || []).filter(x => x.status === 'blocked').length;
       const lamp = flagged.length ? 'down' : 'on';
@@ -567,7 +577,22 @@
     } catch { setCard('atlas', { val: 'No data', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); }
+  async function uplink() {
+    try {
+      const d = await get('/api/uplink');
+      if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
+      const up = d.probe?.connected;
+      const rtt = d.last?.rtt, loss = d.last?.loss;
+      const lamp = !up ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
+      const accent = !up ? 'var(--down)' : '#00cc88';
+      const sub = up
+        ? `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · outside-in via atlas`
+        : `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`;
+      setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
+    } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); }
   refresh();
   setInterval(refresh, 30000);
 </script>

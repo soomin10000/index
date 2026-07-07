@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uplink Health</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #020a18;
+      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
+      color: #4a8aaa;
+      min-height: 100vh;
+    }
+    body::after {
+      content: ''; position: fixed; inset: 0;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      pointer-events: none; z-index: 100;
+    }
+
+    nav {
+      display: flex; align-items: center; gap: 1rem;
+      padding: 0.55rem 1.2rem;
+      border-bottom: 1px solid #041828;
+      background: rgba(2,10,24,0.95);
+      backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 50;
+    }
+    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
+    nav a:hover { color: #00ffcc; }
+    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #5a8fb8; }
+    #status { margin-left: auto; font-size: 0.62rem; color: #5a8fb8; letter-spacing: 0.08em; }
+
+    .page { max-width: 1200px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.9rem; margin-bottom: 1.6rem;
+    }
+    .stat-card {
+      background: rgba(4,14,30,0.9);
+      border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1rem 1.2rem;
+    }
+    .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #5a8fb8; margin-bottom: 0.4rem; }
+    .stat-val   { font-size: 2rem; font-weight: bold; letter-spacing: -1px; }
+    .stat-sub   { font-size: 0.65rem; color: #5a8fb8; margin-top: 0.3rem; }
+    .c-green  { color: #00cc88; }
+    .c-red    { color: #ff4444; }
+    .c-blue   { color: #00aaff; }
+    .c-amber  { color: #ffaa00; }
+
+    .section-title { font-size: 0.62rem; letter-spacing: 0.2em; color: #5a8fb8; margin: 1.4rem 0 0.7rem; }
+
+    .panel {
+      background: rgba(4,14,30,0.9);
+      border: 1px solid #0a2a40;
+      border-radius: 12px; padding: 1rem 1.2rem 0.8rem;
+    }
+    .legend { display: flex; gap: 1.4rem; font-size: 0.6rem; letter-spacing: 0.1em; color: #5a8fb8; margin-bottom: 0.6rem; }
+    .legend .key { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .key-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid #199e70; border-radius: 2px; }
+    .key-loss { display: inline-block; width: 10px; height: 10px; background: #e66767; border-radius: 2px; }
+    .key-off  { display: inline-block; width: 10px; height: 10px; background: rgba(90,143,184,0.18); border-radius: 2px; }
+
+    .chart-wrap { position: relative; }
+    .chart-wrap svg { display: block; width: 100%; height: auto; }
+    #tip {
+      position: absolute; display: none; pointer-events: none; z-index: 10;
+      background: rgba(2,10,24,0.97); border: 1px solid #0a2a40; border-radius: 8px;
+      padding: 0.5rem 0.7rem; font-size: 0.66rem; line-height: 1.7; white-space: nowrap;
+    }
+    #tip .t { color: #5a8fb8; font-size: 0.58rem; letter-spacing: 0.1em; }
+    #tip .v { color: #cde3f0; font-weight: bold; }
+    #tip .k { color: #5a8fb8; }
+
+    .tbl-wrap { overflow-x: auto; border: 1px solid #0a2a40; border-radius: 12px; background: rgba(4,14,30,0.9); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+    th {
+      text-align: left; font-size: 0.58rem; letter-spacing: 0.14em; color: #5a8fb8;
+      padding: 0.7rem 0.9rem; border-bottom: 1px solid #0a2a40; font-weight: normal;
+    }
+    td { padding: 0.55rem 0.9rem; border-bottom: 1px solid #061c30; font-variant-numeric: tabular-nums; }
+    tr:last-child td { border-bottom: none; }
+    td.when { color: #cde3f0; }
+
+    .pill {
+      display: inline-block; padding: 0.14rem 0.55rem; border-radius: 999px;
+      font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase;
+      border: 1px solid currentColor;
+    }
+    .pill-up   { color: #00cc88; }
+    .pill-down { color: #ff4444; background: rgba(255,68,68,0.08); }
+
+    details { margin-top: 1rem; }
+    summary { font-size: 0.62rem; letter-spacing: 0.14em; color: #5a8fb8; cursor: pointer; }
+    details .tbl-wrap { margin-top: 0.7rem; max-height: 320px; overflow-y: auto; }
+
+    .foot { margin-top: 1.2rem; font-size: 0.62rem; color: #3a5a70; }
+    .foot a { color: inherit; }
+    .err-banner {
+      border: 1px solid #5a2a2a; background: rgba(58,26,26,0.4); color: #f87171;
+      border-radius: 12px; padding: 0.9rem 1.2rem; font-size: 0.75rem; margin-bottom: 1.4rem;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="/">&larr; HOME</a>
+  <a href="/atlas">ATLAS DNS</a>
+  <a href="/steve">STEVE</a>
+  <span class="brand">&middot; UPLINK &middot;</span>
+  <span id="status">LOADING...</span>
+</nav>
+
+<div class="page">
+  <div id="banner"></div>
+  <div class="stat-grid" id="stats"></div>
+
+  <div class="section-title">LAST 24H — MEDIAN PING TO DNS ROOT SERVERS</div>
+  <div class="panel">
+    <div class="legend">
+      <span class="key"><span class="key-line"></span> RTT (ms)</span>
+      <span class="key"><span class="key-loss"></span> PACKET LOSS %</span>
+      <span class="key"><span class="key-off"></span> PROBE OFFLINE</span>
+    </div>
+    <div class="chart-wrap" id="chart-wrap">
+      <svg id="chart" viewBox="0 0 1000 330" preserveAspectRatio="none" aria-label="24 hour RTT and packet loss chart"></svg>
+      <div id="tip"></div>
+    </div>
+  </div>
+
+  <details>
+    <summary>DATA TABLE (15-MIN BUCKETS)</summary>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>TIME</th><th>RTT MS</th><th>LOSS %</th></tr></thead>
+        <tbody id="bucket-rows"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <div class="section-title">CONNECTION DIARY — PROBE TRANSITIONS (OUTSIDE-IN)</div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>WHEN</th><th>EVENT</th><th>OFFLINE FOR</th></tr></thead>
+      <tbody id="event-rows"></tbody>
+    </table>
+  </div>
+
+  <p class="foot" id="updated"></p>
+</div>
+
+<script>
+  const esc = s => String(s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const fmtT = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fmtDT = t => new Date(t * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const fmtDur = s => s >= 86400 ? Math.round(s / 86400) + 'd ' + Math.round(s % 86400 / 3600) + 'h'
+                    : s >= 3600 ? Math.round(s / 3600) + 'h ' + Math.round(s % 3600 / 60) + 'm'
+                    : Math.max(1, Math.round(s / 60)) + 'm';
+
+  // geometry: RTT panel + loss strip + x-axis band, all inside the viewBox
+  const W = 1000, PAD_L = 46, PAD_R = 10;
+  const RTT_TOP = 8, RTT_H = 200, GAP = 18, LOSS_H = 62, AXIS_H = 26;
+  const LOSS_TOP = RTT_TOP + RTT_H + GAP;
+  const PLOT_W = W - PAD_L - PAD_R;
+
+  let SERIES = [];
+
+  function niceMax(v) {
+    if (v <= 0) return 10;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
+    return 10 * p;
+  }
+
+  function drawChart(series) {
+    SERIES = series;
+    const svg = document.getElementById('chart');
+    if (!series.length) { svg.innerHTML = ''; return; }
+    const t0 = series[0].t, t1 = series[series.length - 1].t;
+    const x = t => PAD_L + (t - t0) / Math.max(1, t1 - t0) * PLOT_W;
+    const rtts = series.filter(p => p.rtt !== null).map(p => p.rtt);
+    const yMax = niceMax(Math.max(...rtts, 1) * 1.15);
+    const yR = v => RTT_TOP + RTT_H - v / yMax * RTT_H;
+    const yL = v => LOSS_TOP + LOSS_H - v / 100 * LOSS_H;
+    let g = '';
+
+    // offline shading spans both panels
+    const bw = PLOT_W / Math.max(1, series.length - 1);
+    series.forEach(p => {
+      if (p.rtt === null) g += `<rect x="${x(p.t) - bw / 2}" y="${RTT_TOP}" width="${bw + 0.5}" height="${LOSS_TOP + LOSS_H - RTT_TOP}" fill="rgba(90,143,184,0.13)"/>`;
+    });
+
+    // hairline grid + y ticks (RTT panel), solid, recessive
+    for (let i = 0; i <= 4; i++) {
+      const v = yMax * i / 4, y = yR(v);
+      g += `<line x1="${PAD_L}" y1="${y}" x2="${W - PAD_R}" y2="${y}" stroke="#0a2a40" stroke-width="1"/>`;
+      g += `<text x="${PAD_L - 8}" y="${y + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">${v % 1 ? v.toFixed(1) : v}</text>`;
+    }
+    // loss strip baseline + 100% tick
+    g += `<line x1="${PAD_L}" y1="${yL(0)}" x2="${W - PAD_R}" y2="${yL(0)}" stroke="#0a2a40" stroke-width="1"/>`;
+    g += `<text x="${PAD_L - 8}" y="${yL(100) + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">100</text>`;
+    g += `<text x="${PAD_L - 8}" y="${yL(0) + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">0</text>`;
+
+    // x ticks every 4h
+    for (let t = Math.ceil(t0 / 14400) * 14400; t <= t1; t += 14400) {
+      g += `<line x1="${x(t)}" y1="${LOSS_TOP + LOSS_H}" x2="${x(t)}" y2="${LOSS_TOP + LOSS_H + 4}" stroke="#0a2a40" stroke-width="1"/>`;
+      g += `<text x="${x(t)}" y="${LOSS_TOP + LOSS_H + AXIS_H - 8}" text-anchor="middle" font-size="10" fill="#5a8fb8">${fmtT(t)}</text>`;
+    }
+
+    // loss columns (status red), only where loss > 0 while online
+    series.forEach(p => {
+      if (p.rtt !== null && p.loss > 0) {
+        const h = Math.max(2, LOSS_H * p.loss / 100);
+        g += `<rect x="${x(p.t) - Math.min(4, bw / 2 - 1)}" y="${yL(0) - h}" width="${Math.min(8, bw - 2)}" height="${h}" rx="2" fill="#e66767"/>`;
+      }
+    });
+
+    // RTT line: 2px, round joins, area wash; broken across offline gaps
+    let seg = [], paths = '', wash = '';
+    const flush = () => {
+      if (seg.length > 1) {
+        const d = seg.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${yR(p.rtt).toFixed(1)}`).join('');
+        paths += `<path d="${d}" fill="none" stroke="#199e70" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+        wash += `<path d="${d}L${x(seg[seg.length - 1].t).toFixed(1)},${yR(0)}L${x(seg[0].t).toFixed(1)},${yR(0)}Z" fill="#199e70" opacity="0.1"/>`;
+      } else if (seg.length === 1) {
+        paths += `<circle cx="${x(seg[0].t)}" cy="${yR(seg[0].rtt)}" r="3" fill="#199e70"/>`;
+      }
+      seg = [];
+    };
+    series.forEach(p => { p.rtt === null ? flush() : seg.push(p); });
+    flush();
+    g += wash + paths;
+
+    // end-dot with surface ring + end label (selective direct label)
+    const last = [...series].reverse().find(p => p.rtt !== null);
+    if (last) {
+      g += `<circle cx="${x(last.t)}" cy="${yR(last.rtt)}" r="5.5" fill="#020a18"/>`
+         + `<circle cx="${x(last.t)}" cy="${yR(last.rtt)}" r="4" fill="#199e70"/>`
+         + `<text x="${x(last.t) - 8}" y="${yR(last.rtt) - 9}" text-anchor="end" font-size="11" font-weight="bold" fill="#cde3f0">${last.rtt} ms</text>`;
+    }
+
+    g += `<line id="xhair" x1="0" y1="${RTT_TOP}" x2="0" y2="${LOSS_TOP + LOSS_H}" stroke="#5a8fb8" stroke-width="1" opacity="0"/>`;
+    svg.innerHTML = g;
+  }
+
+  // crosshair + tooltip: snap to nearest bucket, whole plot is the hit target
+  const wrap = document.getElementById('chart-wrap'), tip = document.getElementById('tip');
+  wrap.addEventListener('pointermove', e => {
+    if (!SERIES.length) return;
+    const svg = document.getElementById('chart'), r = svg.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width * W;
+    if (fx < PAD_L || fx > W - PAD_R) { hideTip(); return; }
+    const t0 = SERIES[0].t, t1 = SERIES[SERIES.length - 1].t;
+    const t = t0 + (fx - PAD_L) / PLOT_W * (t1 - t0);
+    const p = SERIES.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a);
+    const px = PAD_L + (p.t - t0) / Math.max(1, t1 - t0) * PLOT_W;
+    const xh = document.getElementById('xhair');
+    if (xh) { xh.setAttribute('x1', px); xh.setAttribute('x2', px); xh.setAttribute('opacity', 0.5); }
+
+    tip.replaceChildren();
+    const tl = document.createElement('div'); tl.className = 't'; tl.textContent = fmtDT(p.t);
+    tip.appendChild(tl);
+    const row = (label, val) => {
+      const d = document.createElement('div');
+      const v = document.createElement('span'); v.className = 'v'; v.textContent = val;
+      const k = document.createElement('span'); k.className = 'k'; k.textContent = ' ' + label;
+      d.append(v, k); tip.appendChild(d);
+    };
+    if (p.rtt === null) row('probe offline', '—');
+    else { row('median RTT', p.rtt + ' ms'); row('packet loss', p.loss + '%'); }
+    const left = px / W * r.width;
+    tip.style.display = 'block';
+    tip.style.left = Math.min(left + 14, r.width - tip.offsetWidth - 6) + 'px';
+    tip.style.top = (e.clientY - r.top + 14) + 'px';
+  });
+  const hideTip = () => {
+    tip.style.display = 'none';
+    const xh = document.getElementById('xhair');
+    if (xh) xh.setAttribute('opacity', 0);
+  };
+  wrap.addEventListener('pointerleave', hideTip);
+
+  function renderEvents(events) {
+    const rows = [];
+    const evs = [...events].sort((a, b) => a.t - b.t);
+    evs.forEach((ev, i) => {
+      let dur = '';
+      if (ev.event === 'connect') {
+        const prev = evs[i - 1];
+        if (prev && prev.event === 'disconnect') dur = fmtDur(ev.t - prev.t);
+      }
+      rows.push({ ...ev, dur });
+    });
+    document.getElementById('event-rows').replaceChildren(...rows.reverse().slice(0, 30).map(ev => {
+      const tr = document.createElement('tr');
+      const tdW = document.createElement('td'); tdW.className = 'when'; tdW.textContent = fmtDT(ev.t);
+      const tdE = document.createElement('td');
+      const pill = document.createElement('span');
+      pill.className = 'pill ' + (ev.event === 'connect' ? 'pill-up' : 'pill-down');
+      pill.textContent = ev.event === 'connect' ? '▲ CONNECTED' : '▼ DISCONNECTED';
+      tdE.appendChild(pill);
+      const tdD = document.createElement('td'); tdD.textContent = ev.dur || '—';
+      tr.append(tdW, tdE, tdD);
+      return tr;
+    }));
+    if (!rows.length) {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 3; td.textContent = 'No transitions recorded yet — the diary fills in from here.';
+      tr.appendChild(td);
+      document.getElementById('event-rows').replaceChildren(tr);
+    }
+  }
+
+  async function load() {
+    const r = await fetch('/api/uplink?t=' + Date.now());
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const up = d.probe?.connected;
+    const lastRtt = d.last?.rtt, lastLoss = d.last?.loss;
+    const sinceDur = d.probe?.since ? fmtDur(d.ts - d.probe.since) : '?';
+
+    document.getElementById('banner').innerHTML = up ? '' :
+      `<div class="err-banner">⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)</div>`;
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">UPLINK (OUTSIDE-IN)</div>
+        <div class="stat-val ${up ? 'c-green' : 'c-red'}">${up ? 'UP' : 'DOWN'}</div>
+        <div class="stat-sub">${up ? 'connected' : esc((d.probe?.status || '?').toLowerCase())} for ${esc(sinceDur)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">MEDIAN RTT</div>
+        <div class="stat-val ${lastRtt === null ? 'c-red' : lastRtt < 20 ? 'c-green' : lastRtt < 60 ? 'c-amber' : 'c-red'}">${lastRtt ?? '—'}<span style="font-size:1rem"> ms</span></div>
+        <div class="stat-sub">to DNS roots, last hour</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">PACKET LOSS</div>
+        <div class="stat-val ${!lastLoss ? 'c-green' : lastLoss < 5 ? 'c-amber' : 'c-red'}">${lastLoss ?? '—'}<span style="font-size:1rem"> %</span></div>
+        <div class="stat-sub">latest 15-min bucket</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">PROBE ${esc(d.probe?.id ?? '?')} UPTIME</div>
+        <div class="stat-val c-blue">${d.probe?.uptime_pct ?? '—'}<span style="font-size:1rem"> %</span></div>
+        <div class="stat-sub">lifetime, since ${d.probe?.first_connected ? new Date(d.probe.first_connected * 1000).toLocaleDateString() : '?'}</div>
+      </div>
+    `;
+
+    drawChart(d.series || []);
+
+    document.getElementById('bucket-rows').replaceChildren(...(d.series || []).slice().reverse().map(p => {
+      const tr = document.createElement('tr');
+      const c1 = document.createElement('td'); c1.className = 'when'; c1.textContent = fmtDT(p.t);
+      const c2 = document.createElement('td'); c2.textContent = p.rtt === null ? 'offline' : p.rtt;
+      const c3 = document.createElement('td'); c3.textContent = p.loss;
+      tr.append(c1, c2, c3);
+      return tr;
+    }));
+
+    renderEvents(d.events || []);
+
+    const age = Math.round((Date.now() / 1000 - d.ts) / 60);
+    document.getElementById('status').textContent =
+      `${up ? 'UP' : 'DOWN'} · ${lastRtt ?? '—'} ms · ${lastLoss ?? '—'}% LOSS`;
+    document.getElementById('updated').innerHTML =
+      `Built-in pings to ${(d.targets || []).map(esc).join(', ')} every 4 min (free, no credits) · ` +
+      `probe ${esc(d.probe?.id)} · polled every 15 min · last poll ${age} min ago · <a href="/api/uplink">JSON</a>`;
+  }
+
+  load().catch(e => {
+    document.getElementById('status').textContent = 'ERROR: ' + e.message;
+    document.getElementById('banner').innerHTML =
+      '<div class="err-banner">No uplink.json yet — run pollers/uplink.py.</div>';
+  });
+  setInterval(() => load().catch(() => {}), 60000);
+</script>
+</body>
+</html>

@@ -749,6 +749,10 @@ class Handler(BaseHTTPRequestHandler):
             self._file('atlas.html', 'text/html; charset=utf-8')
         elif path == '/api/atlas':
             self._abs_file(DATA / 'atlas.json', 'application/json')
+        elif path == '/uplink':
+            self._file('uplink.html', 'text/html; charset=utf-8')
+        elif path == '/api/uplink':
+            self._abs_file(DATA / 'uplink.json', 'application/json')
         elif path == '/steve':
             self._file('steve.html', 'text/html; charset=utf-8')
         elif path == '/api/steve':
