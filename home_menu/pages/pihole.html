@@ -54,6 +54,13 @@
     .c-blue   { color: #00aaff; }
     .c-purple { color: #cc88ff; }
     .c-teal   { color: #00ffcc; }
+    .gravity-btn {
+      margin-top: 0.45rem; background: none; border: 1px solid #5a8fb8; color: #5a8fb8;
+      font: inherit; font-size: 0.58rem; letter-spacing: 0.12em;
+      padding: 0.25rem 0.6rem; border-radius: 3px; cursor: pointer;
+    }
+    .gravity-btn:hover:not(:disabled) { border-color: #00ffcc; color: #00ffcc; }
+    .gravity-btn:disabled { opacity: 0.6; cursor: default; }
 
     /* Chart cards */
     .chart-grid {
@@ -193,6 +200,14 @@ async function load() {
 
   // Stat cards
   const cacheRate = s.total ? ((s.cached / s.total) * 100).toFixed(1) : 0;
+  const g = s.gravity || {};
+  const gAgeH = g.last_update ? (Date.now() / 1000 - g.last_update) / 3600 : null;
+  const gAge = gAgeH === null ? 'never'
+             : gAgeH < 48 ? `${gAgeH.toFixed(0)}h ago`
+             : `${(gAgeH / 24).toFixed(0)}d ago`;
+  // weekly cron cadence: quiet under 8 days, amber to 14, then red
+  const gAgeColor = gAgeH === null || gAgeH > 14 * 24 ? '#ff4444'
+                  : gAgeH > 8 * 24 ? '#ffaa00' : '#5a8fb8';
   document.getElementById('stats').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">TOTAL QUERIES</div>
@@ -218,6 +233,13 @@ async function load() {
       <div class="stat-label">FORWARDED</div>
       <div class="stat-val c-purple">${s.forwarded.toLocaleString()}</div>
       <div class="stat-sub">to upstream DNS</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">GRAVITY</div>
+      <div class="stat-val c-teal">${((g.domains || 0) / 1e6).toFixed(2)}M</div>
+      <div class="stat-sub" style="color:${gAgeColor}">domains · updated ${gAge}</div>
+      <button class="gravity-btn" onclick="updateGravity(this)"
+              ${gravityBusy ? 'disabled' : ''}>${gravityMsg}</button>
     </div>
   `;
   document.getElementById('status').textContent =
@@ -306,6 +328,31 @@ async function load() {
 
   const ts = new Date(d.ts * 1000).toLocaleTimeString('en-GB');
   document.getElementById('updated').textContent = `Last updated: ${ts}`;
+}
+
+// Button label/state survive the 60s re-render of the stat cards
+let gravityMsg = 'UPDATE NOW';
+let gravityBusy = false;
+
+async function updateGravity(btn) {
+  gravityBusy = true;
+  gravityMsg = 'STARTING…';
+  btn.disabled = true; btn.textContent = gravityMsg;
+  try {
+    const r = await fetch('/api/pihole/gravity', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}',
+    });
+    const j = await r.json();
+    if (j.ok) {
+      gravityMsg = 'RUNNING — TAKES A FEW MIN';
+    } else {
+      gravityMsg = 'FAILED'; gravityBusy = false;
+      alert('Gravity update failed: ' + (j.error || r.status));
+    }
+  } catch (e) {
+    gravityMsg = 'FAILED'; gravityBusy = false;
+  }
+  btn.disabled = gravityBusy; btn.textContent = gravityMsg;
 }
 
 load().catch(e => {

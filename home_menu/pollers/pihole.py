@@ -97,6 +97,10 @@ def fetch_and_write():
             "frequency":       round(q.get("frequency", 0), 2),
             "types":           q.get("types", {}),
             "status":          q.get("status", {}),
+            "gravity": {
+                "domains":     summary.get("gravity", {}).get("domains_being_blocked", 0),
+                "last_update": summary.get("gravity", {}).get("last_update", 0),
+            },
         },
         "history":        history,
         "top_domains":    t_domains,

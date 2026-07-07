@@ -74,6 +74,46 @@ KISMET_URL  = os.environ.get('KISMET_URL', 'http://localhost:2501')
 KISMET_USER = os.environ.get('KISMET_USER')
 KISMET_PASS = os.environ.get('KISMET_PASS')
 
+PIHOLE_URL      = os.environ.get('PIHOLE_URL', 'http://192.168.1.246')
+PIHOLE_PASSWORD = os.environ.get('PIHOLE_PASSWORD')
+
+
+def _trigger_gravity():
+    """Kick off a Pi-hole gravity update. The run takes minutes with big lists,
+    far longer than a browser should wait, so the API call happens in a background
+    thread and the reply just acks the start — the card's freshness readout (from
+    the poller) shows when it actually completed."""
+    if not PIHOLE_PASSWORD:
+        return {'ok': False, 'error': 'PIHOLE_PASSWORD not configured on server'}
+
+    def run():
+        sid = None
+        try:
+            req = urllib.request.Request(
+                f'{PIHOLE_URL}/api/auth',
+                data=json.dumps({'password': PIHOLE_PASSWORD}).encode(),
+                headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                sid = json.load(r)['session']['sid']
+            req = urllib.request.Request(f'{PIHOLE_URL}/api/action/gravity',
+                                         data=b'', headers={'X-FTL-SID': sid})
+            with urllib.request.urlopen(req, timeout=900) as r:
+                r.read()
+        except Exception as e:
+            print(f'gravity update failed: {e}')
+        finally:
+            if sid:  # free the API seat — Pi-hole caps concurrent sessions
+                try:
+                    req = urllib.request.Request(f'{PIHOLE_URL}/api/auth',
+                                                 headers={'X-FTL-SID': sid},
+                                                 method='DELETE')
+                    urllib.request.urlopen(req, timeout=10).close()
+                except Exception:
+                    pass
+
+    threading.Thread(target=run, daemon=True).start()
+    return {'ok': True, 'started': True}
+
 # Gates /cross_ref, /api/cross_ref and /api/capture — this page can trigger live packet
 # captures, so it needs its own login rather than riding on the rest of the (unauthenticated)
 # home dashboard suite. Fails closed: unset creds means the routes refuse all requests.
@@ -732,7 +772,8 @@ class Handler(BaseHTTPRequestHandler):
         # All state-changing endpoints need the login: the Content-Type check below only
         # stops cross-site requests from a browser, not a hostile LAN host POSTing directly
         # (restart rides passwordless sudo; speedtest saturates the WAN on demand).
-        if path in ('/api/capture', '/api/steve/restart', '/api/speedtest/trigger') \
+        if path in ('/api/capture', '/api/steve/restart', '/api/speedtest/trigger',
+                    '/api/pihole/gravity') \
                 and not self._require_cross_ref_auth():
             return
         # These endpoints change state (trigger a speedtest, restart a service). Requiring
@@ -740,13 +781,16 @@ class Handler(BaseHTTPRequestHandler):
         # preflight, which we don't answer — so a malicious page can't trigger them via a
         # plain <form> (text/plain and form-urlencoded are CORS "simple" types that skip
         # preflight and would otherwise reach this handler with no browser pushback).
-        if path in ('/api/speedtest/trigger', '/api/steve/restart', '/api/capture'):
+        if path in ('/api/speedtest/trigger', '/api/steve/restart', '/api/capture',
+                    '/api/pihole/gravity'):
             ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
             if ctype != 'application/json':
                 self.send_error(400, 'Content-Type must be application/json')
                 return
         if path == '/api/speedtest/trigger':
             self._json(_trigger_gateway_speedtest())
+        elif path == '/api/pihole/gravity':
+            self._json(_trigger_gravity())
         elif path == '/api/steve/restart':
             name = self._body_json().get('service', '')
             if name == 'home-menu':

@@ -63,6 +63,14 @@ class PiholeClient:
         return self._get("network/devices", max_devices=max_devices,
                          max_addresses=max_addresses).get("devices", [])
 
+    def update_gravity(self, timeout=900):
+        """Run a gravity update. Blocks until Pi-hole finishes (minutes with big
+        lists) and returns the run's text output."""
+        r = requests.post(f"{self.url}/api/action/gravity",
+                          headers={"X-FTL-SID": self._sid}, timeout=timeout)
+        r.raise_for_status()
+        return r.text
+
     def logout(self):
         # Pi-hole caps concurrent API sessions ("api_seats_exceeded") — free the seat
         if self._sid:
