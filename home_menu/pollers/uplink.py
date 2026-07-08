@@ -47,6 +47,21 @@ EXPOSURE_DESC = "home-exposure-check"
 EXPOSURE_PROBES = 3
 EXPOSURE_INTERVAL = 3600
 
+# World latency map: recurring traceroutes AT our public IP from probes spread
+# across the continents. Our WAN drops ICMP, so per probe we read the RTT of
+# the last responsive hop (the ISP border, same trick as the reverse-path
+# watch); when a reply does come from our IP we mark it "reached". ~26 probes
+# every 30 min — spendy in credits, deliberately so.
+WORLDMAP_DESC = "home-worldmap"
+WORLDMAP_INTERVAL = 1800
+WORLDMAP_SPREAD = [  # country -> probes, aiming for even continent coverage
+    ("US", 3), ("CA", 1), ("BR", 2), ("AR", 1), ("CL", 1),
+    ("GB", 1), ("DE", 1), ("ES", 1), ("PL", 1), ("SE", 1),
+    ("ZA", 2), ("KE", 1), ("AE", 1), ("IL", 1),
+    ("IN", 2), ("JP", 2), ("SG", 1), ("KR", 1),
+    ("AU", 2), ("NZ", 1),
+]
+
 # NTP integrity: query the same public NTP servers from our probe and a handful
 # of world-wide probes. Our probe's measured offset to a server should track the
 # world consensus; if it drifts off on its own, something is rewriting NTP on
@@ -251,14 +266,15 @@ def _asn_for_ip(session, ip, cache):
 def _is_private(ip):
     o = ip.split(".")
     return (o[0] == "10" or (o[0] == "172" and 16 <= int(o[1]) <= 31)
-            or (o[0] == "192" and o[1] == "168")) if len(o) == 4 else False
+            or (o[0] == "192" and o[1] == "168")
+            or (o[0] == "100" and 64 <= int(o[1]) <= 127)) if len(o) == 4 else False
 
 
 def check_reverse_path(session, state, ip):
     """How the world routes back to us: the transit ASNs of the last few
     responsive hops before our (silent) address, aggregated across probes.
-    Alerts when that near-us AS set changes — the reverse of the BGP origin
-    watch, which only sees who *announces* us."""
+    Tracks changes to that near-us AS set (informational only, no alerting)
+    — the reverse of the BGP origin watch, which only sees who *announces* us."""
     rev = state.setdefault("reverse", {})
     if not rev.get("msm_id"):
         return {"status": "unmanaged", "note": "no measurement"}
@@ -317,6 +333,109 @@ def _asn_holder(session, asn, cache):
         holder = None
     cache[key] = holder
     return holder
+
+
+def ensure_worldmap_msm(state, ip):
+    """Keep one recurring world-spread traceroute aimed at our public IP,
+    recreated (never left running) when the IP moves. Same contract as the
+    exposure measurement: needs RIPE_ATLAS_KEY, otherwise hands-off."""
+    wm = state.setdefault("worldmap", {})
+    if not ip or (wm.get("target") == ip and wm.get("msm_id")):
+        return wm
+    key = os.environ.get("RIPE_ATLAS_KEY", "")
+    if not key:
+        return wm
+    s = requests.Session()
+    s.headers["Authorization"] = f"Key {key}"
+    if wm.get("msm_id"):
+        s.delete(f"{BASE}/measurements/{wm['msm_id']}/", timeout=30)
+    r = s.post(f"{BASE}/measurements/", timeout=30, json={
+        "definitions": [{
+            "type": "traceroute", "af": 4, "protocol": "ICMP",
+            "target": ip, "description": WORLDMAP_DESC,
+            "interval": WORLDMAP_INTERVAL, "max_hops": 32, "packets": 3,
+        }],
+        "probes": [{"type": "country", "value": cc, "requested": n}
+                   for cc, n in WORLDMAP_SPREAD],
+        "is_oneoff": False,
+    })
+    if r.ok:
+        wm.update(msm_id=r.json()["measurements"][0], target=ip, created=int(time.time()))
+        print(f"worldmap measurement -> msm {wm['msm_id']} at {ip}")
+    else:
+        print(f"worldmap measurement create failed ({r.status_code}): {r.text[:200]}")
+    return wm
+
+
+def _probe_geo(session, prb_id, cache):
+    """Probe -> (country, lat, lon), memoised in state (probes rarely move)."""
+    key = str(prb_id)
+    if key in cache:
+        return cache[key]
+    try:
+        p = session.get(f"{BASE}/probes/{prb_id}/", timeout=20).json()
+        lon, lat = (p.get("geometry") or {}).get("coordinates", (None, None))
+        geo = {"cc": p.get("country_code"), "lat": lat, "lon": lon}
+    except Exception:
+        geo = {"cc": None, "lat": None, "lon": None}
+    cache[key] = geo
+    return geo
+
+
+def check_worldmap(session, state, ip):
+    wm = ensure_worldmap_msm(state, ip)
+    if not wm.get("msm_id"):
+        return {"status": "unmanaged", "note": "no measurement (key unavailable?)"}
+    r = session.get(f"{BASE}/measurements/{wm['msm_id']}/latest/", timeout=60)
+    r.raise_for_status()
+    results = r.json()
+    geo_cache = state.setdefault("probe_geo", {})
+    home = _probe_geo(session, PROBE_ID, geo_cache)
+    if not results:
+        return {"status": "pending", "msm_id": wm["msm_id"], "home": home, "points": []}
+
+    # Our IP never answers (ping-tested: all echo dropped), so every trace
+    # ends at whatever hop last replied. Real paths converge on a shared
+    # funnel of border IPs just upstream of us (Level3/NTT/LINX in London);
+    # a last hop seen by only one probe, or in private/CGNAT space, means
+    # the path died near the *probe* and its RTT would poison the map.
+    raw = []
+    for res in results:
+        hops = res.get("result", [])
+        last_ip, last_rtts, reached = None, [], False
+        for h in hops:
+            replies = h.get("result", [])
+            rtts = [p["rtt"] for p in replies if "rtt" in p]
+            if rtts:
+                last_ip = next((p["from"] for p in replies if p.get("from")), None)
+                last_rtts = rtts
+                reached = any(p.get("from") == res.get("dst_addr") for p in replies)
+        raw.append((res, last_ip, last_rtts, reached))
+
+    seen = {}
+    for _, ip, rtts, _ in raw:
+        if ip and rtts:
+            seen[ip] = seen.get(ip, 0) + 1
+
+    points, truncated = [], 0
+    for res, ip, rtts, reached in raw:
+        if not rtts or not ip:
+            truncated += 1
+            continue
+        if not reached and (_is_private(ip) or seen[ip] < 2):
+            truncated += 1
+            continue
+        geo = _probe_geo(session, res.get("prb_id"), geo_cache)
+        points.append({
+            "prb_id": res.get("prb_id"),
+            "cc": geo["cc"], "lat": geo["lat"], "lon": geo["lon"],
+            "rtt": round(statistics.median(rtts), 1),
+            "reached": reached,
+        })
+    points.sort(key=lambda p: p["rtt"])
+    return {"status": "ok" if points else "pending", "msm_id": wm["msm_id"],
+            "home": home, "probes": len(results), "truncated": truncated,
+            "points": points}
 
 
 def _probe_ntp(res):
@@ -424,6 +543,11 @@ def fetch_and_write():
     except Exception as e:
         ntp = {"status": "unknown", "note": f"fetch failed: {e}"}
 
+    try:
+        worldmap = check_worldmap(s, state, probe.get("address_v4"))
+    except Exception as e:
+        worldmap = {"status": "unknown", "note": f"fetch failed: {e}", "points": []}
+
     # notify once per transition into a bad state, like the probe events
     if bgp["status"] == "alert" and state.get("bgp_last_status") != "alert":
         _notify("Uplink BGP", "; ".join(bgp["notes"]))
@@ -433,10 +557,6 @@ def fetch_and_write():
                                    f"external probes {exposure.get('responded')} — "
                                    "open resolver / port forward?")
     state["exposure_last_status"] = exposure["status"]
-    if reverse["status"] == "changed":
-        _notify("Uplink reverse-path", f"transit AS set changed: was "
-                                       f"[{reverse.get('prev_fingerprint')}] now "
-                                       f"[{','.join(str(t['asn']) for t in reverse['transit'])}]")
     if ntp["status"] == "alert" and state.get("ntp_last_status") != "alert":
         bad = "; ".join(f"{s['name']}: {', '.join(s['notes'])}"
                         for s in ntp["servers"] if s["status"] == "alert")
@@ -457,6 +577,7 @@ def fetch_and_write():
         "exposure": exposure,
         "reverse": reverse,
         "ntp": ntp,
+        "worldmap": worldmap,
         "targets": sorted(ROOT_MSMS.values()),
         "series": series,
         "events": events[-50:],

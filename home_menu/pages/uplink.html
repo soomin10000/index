@@ -36,9 +36,10 @@
 
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 0.9rem; margin-bottom: 1.6rem;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.9rem; margin-bottom: 0.9rem;
     }
+    .stat-grid.g3 { grid-template-columns: repeat(3, 1fr); }
     .stat-card {
       background: rgba(4,14,30,0.9);
       border: 1px solid #0a2a40;
@@ -46,13 +47,28 @@
     }
     .stat-label { font-size: 0.58rem; letter-spacing: 0.14em; color: #5a8fb8; margin-bottom: 0.4rem; }
     .stat-val   { font-size: 2rem; font-weight: bold; letter-spacing: -1px; }
-    .stat-sub   { font-size: 0.65rem; color: #5a8fb8; margin-top: 0.3rem; }
+    .stat-sub   { font-size: 0.65rem; color: #5a8fb8; margin-top: 0.3rem; line-height: 1.5; }
     .c-green  { color: #00cc88; }
     .c-red    { color: #ff4444; }
     .c-blue   { color: #00aaff; }
     .c-amber  { color: #ffaa00; }
 
-    .section-title { font-size: 0.62rem; letter-spacing: 0.2em; color: #5a8fb8; margin: 1.4rem 0 0.7rem; }
+    .section-title {
+      display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
+      font-size: 0.62rem; letter-spacing: 0.2em; color: #5a8fb8; margin: 1.7rem 0 0.3rem;
+    }
+    .section-title .meta { letter-spacing: 0.08em; color: #3a5a70; text-align: right; flex-shrink: 0; }
+    .section-sub { font-size: 0.64rem; color: #3a5a70; margin: 0 0 0.7rem; line-height: 1.6; }
+
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.4rem; align-items: start; }
+
+    @media (max-width: 960px) {
+      .stat-grid, .stat-grid.g3 { grid-template-columns: repeat(2, 1fr); }
+      .cols { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 520px) {
+      .stat-grid, .stat-grid.g3 { grid-template-columns: 1fr; }
+    }
 
     .panel {
       background: rgba(4,14,30,0.9);
@@ -62,19 +78,21 @@
     .legend { display: flex; gap: 1.4rem; font-size: 0.6rem; letter-spacing: 0.1em; color: #5a8fb8; margin-bottom: 0.6rem; }
     .legend .key { display: inline-flex; align-items: center; gap: 0.4rem; }
     .key-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid #199e70; border-radius: 2px; }
+    .key-tput { display: inline-block; width: 16px; height: 0; border-top: 2px solid #00aaff; border-radius: 2px; }
     .key-loss { display: inline-block; width: 10px; height: 10px; background: #e66767; border-radius: 2px; }
     .key-off  { display: inline-block; width: 10px; height: 10px; background: rgba(90,143,184,0.18); border-radius: 2px; }
 
     .chart-wrap { position: relative; }
     .chart-wrap svg { display: block; width: 100%; height: auto; }
-    #tip {
+    #tip, #tput-tip, #map-tip {
       position: absolute; display: none; pointer-events: none; z-index: 10;
       background: rgba(2,10,24,0.97); border: 1px solid #0a2a40; border-radius: 8px;
       padding: 0.5rem 0.7rem; font-size: 0.66rem; line-height: 1.7; white-space: nowrap;
     }
-    #tip .t { color: #5a8fb8; font-size: 0.58rem; letter-spacing: 0.1em; }
-    #tip .v { color: #cde3f0; font-weight: bold; }
-    #tip .k { color: #5a8fb8; }
+    #tip .t, #tput-tip .t, #map-tip .t { color: #5a8fb8; font-size: 0.58rem; letter-spacing: 0.1em; }
+    #tip .v, #tput-tip .v, #map-tip .v { color: #cde3f0; font-weight: bold; }
+    #tip .k, #tput-tip .k, #map-tip .k { color: #5a8fb8; }
+    .key-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 
     .tbl-wrap { overflow-x: auto; border: 1px solid #0a2a40; border-radius: 12px; background: rgba(4,14,30,0.9); }
     table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
@@ -85,6 +103,7 @@
     td { padding: 0.55rem 0.9rem; border-bottom: 1px solid #061c30; font-variant-numeric: tabular-nums; }
     tr:last-child td { border-bottom: none; }
     td.when { color: #cde3f0; }
+    th.r, td.r { text-align: right; }
 
     .pill {
       display: inline-block; padding: 0.14rem 0.55rem; border-radius: 999px;
@@ -118,9 +137,15 @@
 
 <div class="page">
   <div id="banner"></div>
-  <div class="stat-grid" id="stats"></div>
+
+  <div class="section-title" style="margin-top:0">LINK — OUTSIDE-IN HEALTH</div>
+  <div class="stat-grid" id="stats-health"></div>
+
+  <div class="section-title">INTEGRITY — EXPOSURE · ROUTING · CLOCK</div>
+  <div class="stat-grid g3" id="stats-integrity"></div>
 
   <div class="section-title">LAST 24H — MEDIAN PING TO DNS ROOT SERVERS</div>
+  <div class="section-sub">RTT from our Atlas probe to four anycast DNS roots, free built-in pings aggregated to 15-min buckets — shaded columns mean the probe (so probably the uplink) was offline.</div>
   <div class="panel">
     <div class="legend">
       <span class="key"><span class="key-line"></span> RTT (ms)</span>
@@ -137,39 +162,81 @@
     <summary>DATA TABLE (15-MIN BUCKETS)</summary>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>TIME</th><th>RTT MS</th><th>LOSS %</th></tr></thead>
+        <thead><tr><th>TIME</th><th class="r">RTT MS</th><th class="r">LOSS %</th></tr></thead>
         <tbody id="bucket-rows"></tbody>
       </table>
     </div>
   </details>
 
-  <div class="section-title">REVERSE PATH — TRANSIT ASNS ROUTING BACK TO US</div>
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr><th>TRANSIT ASN</th><th>NETWORK</th><th>PROBES VIA</th></tr></thead>
-      <tbody id="transit-rows"></tbody>
-    </table>
+  <div class="section-title">WAN THROUGHPUT — GATEWAY SPEEDTESTS</div>
+  <div class="section-sub">Download speed measured by the UniFi gateway's scheduled speedtests — the same feed as the /unifi sparkline.</div>
+  <div class="panel">
+    <div class="legend">
+      <span class="key"><span class="key-tput"></span> DOWNLOAD (Mbps)</span>
+      <span id="tput-meta"></span>
+    </div>
+    <div class="chart-wrap" id="tput-wrap">
+      <svg id="tput" viewBox="0 0 1000 170" preserveAspectRatio="none" aria-label="Gateway speedtest download throughput chart"></svg>
+      <div id="tput-tip"></div>
+    </div>
   </div>
 
-  <div class="section-title">NTP INTEGRITY — OUR CLOCK OFFSET VS WORLD CONSENSUS</div>
+  <div class="section-title">WORLD LATENCY — RTT TO US FROM AROUND THE GLOBE<span class="meta" id="map-meta"></span></div>
+  <div class="section-sub">Traceroutes toward our IP from probes on every continent, every 30 min. Our WAN answers nothing, so RTT is measured to the shared border hops just upstream of us (Level3/NTT/LINX, London); paths that die near the probe are dropped.</div>
+  <div class="panel">
+    <div class="legend" id="map-legend"></div>
+    <div class="chart-wrap" id="map-wrap">
+      <svg id="map" viewBox="0 0 1000 500" aria-label="World map of round-trip times to our uplink"></svg>
+      <div id="map-tip"></div>
+    </div>
+  </div>
+
+  <details>
+    <summary>WORLD LATENCY — PER-PROBE TABLE</summary>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>PROBE</th><th>COUNTRY</th><th class="r">RTT MS</th><th>MEASURED TO</th></tr></thead>
+        <tbody id="map-rows"></tbody>
+      </table>
+    </div>
+  </details>
+
+  <div class="section-title">NTP INTEGRITY — OUR CLOCK VS WORLD CONSENSUS</div>
+  <div class="section-sub">The same NTP servers queried from our probe and from world-wide probes. If our offset drifts while the world agrees, something is rewriting NTP on our path — or our clock slipped.</div>
   <div class="tbl-wrap">
     <table>
-      <thead><tr><th>NTP SERVER</th><th>OUR OFFSET</th><th>WORLD</th><th>Δ (SKEW)</th><th>STRATUM</th><th>STATUS</th></tr></thead>
+      <thead><tr><th>NTP SERVER</th><th class="r">OUR OFFSET</th><th class="r">WORLD</th><th class="r">Δ (SKEW)</th><th class="r">STRATUM</th><th>STATUS</th></tr></thead>
       <tbody id="ntp-rows"></tbody>
     </table>
   </div>
 
-  <div class="section-title">CONNECTION DIARY — PROBE TRANSITIONS (OUTSIDE-IN)</div>
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr><th>WHEN</th><th>EVENT</th><th>OFFLINE FOR</th></tr></thead>
-      <tbody id="event-rows"></tbody>
-    </table>
+  <div class="cols">
+    <div>
+      <div class="section-title">REVERSE PATH<span class="meta" id="rev-meta"></span></div>
+      <div class="section-sub">Transit networks the internet crosses to reach us — the last hops of traceroutes toward our IP.</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>TRANSIT ASN</th><th>NETWORK</th><th class="r">PROBES VIA</th></tr></thead>
+          <tbody id="transit-rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="section-title">CONNECTION DIARY</div>
+      <div class="section-sub">Probe connect/disconnect transitions, recorded outside-in — an ISP outage log that survives steve being down.</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>WHEN</th><th>EVENT</th><th class="r">OFFLINE FOR</th></tr></thead>
+          <tbody id="event-rows"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <p class="foot" id="updated"></p>
 </div>
 
+<script src="/static/world_land.js"></script>
 <script>
   const esc = s => String(s).replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -180,18 +247,25 @@
                     : s >= 3600 ? Math.round(s / 3600) + 'h ' + Math.round(s % 3600 / 60) + 'm'
                     : Math.max(1, Math.round(s / 60)) + 'm';
 
-  // geometry: RTT panel + loss strip + x-axis band, all inside the viewBox
-  const W = 1000, PAD_L = 46, PAD_R = 10;
+  // geometry: RTT panel + loss strip + x-axis band. The viewBox width tracks
+  // the rendered width and both charts redraw on resize, so axis text keeps
+  // its true pixel size on phones instead of scaling down with the SVG.
+  const PAD_L = 46, PAD_R = 10;
   const RTT_TOP = 8, RTT_H = 200, GAP = 18, LOSS_H = 62, AXIS_H = 26;
   const LOSS_TOP = RTT_TOP + RTT_H + GAP;
-  const PLOT_W = W - PAD_L - PAD_R;
+  const CHART_H = LOSS_TOP + LOSS_H + AXIS_H + 4;
+  let W = 1000, PLOT_W = W - PAD_L - PAD_R;
+  function measure() {
+    W = Math.max(300, document.getElementById('chart-wrap').clientWidth || 1000);
+    PLOT_W = W - PAD_L - PAD_R;
+  }
 
   let SERIES = [];
 
   function niceMax(v) {
     if (v <= 0) return 10;
     const p = Math.pow(10, Math.floor(Math.log10(v)));
-    for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
+    for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
     return 10 * p;
   }
 
@@ -199,6 +273,8 @@
     SERIES = series;
     const svg = document.getElementById('chart');
     if (!series.length) { svg.innerHTML = ''; return; }
+    measure();
+    svg.setAttribute('viewBox', `0 0 ${W} ${CHART_H}`);
     const t0 = series[0].t, t1 = series[series.length - 1].t;
     const x = t => PAD_L + (t - t0) / Math.max(1, t1 - t0) * PLOT_W;
     const rtts = series.filter(p => p.rtt !== null).map(p => p.rtt);
@@ -224,8 +300,10 @@
     g += `<text x="${PAD_L - 8}" y="${yL(100) + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">100</text>`;
     g += `<text x="${PAD_L - 8}" y="${yL(0) + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">0</text>`;
 
-    // x ticks every 4h
-    for (let t = Math.ceil(t0 / 14400) * 14400; t <= t1; t += 14400) {
+    // x ticks: coarsest step that keeps ~70px per label at this width
+    const stepH = [4, 6, 8, 12].find(h => (t1 - t0) / (h * 3600) <= PLOT_W / 70) || 24;
+    const tick = stepH * 3600;
+    for (let t = Math.ceil(t0 / tick) * tick; t <= t1; t += tick) {
       g += `<line x1="${x(t)}" y1="${LOSS_TOP + LOSS_H}" x2="${x(t)}" y2="${LOSS_TOP + LOSS_H + 4}" stroke="#0a2a40" stroke-width="1"/>`;
       g += `<text x="${x(t)}" y="${LOSS_TOP + LOSS_H + AXIS_H - 8}" text-anchor="middle" font-size="10" fill="#5a8fb8">${fmtT(t)}</text>`;
     }
@@ -303,6 +381,220 @@
   };
   wrap.addEventListener('pointerleave', hideTip);
 
+  // WAN throughput: gateway speedtest history (same source as the /unifi sparkline)
+  const T_TOP = 8, T_H = 128, T_AXIS = 26, TPUT_H = T_TOP + T_H + T_AXIS + 4;
+  let TPUT = [];
+
+  async function loadTput() {
+    const meta = document.getElementById('tput-meta');
+    try {
+      const r = await fetch('/api/speedtest?t=' + Date.now());
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const data = (d.results || []).filter(p => p.download_mbps !== null && p.download_mbps !== undefined).slice(-48);
+      if (!data.length) { meta.textContent = 'no speedtest results yet'; return; }
+      TPUT = data;
+      drawTput();
+      const vals = data.map(p => p.download_mbps);
+      const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+      meta.textContent = `AVG ${avg} · PEAK ${Math.round(Math.max(...vals))} · ${data.length} TESTS`;
+    } catch (e) {
+      meta.textContent = 'speedtest history unavailable';
+    }
+  }
+
+  function drawTput() {
+    const data = TPUT;
+    if (!data.length) return;
+    const svg = document.getElementById('tput');
+    measure();
+    svg.setAttribute('viewBox', `0 0 ${W} ${TPUT_H}`);
+    const x = i => PAD_L + i / Math.max(1, data.length - 1) * PLOT_W;
+    const vals = data.map(p => p.download_mbps);
+    const yMax = niceMax(Math.max(...vals) * 1.05);
+    const y = v => T_TOP + T_H - v / yMax * T_H;
+    let g = '';
+
+    for (let i = 0; i <= 5; i++) {
+      const v = yMax * i / 5, gy = y(v);
+      g += `<line x1="${PAD_L}" y1="${gy}" x2="${W - PAD_R}" y2="${gy}" stroke="#0a2a40" stroke-width="1"/>`;
+      g += `<text x="${PAD_L - 8}" y="${gy + 3}" text-anchor="end" font-size="10" fill="#5a8fb8">${v.toLocaleString()}</text>`;
+    }
+
+    // x ticks: date+time on short spans, date only on long ones; density
+    // adapts to the plot width so labels never collide on narrow screens
+    const spanDays = (data[data.length - 1].ts - data[0].ts) / 86400;
+    const labelW = spanDays < 4 ? 130 : 80;
+    const nTicks = Math.max(2, Math.min(6, Math.floor(PLOT_W / labelW)));
+    const step = Math.max(1, Math.round((data.length - 1) / nTicks));
+    for (let i = 0; i < data.length; i += step) {
+      const lbl = spanDays < 4 ? fmtDT(data[i].ts)
+                               : new Date(data[i].ts * 1000).toLocaleDateString([], { day: 'numeric', month: 'short' });
+      const anchor = x(i) - PAD_L < labelW / 2 ? 'start'
+                   : W - PAD_R - x(i) < labelW / 2 ? 'end' : 'middle';
+      g += `<line x1="${x(i)}" y1="${T_TOP + T_H}" x2="${x(i)}" y2="${T_TOP + T_H + 4}" stroke="#0a2a40" stroke-width="1"/>`;
+      g += `<text x="${x(i)}" y="${T_TOP + T_H + T_AXIS - 8}" text-anchor="${anchor}" font-size="10" fill="#5a8fb8">${lbl}</text>`;
+    }
+
+    const line = data.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.download_mbps).toFixed(1)}`).join('');
+    g += `<path d="${line}L${x(data.length - 1).toFixed(1)},${y(0)}L${x(0).toFixed(1)},${y(0)}Z" fill="#00aaff" opacity="0.08"/>`;
+    g += `<path d="${line}" fill="none" stroke="#00aaff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>`;
+
+    const lp = data[data.length - 1];
+    g += `<circle cx="${x(data.length - 1)}" cy="${y(lp.download_mbps)}" r="5.5" fill="#020a18"/>`
+       + `<circle cx="${x(data.length - 1)}" cy="${y(lp.download_mbps)}" r="4" fill="#00aaff"/>`
+       + `<text x="${x(data.length - 1) - 8}" y="${y(lp.download_mbps) - 9}" text-anchor="end" font-size="11" font-weight="bold" fill="#cde3f0">${Math.round(lp.download_mbps)} Mbps</text>`;
+
+    g += `<line id="txhair" x1="0" y1="${T_TOP}" x2="0" y2="${T_TOP + T_H}" stroke="#5a8fb8" stroke-width="1" opacity="0"/>`;
+    svg.innerHTML = g;
+  }
+
+  const twrap = document.getElementById('tput-wrap'), ttip = document.getElementById('tput-tip');
+  twrap.addEventListener('pointermove', e => {
+    if (!TPUT.length) return;
+    const svg = document.getElementById('tput'), r = svg.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width * W;
+    if (fx < PAD_L || fx > W - PAD_R) { hideTputTip(); return; }
+    const i = Math.max(0, Math.min(TPUT.length - 1,
+      Math.round((fx - PAD_L) / PLOT_W * (TPUT.length - 1))));
+    const p = TPUT[i];
+    const px = PAD_L + i / Math.max(1, TPUT.length - 1) * PLOT_W;
+    const xh = document.getElementById('txhair');
+    if (xh) { xh.setAttribute('x1', px); xh.setAttribute('x2', px); xh.setAttribute('opacity', 0.5); }
+
+    ttip.replaceChildren();
+    const tl = document.createElement('div'); tl.className = 't'; tl.textContent = fmtDT(p.ts);
+    ttip.appendChild(tl);
+    const row = (label, val) => {
+      const d = document.createElement('div');
+      const v = document.createElement('span'); v.className = 'v'; v.textContent = val;
+      const k = document.createElement('span'); k.className = 'k'; k.textContent = ' ' + label;
+      d.append(v, k); ttip.appendChild(d);
+    };
+    row('download', Math.round(p.download_mbps) + ' Mbps');
+    if (p.upload_mbps !== null && p.upload_mbps !== undefined) row('upload', Math.round(p.upload_mbps) + ' Mbps');
+    if (p.ping_ms !== null && p.ping_ms !== undefined) row('ping', p.ping_ms + ' ms');
+    const left = px / W * r.width;
+    ttip.style.display = 'block';
+    ttip.style.left = Math.min(left + 14, r.width - ttip.offsetWidth - 6) + 'px';
+    ttip.style.top = (e.clientY - r.top + 14) + 'px';
+  });
+  const hideTputTip = () => {
+    ttip.style.display = 'none';
+    const xh = document.getElementById('txhair');
+    if (xh) xh.setAttribute('opacity', 0);
+  };
+  twrap.addEventListener('pointerleave', hideTputTip);
+
+  // world latency map: dots on an equirectangular land outline, sequential
+  // single-hue ramp (brighter = farther), drawn at true pixel size like the charts
+  const RTT_BINS = [[40, '#12527c'], [120, '#1f7fb8'], [220, '#3fb2e8'], [Infinity, '#a8e2ff']];
+  const binColor = r => RTT_BINS.find(b => r < b[0])[1];
+  let WMAP = null, MAP_PTS = [], MAP_H = 500, MAP_Y0 = 0, MAP_VH = 500;
+
+  function drawMap() {
+    const wm = WMAP;
+    if (!wm) return;
+    const svg = document.getElementById('map');
+    const meta = document.getElementById('map-meta');
+    measure();
+    // crop the empty poles: show lat 84°N .. 56°S
+    MAP_H = W / 2;
+    MAP_Y0 = (90 - 84) / 180 * MAP_H;
+    MAP_VH = (84 + 56) / 180 * MAP_H;
+    svg.setAttribute('viewBox', `0 ${MAP_Y0} ${W} ${MAP_VH}`);
+    const px = lon => (lon + 180) / 360 * W;
+    const py = lat => (90 - lat) / 180 * MAP_H;
+    let g = `<path d="${WORLD_LAND}" transform="scale(${W / 1000})" fill="#061c30" stroke="#0e3450" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+
+    MAP_PTS = (wm.points || []).filter(p => p.lat !== null && p.lon !== null)
+      .map(p => ({ ...p, x: px(p.lon), y: py(p.lat) }));
+
+    let hx = null, hy = null;
+    if (wm.home && wm.home.lat !== null && wm.home.lon !== null) {
+      hx = px(wm.home.lon); hy = py(wm.home.lat);
+      g += `<circle cx="${hx}" cy="${hy}" r="9" fill="none" stroke="#00cc88" stroke-width="1.5"/>`
+         + `<circle cx="${hx}" cy="${hy}" r="3" fill="#00cc88"/>`
+         + `<text x="${hx}" y="${hy - 13}" text-anchor="middle" font-size="10" font-weight="bold" fill="#00cc88">HOME</text>`;
+    }
+    MAP_PTS.forEach(p => {
+      g += `<circle cx="${p.x}" cy="${p.y}" r="7" fill="#020a18"/>`
+         + `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${binColor(p.rtt)}"/>`;
+    });
+    // selective labels: nearest and farthest probe (points arrive rtt-sorted);
+    // drop below the dot when the usual spot would collide with HOME
+    if (MAP_PTS.length > 1) {
+      [MAP_PTS[0], MAP_PTS[MAP_PTS.length - 1]].forEach(p => {
+        const nearHome = hx !== null && Math.abs(p.x - hx) < 50 && Math.abs(p.y - hy) < 30;
+        const anchor = p.x < 45 ? 'start' : p.x > W - 45 ? 'end' : 'middle';
+        g += `<text x="${p.x}" y="${nearHome ? p.y + 19 : p.y - 10}" text-anchor="${anchor}" font-size="10" font-weight="bold" fill="#cde3f0">${esc(p.cc || '?')} ${Math.round(p.rtt)} ms</text>`;
+      });
+    }
+    if (!MAP_PTS.length) {
+      g += `<text x="${W / 2}" y="${MAP_Y0 + MAP_VH / 2}" text-anchor="middle" font-size="12" fill="#5a8fb8">${wm.status === 'pending' ? 'first traceroutes pending — results land within 30 min' : esc(wm.note || 'no data')}</text>`;
+    }
+    svg.innerHTML = g;
+
+    const binLbl = ['&lt;40 MS', '40–120 MS', '120–220 MS', '&gt;220 MS'];
+    document.getElementById('map-legend').innerHTML =
+      RTT_BINS.map((b, i) => `<span class="key"><span class="key-dot" style="background:${b[1]}"></span> ${binLbl[i]}</span>`).join('')
+      + `<span class="key"><span class="key-dot" style="background:transparent;border:1.5px solid #00cc88"></span> HOME</span>`;
+
+    if (MAP_PTS.length) {
+      const rtts = MAP_PTS.map(p => p.rtt).sort((a, b) => a - b);
+      meta.textContent = `${MAP_PTS.length} PROBES · MEDIAN ${Math.round(rtts[Math.floor(rtts.length / 2)])} MS`
+        + (wm.truncated ? ` · ${wm.truncated} DROPPED` : '');
+    } else {
+      meta.textContent = wm.status === 'pending' ? 'PENDING' : '';
+    }
+
+    const body = document.getElementById('map-rows');
+    if (MAP_PTS.length) {
+      body.replaceChildren(...MAP_PTS.map(p => {
+        const tr = document.createElement('tr');
+        const a = document.createElement('td'); a.className = 'when'; a.textContent = '#' + p.prb_id;
+        const c = document.createElement('td'); c.textContent = p.cc || '?';
+        const v = document.createElement('td'); v.className = 'r'; v.textContent = p.rtt;
+        const m = document.createElement('td'); m.textContent = p.reached ? 'our IP (full path)' : 'ISP border (last responsive hop)';
+        tr.append(a, c, v, m);
+        return tr;
+      }));
+    } else {
+      const tr = document.createElement('tr'), td = document.createElement('td');
+      td.colSpan = 4; td.textContent = 'No results yet.';
+      tr.appendChild(td); body.replaceChildren(tr);
+    }
+  }
+
+  const mwrap = document.getElementById('map-wrap'), mtip = document.getElementById('map-tip');
+  mwrap.addEventListener('pointermove', e => {
+    if (!MAP_PTS.length) return;
+    const svg = document.getElementById('map'), r = svg.getBoundingClientRect();
+    const mx = (e.clientX - r.left) / r.width * W;
+    const my = (e.clientY - r.top) / r.height * MAP_VH + MAP_Y0;
+    let best = null, bd = Infinity;
+    for (const p of MAP_PTS) {
+      const d = (p.x - mx) ** 2 + (p.y - my) ** 2;
+      if (d < bd) { bd = d; best = p; }
+    }
+    if (!best || bd > 400) { hideMapTip(); return; }
+    mtip.replaceChildren();
+    const tl = document.createElement('div'); tl.className = 't';
+    tl.textContent = `PROBE ${best.prb_id} · ${best.cc || '?'}`;
+    mtip.appendChild(tl);
+    const d1 = document.createElement('div');
+    const v = document.createElement('span'); v.className = 'v'; v.textContent = best.rtt + ' ms';
+    const k = document.createElement('span'); k.className = 'k';
+    k.textContent = best.reached ? ' to our IP' : ' to ISP border';
+    d1.append(v, k); mtip.appendChild(d1);
+    const left = best.x / W * r.width, top = (best.y - MAP_Y0) / MAP_VH * r.height;
+    mtip.style.display = 'block';
+    mtip.style.left = Math.min(left + 12, r.width - mtip.offsetWidth - 6) + 'px';
+    mtip.style.top = Math.max(0, top - mtip.offsetHeight - 12) + 'px';
+  });
+  const hideMapTip = () => { mtip.style.display = 'none'; };
+  mwrap.addEventListener('pointerleave', hideMapTip);
+
   function renderEvents(events) {
     const rows = [];
     const evs = [...events].sort((a, b) => a.t - b.t);
@@ -322,7 +614,7 @@
       pill.className = 'pill ' + (ev.event === 'connect' ? 'pill-up' : 'pill-down');
       pill.textContent = ev.event === 'connect' ? '▲ CONNECTED' : '▼ DISCONNECTED';
       tdE.appendChild(pill);
-      const tdD = document.createElement('td'); tdD.textContent = ev.dur || '—';
+      const tdD = document.createElement('td'); tdD.className = 'r'; tdD.textContent = ev.dur || '—';
       tr.append(tdW, tdE, tdD);
       return tr;
     }));
@@ -346,7 +638,6 @@
     if (!up) banners.push(`⚠ Probe ${esc(d.probe?.id)} is ${esc(d.probe?.status || 'down')} — uplink may be offline (this page may be stale)`);
     if (d.bgp?.status === 'alert') banners.push(`⚠ BGP: ${(d.bgp.notes || []).map(esc).join(' · ')}`);
     if (d.exposure?.status === 'open') banners.push(`⚠ EXPOSURE: UDP/53 on ${esc(d.exposure.target)} answered probes ${(d.exposure.responded || []).map(esc).join(', ')} — open resolver / port forward?`);
-    if (d.reverse?.status === 'changed') banners.push(`⚠ REVERSE PATH: transit AS set changed (was AS${esc(d.reverse.prev_fingerprint)})`);
     if (d.ntp?.status === 'alert') banners.push(`⚠ NTP: ${(d.ntp.servers || []).filter(s => s.status === 'alert').map(s => esc(s.name) + ' — ' + (s.notes || []).map(esc).join(', ')).join(' · ')}`);
     document.getElementById('banner').innerHTML =
       banners.map(b => `<div class="err-banner">${b}</div>`).join('');
@@ -361,7 +652,7 @@
       ? `Δ ${worstDelta >= 0 ? '+' : ''}${worstDelta.toFixed(1)} ms vs world · ${ntpSrv.length} server${ntpSrv.length > 1 ? 's' : ''}`
       : (ntp.note || 'first results pending');
 
-    document.getElementById('stats').innerHTML = `
+    document.getElementById('stats-health').innerHTML = `
       <div class="stat-card">
         <div class="stat-label">UPLINK (OUTSIDE-IN)</div>
         <div class="stat-val ${up ? 'c-green' : 'c-red'}">${up ? 'UP' : 'DOWN'}</div>
@@ -382,6 +673,8 @@
         <div class="stat-val c-blue">${d.probe?.uptime_pct ?? '—'}<span style="font-size:1rem"> %</span></div>
         <div class="stat-sub">lifetime, since ${d.probe?.first_connected ? new Date(d.probe.first_connected * 1000).toLocaleDateString() : '?'}</div>
       </div>
+    `;
+    document.getElementById('stats-integrity').innerHTML = `
       <div class="stat-card">
         <div class="stat-label">PORT 53 (WAN)</div>
         <div class="stat-val ${d.exposure?.status === 'closed' ? 'c-green' : d.exposure?.status === 'open' ? 'c-red' : 'c-amber'}">${d.exposure?.status === 'closed' ? 'CLOSED' : d.exposure?.status === 'open' ? 'OPEN' : '…'}</div>
@@ -400,12 +693,14 @@
     `;
 
     drawChart(d.series || []);
+    WMAP = d.worldmap || null;
+    drawMap();
 
     document.getElementById('bucket-rows').replaceChildren(...(d.series || []).slice().reverse().map(p => {
       const tr = document.createElement('tr');
       const c1 = document.createElement('td'); c1.className = 'when'; c1.textContent = fmtDT(p.t);
-      const c2 = document.createElement('td'); c2.textContent = p.rtt === null ? 'offline' : p.rtt;
-      const c3 = document.createElement('td'); c3.textContent = p.loss;
+      const c2 = document.createElement('td'); c2.className = 'r'; c2.textContent = p.rtt === null ? 'offline' : p.rtt;
+      const c3 = document.createElement('td'); c3.className = 'r'; c3.textContent = p.loss;
       tr.append(c1, c2, c3);
       return tr;
     }));
@@ -414,12 +709,15 @@
 
     const transit = d.reverse?.transit || [];
     const trBody = document.getElementById('transit-rows');
+    document.getElementById('rev-meta').textContent = d.reverse?.probes
+      ? `${d.reverse.probes} PROBES · MEDIAN ${d.reverse.median_hops ?? '?'} HOPS`
+      : '';
     if (transit.length) {
       trBody.replaceChildren(...transit.map(t => {
         const tr = document.createElement('tr');
         const a = document.createElement('td'); a.className = 'when'; a.textContent = 'AS' + t.asn;
         const n = document.createElement('td'); n.textContent = t.holder || '—';
-        const p = document.createElement('td'); p.textContent = t.probes;
+        const p = document.createElement('td'); p.className = 'r'; p.textContent = t.probes;
         tr.append(a, n, p);
         return tr;
       }));
@@ -435,7 +733,7 @@
     const ntpBody = document.getElementById('ntp-rows');
     const ntpRows = (d.ntp?.servers || []);
     if (ntpRows.length) {
-      const off = (v, cls) => { const td = document.createElement('td'); if (cls) td.className = cls; td.textContent = v; return td; };
+      const off = (v, cls) => { const td = document.createElement('td'); td.className = 'r' + (cls ? ' ' + cls : ''); td.textContent = v; return td; };
       ntpBody.replaceChildren(...ntpRows.map(s => {
         const tr = document.createElement('tr');
         const name = document.createElement('td'); name.className = 'when'; name.textContent = s.name;
@@ -473,6 +771,15 @@
       '<div class="err-banner">No uplink.json yet — run pollers/uplink.py.</div>';
   });
   setInterval(() => load().catch(() => {}), 60000);
+  loadTput();
+  setInterval(loadTput, 300000);
+
+  // redraw at the new width on resize / rotation
+  let rsz;
+  window.addEventListener('resize', () => {
+    clearTimeout(rsz);
+    rsz = setTimeout(() => { drawChart(SERIES); drawTput(); drawMap(); }, 150);
+  });
 </script>
 </body>
 </html>

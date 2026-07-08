@@ -753,6 +753,8 @@ class Handler(BaseHTTPRequestHandler):
             self._file('uplink.html', 'text/html; charset=utf-8')
         elif path == '/api/uplink':
             self._abs_file(DATA / 'uplink.json', 'application/json')
+        elif path == '/static/world_land.js':
+            self._abs_file(STATIC / 'world_land.js', 'application/javascript')
         elif path == '/steve':
             self._file('steve.html', 'text/html; charset=utf-8')
         elif path == '/api/steve':
