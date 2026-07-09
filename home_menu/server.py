@@ -540,7 +540,7 @@ def _summarize_capture(pcap_path, mac):
     }
 
 
-def _capture_traffic(mac, duration=10):
+def _capture_traffic(mac, duration=20):
     """Capture `duration`s of live 802.11 traffic for one device, filtered server-side
     before it's ever written to a servable file, then summarized. Hard-blocked to devices
     on your own UniFi-managed network — see [[wireless-lab authorization]] in memory for
@@ -576,7 +576,7 @@ def _capture_traffic(mac, duration=10):
         # the output file rather than the exit code.
         result = subprocess.run(
             ['tshark', '-r', raw_path, '-Y', f'wlan.addr=={mac}', '-w', out_path],
-            capture_output=True, timeout=20,
+            capture_output=True, timeout=30,
         )
         data = Path(out_path).read_bytes()
         if len(data) < 100:
@@ -584,7 +584,7 @@ def _capture_traffic(mac, duration=10):
             # the whole window — tshark's stderr here is just the expected mid-packet
             # truncation warning from us deliberately cutting the stream, not a real
             # error, so don't surface it as if it explains the failure.
-            return None, 'no packets captured for this device — it may have been idle during this 10s window, try again'
+            return None, f'no packets captured for this device — it may have been idle during this {duration}s window, try again'
         summary = _summarize_capture(out_path, mac)
         return {'summary': summary, 'pcap_b64': base64.b64encode(data).decode()}, None
     except Exception as e:

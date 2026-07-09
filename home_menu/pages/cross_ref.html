@@ -411,7 +411,7 @@
 
     const canCapture = !!(d.mac);
     const captureHtml = canCapture
-      ? `<button id="cap-btn" class="btn" onclick="startCapture('${esc(d.mac)}')">Capture traffic (10s)</button>
+      ? `<button id="cap-btn" class="btn" onclick="startCapture('${esc(d.mac)}')">Capture traffic (20s)</button>
          <div id="cap-status" class="cap-status"></div>
          <div id="cap-result"></div>`
       : '<div class="none">only available for devices on your network</div>';
@@ -437,7 +437,7 @@
     if(!btn) return;
     btn.disabled=true;
     result.innerHTML='';
-    let secs=10;
+    let secs=20;
     status.className='cap-status'; status.textContent=`capturing… ${secs}s`;
     const tick=setInterval(()=>{ secs--; if(secs>=0) status.textContent=`capturing… ${secs}s`; }, 1000);
     try{
