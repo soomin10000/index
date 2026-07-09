@@ -15,8 +15,12 @@ Test it:
 Later: add to systemd like your other services once you're happy with it.
 """
 
+import json
 import os
 import sqlite3
+import sys
+import threading
+import time
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +46,59 @@ def load_token():
 
 BEARER_TOKEN = load_token()  # must match the sketch
 DB_PATH = "moisture.db"
+
+# --- Low-moisture push notifications -----------------------------------------
+# Same pattern as the kismet poller: reuse the eufy-notify macOS sender so a dry
+# plant reaches a phone/Mac instead of only showing on the dashboard. Fires once
+# when a plant crosses below DRY_PCT, re-reminds every REMIND_H hours while it
+# stays dry, and re-arms only after the reading climbs back above REARM_PCT — the
+# hysteresis band stops a reading wobbling around the threshold from spamming.
+NOTIFY_SENDER_DIR = os.environ.get("NOTIFY_SENDER_DIR", "/home/simon/ubuntu-sender")
+DRY_PCT   = int(os.environ.get("MOISTURE_ALERT_PCT", "20"))    # matches the dashboard's red zone
+REARM_PCT = DRY_PCT + 5
+REMIND_S  = int(os.environ.get("MOISTURE_REMIND_HOURS", "6")) * 3600
+ALERT_STATE = Path(__file__).parent / "moisture_alert_state.json"
+
+try:
+    sys.path.insert(0, NOTIFY_SENDER_DIR)
+    from notify_sender import notify as _notify
+except Exception:
+    _notify = None
+
+_alert_lock = threading.Lock()
+
+
+def check_low_moisture(plant, moisture_pct, raw):
+    """Never raises — the endpoint's real job is logging the reading."""
+    try:
+        with _alert_lock:
+            try:
+                state = json.loads(ALERT_STATE.read_text())
+            except Exception:
+                state = {}
+            now = time.time()
+            entry = state.get(plant)
+            if moisture_pct >= REARM_PCT:
+                if entry:  # recovered — re-arm for the next dry spell
+                    del state[plant]
+                    ALERT_STATE.write_text(json.dumps(state))
+                return
+            if moisture_pct >= DRY_PCT:
+                return  # hysteresis band: not dry enough to alert, too dry to re-arm
+            if entry and now - entry["alerted_at"] < REMIND_S:
+                return
+            state[plant] = {"alerted_at": now}
+            ALERT_STATE.write_text(json.dumps(state))
+
+        if _notify is None:
+            log.warning(f"{plant} is dry ({moisture_pct}%) but notify_sender unavailable at {NOTIFY_SENDER_DIR}")
+            return
+        again = " (still dry)" if entry else ""
+        results = _notify(f"🪴 {plant} needs water{again}",
+                          f"Soil moisture {moisture_pct}% (raw {raw})")
+        log.info(f"Low-moisture alert for {plant} ({moisture_pct}%) -> {results}")
+    except Exception as e:
+        log.error(f"low-moisture alert failed for {plant}: {e}")
 HOST = "0.0.0.0"
 PORT = 8082
 
@@ -98,9 +155,9 @@ def moisture():
 
     log.info(f"{plant}: {moisture_pct}% (raw={raw}, battery={battery_v})")
 
-    # Placeholder for the osascript alert step, e.g.:
-    # if moisture_pct < 20:
-    #     notify_low_moisture(plant, moisture_pct)
+    # Alert in the background — notify() retries over the network and the ESP32
+    # shouldn't wait on that for its 200.
+    threading.Thread(target=check_low_moisture, args=(plant, moisture_pct, raw), daemon=True).start()
 
     return jsonify({"status": "ok"}), 200
 
