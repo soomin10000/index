@@ -2,10 +2,12 @@
 
 import json
 import os
+import sys
 import time
 import urllib.request
 import urllib.parse
 import base64
+from collections import Counter
 from pathlib import Path
 
 KISMET_URL   = os.environ.get('KISMET_URL', 'http://localhost:2501')
@@ -21,6 +23,25 @@ OUT = DATA / 'kismet.json'
 UNIFI_DEVICES = DATA / 'unifi' / 'devices.json'
 PIHOLE_JSON = DATA / 'pihole.json'
 PIHOLE_MAX_AGE_SEC = 900  # ignore pihole.json if stale — IPs get reassigned, wrong name is worse than no name
+
+# --- Critical-alert push notifications --------------------------------------
+# Reuses the eufy-notify macOS sender (../../../ubuntu-sender/notify_sender.py) so a
+# genuine WiFi attack reaches a phone/Mac instead of only landing on the dashboard.
+# What counts as critical: Kismet's active-attack alert classes (EXPLOIT frames,
+# DENIAL/deauth floods) plus specific headers worth flagging from other classes
+# (e.g. a crypto downgrade that can signal an evil-twin). The benign-but-chatty
+# alerts (NOCLIENTMFP, DOT11D) are deliberately left out. All tunable via env.
+NOTIFY_SENDER_DIR = os.environ.get('NOTIFY_SENDER_DIR', '/home/simon/ubuntu-sender')
+CRITICAL_CLASSES  = set(filter(None, os.environ.get('KISMET_CRITICAL_CLASSES', 'EXPLOIT,DENIAL').split(',')))
+CRITICAL_HEADERS  = set(filter(None, os.environ.get('KISMET_CRITICAL_ALERTS', 'ADVCRYPTCHANGE').split(',')))
+NOTIFY_TARGETS    = list(filter(None, os.environ.get('KISMET_NOTIFY_TARGETS', '').split(','))) or None
+ALERT_STATE       = DATA / 'kismet_alert_state.json'
+
+try:
+    sys.path.insert(0, NOTIFY_SENDER_DIR)
+    from notify_sender import notify as _notify
+except Exception:
+    _notify = None
 
 DEVICE_FIELDS = [
     'kismet.device.base.macaddr',
@@ -89,6 +110,63 @@ def _load_pihole_by_ip():
     return {c['ip']: c['name'] for c in pd.get('clients_detail', []) if c.get('name')}
 
 
+def _alert_is_critical(a):
+    return (a.get('kismet.alert.class', '') in CRITICAL_CLASSES
+            or a.get('kismet.alert.header', '') in CRITICAL_HEADERS)
+
+
+def notify_critical_alerts(raw_alerts):
+    """Push a notification when Kismet raises a NEW security-critical alert.
+
+    The /alerts endpoint returns the same recent ring buffer on every poll, so we
+    watermark on the highest alert timestamp already seen and only fire on newer
+    ones. On the first run (no state file) we just record the baseline without
+    notifying, so a fresh start or reboot doesn't replay old history. A single push
+    summarises everything new in this poll, capping noise to one alert per 5-min run
+    even during a sustained flood. Never raises — the poll's real job is kismet.json.
+    """
+    if not raw_alerts:
+        return
+    ts_of = lambda a: float(a.get('kismet.alert.timestamp', 0) or 0)
+    newest_seen = max(ts_of(a) for a in raw_alerts)
+
+    first_run = not ALERT_STATE.exists()
+    try:
+        last_ts = float(json.loads(ALERT_STATE.read_text()).get('last_ts', 0))
+    except Exception:
+        last_ts = 0.0
+    try:
+        ALERT_STATE.write_text(json.dumps({'last_ts': newest_seen}))
+    except Exception as e:
+        print(f'Could not persist alert watermark: {e}')
+
+    if first_run:
+        print(f'Alert watermark initialised at {newest_seen:.0f} '
+              f'(existing history not notified)')
+        return
+
+    fresh = [a for a in raw_alerts if _alert_is_critical(a) and ts_of(a) > last_ts]
+    if not fresh:
+        return
+
+    counts  = Counter(a.get('kismet.alert.header', '?') for a in fresh)
+    summary = ', '.join(f'{h}×{n}' if n > 1 else h for h, n in counts.most_common())
+    newest  = max(fresh, key=ts_of)
+    detail  = (newest.get('kismet.alert.text') or '')[:180]
+    title   = f'⚠️ Kismet — {len(fresh)} WiFi alert{"s" if len(fresh) != 1 else ""}'
+    message = f'{summary}\n{detail}'
+
+    if _notify is None:
+        print(f'CRITICAL kismet alert(s) [{summary}] but notify_sender unavailable '
+              f'at {NOTIFY_SENDER_DIR}')
+        return
+    try:
+        results = _notify(title, message, targets=NOTIFY_TARGETS)
+        print(f'Notified critical alert(s): {summary} -> {results}')
+    except Exception as e:
+        print(f'notify failed for critical alert(s) [{summary}]: {e}')
+
+
 def fetch_and_write():
     now = int(time.time())
 
@@ -153,6 +231,13 @@ def fetch_and_write():
             'source_mac': a.get('kismet.alert.source_mac', ''),
         })
     alerts.sort(key=lambda a: -a['ts'])
+
+    # Push a notification if any NEW security-critical alert has appeared. Guarded so a
+    # notification hiccup never stops kismet.json (the dashboard's data) from being written.
+    try:
+        notify_critical_alerts(raw_alerts)
+    except Exception as e:
+        print(f'alert notification step failed (non-fatal): {e}')
 
     # Cross-reference against UniFi: flag unknown MACs, resolve known ones to hostnames.
     # UniFi bridges MAC->IP, which lets us also pull in Pi-hole's IP->hostname (usually
