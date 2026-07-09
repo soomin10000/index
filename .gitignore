@@ -10,6 +10,9 @@ venv/
 home_menu/data/
 home_menu/logs/
 
+# moisture endpoint runtime output
+moisture.db
+
 # systemd units are installed copies; unifi-poller.service carries an API key
 # and this repo is PUBLIC, so ignore them all — except the secret-free menu unit.
 *.service

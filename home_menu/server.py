@@ -69,6 +69,7 @@ KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
 STEVE_DB     = DATA / 'steve_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
+MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
 
 KISMET_URL  = os.environ.get('KISMET_URL', 'http://localhost:2501')
 KISMET_USER = os.environ.get('KISMET_USER')
@@ -137,6 +138,45 @@ def _steve_history():
         return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
     except Exception as e:
         return {'points': [], 'error': str(e)}
+
+
+def _moisture_data(hours=24):
+    """Latest reading per plant + bucket-averaged history for the chart. The sensor
+    posts every 10s, so raw rows are far denser than a chart can show — average into
+    buckets sized to the window (~300 points max) instead of shipping them all."""
+    if not MOISTURE_DB.exists():
+        return {'plants': [], 'history': {}, 'error': 'no moisture.db yet'}
+    bucket = max(120, int(hours * 3600 / 300))
+    cutoff = int(time.time()) - hours * 3600
+    try:
+        conn = sqlite3.connect(MOISTURE_DB)
+        latest = conn.execute(
+            "SELECT plant, raw, moisture_pct, battery_v, "
+            "CAST(strftime('%s', recorded_at) AS INTEGER) "
+            'FROM readings WHERE id IN (SELECT MAX(id) FROM readings GROUP BY plant) '
+            'ORDER BY plant'
+        ).fetchall()
+        rows = conn.execute(
+            "SELECT plant, (CAST(strftime('%s', recorded_at) AS INTEGER) / ?) * ? AS tb, "
+            'ROUND(AVG(moisture_pct), 1), CAST(ROUND(AVG(raw)) AS INTEGER) '
+            "FROM readings WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= ? "
+            'GROUP BY plant, tb ORDER BY tb',
+            (bucket, bucket, cutoff),
+        ).fetchall()
+        conn.close()
+    except Exception as e:
+        return {'plants': [], 'history': {}, 'error': str(e)}
+    history = {}
+    for plant, tb, pct, raw in rows:
+        history.setdefault(plant, []).append({'ts': tb, 'pct': pct, 'raw': raw})
+    now = int(time.time())
+    return {
+        'ts': now, 'hours': hours,
+        'plants': [{'plant': p, 'raw': r, 'moisture_pct': m, 'battery_v': b,
+                    'last_seen': ts, 'age_s': now - ts}
+                   for p, r, m, b, ts in latest],
+        'history': history,
+    }
 
 
 def _restart_steve_service(name):
@@ -755,6 +795,16 @@ class Handler(BaseHTTPRequestHandler):
             self._abs_file(DATA / 'uplink.json', 'application/json')
         elif path == '/static/world_land.js':
             self._abs_file(STATIC / 'world_land.js', 'application/javascript')
+        elif path == '/moisture':
+            self._file('moisture.html', 'text/html; charset=utf-8')
+        elif path == '/api/moisture':
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                hours = max(1, min(int(qs.get('hours', ['24'])[0]), 24 * 90))
+            except ValueError:
+                hours = 24
+            self._json(_moisture_data(hours))
         elif path == '/steve':
             self._file('steve.html', 'text/html; charset=utf-8')
         elif path == '/api/steve':

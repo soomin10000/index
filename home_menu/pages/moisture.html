@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>plants</title>
+<script src="/chart.min.js"></script>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    /* Series identity for the trend chart — same validated set as steve.html
+       (scripts/validate_palette.js "#3987e5,#199e70,#d95926" --mode dark), kept
+       distinct from --ok/--warn/--down so a line never impersonates a health state.
+       Blue first: it's the water line. */
+    --chart-1: #3987e5;
+    --chart-2: #199e70;
+    --chart-3: #d95926;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ── Topbar ── */
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  /* ── Plant tiles ── */
+  .plants { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1.1rem; }
+  .plant {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.2rem 1.4rem 1.1rem;
+    display: flex; flex-direction: column; gap: 0.55rem;
+  }
+  .plant-head { display: flex; align-items: center; gap: 0.55rem; }
+  .plant-name { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+  .plant-pct {
+    font-family: var(--font-mono); font-size: 2.6rem; font-weight: 600; letter-spacing: -1px;
+    line-height: 1; font-variant-numeric: tabular-nums;
+  }
+  .plant-pct .unit { font-size: 1.1rem; font-weight: 400; color: var(--ink-faint); letter-spacing: 0; }
+  .plant-pct.ok   { color: var(--ok); }
+  .plant-pct.warn { color: var(--warn); }
+  .plant-pct.down { color: var(--down); }
+  .plant-pct.stale { color: var(--ink-faint); }
+  /* Water level bar — inset channel, filled to the reading */
+  .tank {
+    height: 8px; border-radius: 4px; background: var(--inset);
+    border: 1px solid rgba(0,0,0,0.35); overflow: hidden;
+  }
+  .tank i {
+    display: block; height: 100%; border-radius: 4px 0 0 4px;
+    transition: width 0.9s cubic-bezier(.2,.8,.2,1), background 0.4s;
+  }
+  .tank i.ok   { background: var(--ok); }
+  .tank i.warn { background: var(--warn); }
+  .tank i.down { background: var(--down); }
+  .tank i.stale { background: var(--ink-faint); }
+  .plant-sub { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-faint); letter-spacing: 0.04em; }
+  .plant-sub .bad { color: var(--down); }
+
+  .none-yet {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.6rem; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-dim);
+  }
+
+  /* ── Trend chart ── */
+  .trend-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.4rem 1.6rem 1rem;
+  }
+  .trend-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
+  .trend-right { display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap; }
+  .legend { display: flex; gap: 1.1rem; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend i { width: 9px; height: 3px; border-radius: 2px; display: inline-block; }
+  .ranges { display: flex; gap: 0.3rem; }
+  .range-btn {
+    font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.1em;
+    color: var(--ink-dim); border: 1px solid var(--bezel); border-radius: 4px;
+    padding: 0.22rem 0.55rem; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+  }
+  .range-btn:hover { border-color: var(--bezel-lit); color: var(--ink); }
+  .range-btn.active { color: var(--ink); border-color: var(--copper); }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">PLANTS</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <section>
+    <div class="eyebrow">🪴 SOIL MOISTURE — XIAO ESP32C6</div>
+    <div class="plants" id="plants"></div>
+  </section>
+
+  <section class="trend-card">
+    <div class="trend-head">
+      <div class="eyebrow" style="margin-bottom:0" id="trend-title">TREND · LAST 24H</div>
+      <div class="trend-right">
+        <div class="legend" id="legend"></div>
+        <div class="ranges" id="ranges">
+          <button class="range-btn" data-hours="6">6H</button>
+          <button class="range-btn active" data-hours="24">24H</button>
+          <button class="range-btn" data-hours="168">7D</button>
+        </div>
+      </div>
+    </div>
+    <canvas id="ch-history" height="80"></canvas>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  const DRY_PCT = 20, LOW_PCT = 35;
+  const STALE_S = 120, GONE_S = 900;   // sensor posts every 10s — anything over 2min is stale
+
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = name => rootStyle.getPropertyValue(name).trim();
+  const CHART_GRID = 'rgba(234,231,223,0.08)';
+  const CHART_LABEL = cssVar('--ink-dim');
+  // Fixed identity order — a plant keeps its color as others come and go.
+  const SERIES = [cssVar('--chart-1'), cssVar('--chart-2'), cssVar('--chart-3')];
+  const plantColors = {};   // plant -> color, assigned once on first sight
+  function colorFor(plant) {
+    if (!(plant in plantColors)) {
+      const used = Object.keys(plantColors).length;
+      plantColors[plant] = used < SERIES.length ? SERIES[used] : cssVar('--ink-faint');
+    }
+    return plantColors[plant];
+  }
+
+  Chart.defaults.color = CHART_LABEL;
+  Chart.defaults.borderColor = CHART_GRID;
+  Chart.defaults.font.family = "ui-monospace, 'DejaVu Sans Mono', monospace";
+  Chart.defaults.font.size = 10;
+
+  function healthCls(pct, age) {
+    if (age > GONE_S) return 'stale';
+    if (pct < DRY_PCT) return 'down';
+    if (pct < LOW_PCT) return 'warn';
+    return 'ok';
+  }
+
+  function fmtAge(s) {
+    if (s < 90) return `${s}s ago`;
+    if (s < 5400) return `${Math.round(s / 60)}m ago`;
+    if (s < 129600) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  }
+
+  function renderPlants(plants) {
+    const box = document.getElementById('plants');
+    if (!plants.length) {
+      box.innerHTML = '<div class="none-yet">No readings yet — waiting for the sensor\'s first POST to :8082.</div>';
+      return;
+    }
+    box.innerHTML = plants.map(p => {
+      const cls = healthCls(p.moisture_pct, p.age_s);
+      const stale = p.age_s > STALE_S;
+      const bits = [`raw ${p.raw}`];
+      if (p.battery_v != null) bits.push(`${p.battery_v.toFixed(2)} V`);
+      bits.push(stale ? `<span class="bad">last seen ${fmtAge(p.age_s)}</span>` : fmtAge(p.age_s));
+      return `
+        <div class="plant">
+          <div class="plant-head">
+            <span class="lamp ${cls === 'stale' ? 'down' : cls === 'ok' ? 'on' : cls}"></span>
+            <span class="plant-name">${esc(p.plant)}</span>
+          </div>
+          <div class="plant-pct ${cls}">${p.moisture_pct}<span class="unit">%</span></div>
+          <div class="tank"><i class="${cls}" style="width:${Math.max(0, Math.min(100, p.moisture_pct))}%"></i></div>
+          <div class="plant-sub">${bits.join(' · ')}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Trend chart ──
+  let historyChart = null;
+  let currentHours = 24;
+
+  function renderHistory(history, hours) {
+    const plants = Object.keys(history).sort();
+    const fmtTs = ts => {
+      const dt = new Date(ts * 1000);
+      return hours > 48
+        ? dt.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + dt.getHours().toString().padStart(2, '0') + ':00'
+        : dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0');
+    };
+
+    // Buckets are aligned across plants (same server-side grid), so a shared
+    // x-axis comes from the union of timestamps.
+    const allTs = [...new Set(plants.flatMap(p => history[p].map(r => r.ts)))].sort((a, b) => a - b);
+    const labels = allTs.map(fmtTs);
+
+    const datasets = plants.map(plant => {
+      const byTs = Object.fromEntries(history[plant].map(r => [r.ts, r]));
+      return {
+        label: plant, data: allTs.map(ts => byTs[ts]?.pct ?? null),
+        raws: allTs.map(ts => byTs[ts]?.raw ?? null),
+        borderColor: colorFor(plant), borderWidth: 2, fill: false, spanGaps: false,
+        tension: 0.25, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 12,
+        pointStyle: 'line', pointBackgroundColor: colorFor(plant), pointBorderColor: colorFor(plant),
+      };
+    });
+    // Dry threshold — reference line, not a series: dashed, faint, no tooltip/legend.
+    datasets.push({
+      label: '__dry__', data: allTs.map(() => DRY_PCT),
+      borderColor: 'rgba(201,88,74,0.35)', borderWidth: 1, borderDash: [5, 4],
+      fill: false, pointRadius: 0, pointHitRadius: 0, tension: 0,
+    });
+
+    const data = { labels, datasets };
+    if (historyChart) { historyChart.data = data; historyChart.update(); }
+    else {
+      historyChart = new Chart(document.getElementById('ch-history'), {
+        type: 'line', data,
+        options: {
+          responsive: true,
+          animation: { duration: 350 },
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#141516', borderColor: cssVar('--bezel'), borderWidth: 1,
+              titleColor: cssVar('--ink'), bodyColor: cssVar('--ink-dim'), padding: 9,
+              usePointStyle: true, boxHeight: 4, boxPadding: 3,
+              filter: item => item.dataset.label !== '__dry__',
+              callbacks: {
+                label: ctx => {
+                  const raw = ctx.dataset.raws?.[ctx.dataIndex];
+                  return ` ${ctx.dataset.label} ${ctx.formattedValue}%${raw != null ? ` (raw ${raw})` : ''}`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL, maxTicksLimit: 10, maxRotation: 0 } },
+            y: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL, callback: v => v + '%' },
+                 min: 0, max: 100 },
+          },
+        },
+      });
+    }
+
+    // Legend only earns its place with ≥2 plants — one series is named by the title.
+    document.getElementById('legend').innerHTML = plants.length < 2 ? '' :
+      plants.map(p => `<span><i style="background:${colorFor(p)}"></i>${esc(p)}</span>`).join('');
+  }
+
+  async function load(hours) {
+    if (hours) currentHours = hours;
+    try {
+      const r = await fetch(`/api/moisture?hours=${currentHours}`);
+      const d = await r.json();
+      const lamp = document.getElementById('status-lamp');
+      const statusText = document.getElementById('status-text');
+      if (d.error && !(d.plants || []).length) {
+        statusText.textContent = 'NO DATA';
+        lamp.className = 'lamp down';
+        renderPlants([]);
+        return;
+      }
+      renderPlants(d.plants);
+      renderHistory(d.history, currentHours);
+
+      const worst = d.plants.reduce((w, p) => {
+        const rank = { stale: 3, down: 2, warn: 1, ok: 0 };
+        return rank[healthCls(p.moisture_pct, p.age_s)] > rank[w] ? healthCls(p.moisture_pct, p.age_s) : w;
+      }, 'ok');
+      lamp.className = 'lamp ' + (worst === 'ok' ? 'on' : worst === 'warn' ? 'warn' : 'down');
+      statusText.textContent = worst === 'stale' ? 'SENSOR SILENT'
+        : worst === 'down' ? 'NEEDS WATER'
+        : worst === 'warn' ? 'GETTING DRY'
+        : 'ALL WATERED';
+
+      const label = currentHours >= 48 ? `${Math.round(currentHours / 24)}D` : `${currentHours}H`;
+      document.getElementById('trend-title').textContent = `TREND · LAST ${label}`;
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+    } catch {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', b === btn));
+      load(Number(btn.dataset.hours));
+    });
+  });
+
+  load();
+  setInterval(() => load(), 30000);
+</script>
+</body>
+</html>

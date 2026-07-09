@@ -67,14 +67,15 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr auto auto auto;
+      grid-template-rows: 1fr 1fr 1fr auto auto auto auto;
       grid-template-areas:
         "harold  weather  weather"
         "harold  train    parents"
         "bbc     bbc      darren"
         "unifi   unifi    wireless"
         "pihole  pihole   atlas"
-        "steve   steve    uplink";
+        "steve   steve    uplink"
+        "plants  plants   plants";
       gap: 0.85rem;
       width: 100%;
       max-width: 980px;
@@ -93,6 +94,7 @@
     #c-atlas   { grid-area: atlas; }
     #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
+    #c-plants  { grid-area: plants; }
 
     /* Card base — breaker module on the panel */
     .card {
@@ -236,7 +238,8 @@
           "unifi    wireless"
           "pihole   atlas"
           "uplink   uplink"
-          "steve    steve";
+          "steve    steve"
+          "plants   plants";
       }
       #c-harold .c-val { font-size: 3.2rem; }
     }
@@ -244,7 +247,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve";
+          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve" "plants";
       }
     }
   </style>
@@ -354,6 +357,14 @@
     <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
     <div class="c-sub" id="steve-sub"></div>
     <div class="c-foot">CPU · MEM · DISK · services</div>
+  </a>
+
+  <a class="card is-loading" id="c-plants" style="--a:#8bc34a" href="/moisture">
+    <div class="tape">Greenhouse</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🪴</span><span class="c-name">Plants</span></div>
+    <div class="c-metric"><span class="c-val" id="pl-val">—</span><span class="c-unit" id="pl-unit">%</span></div>
+    <div class="c-sub" id="pl-sub"></div>
+    <div class="c-foot">soil moisture · esp32c6 · :8082</div>
   </a>
 
 </main>
@@ -577,6 +588,23 @@
     } catch { setCard('atlas', { val: 'No data', unit: '' }, true); }
   }
 
+  async function plants() {
+    try {
+      const d = await get('/api/moisture?hours=1');
+      const ps = d.plants || [];
+      if (!ps.length) { setCard('plants', { val: 'No data', unit: '' }, true); return; }
+      const cls = p => p.age_s > 900 ? 'stale' : p.moisture_pct < 20 ? 'down' : p.moisture_pct < 35 ? 'warn' : 'ok';
+      const rank = { ok: 0, warn: 1, down: 2, stale: 3 };
+      const worst = ps.reduce((w, p) => rank[cls(p)] > rank[w] ? cls(p) : w, 'ok');
+      const DOTS = { ok: 'dot-on', warn: 'dot-amber', down: 'dot-red', stale: 'dot-off' };
+      const sub = ps.map(p => `${dot(DOTS[cls(p)])}${esc(p.plant)} ${p.moisture_pct}%${cls(p) === 'stale' ? ' · sensor silent' : ''}`).join('<br>');
+      const driest = Math.min(...ps.map(p => p.moisture_pct));
+      const accent = worst === 'ok' ? '#8bc34a' : worst === 'warn' ? 'var(--warn)' : 'var(--down)';
+      const lamp = worst === 'ok' ? 'on' : worst === 'warn' ? 'warn' : 'down';
+      setCard('plants', { val: driest, unit: '%', sub, accent, lamp });
+    } catch { setCard('plants', { val: 'Offline', unit: '' }, true); }
+  }
+
   async function uplink() {
     try {
       const d = await get('/api/uplink');
@@ -602,7 +630,7 @@
     } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); }
+  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
