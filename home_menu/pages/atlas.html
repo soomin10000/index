@@ -127,6 +127,7 @@
     own_path_divergent: ['pill-flag',    'OWN PATH ⚠'],
     unexpected_block:   ['pill-flag',    'UNEXPECTED BLOCK'],
     unblocked:          ['pill-warn',    'NOT BLOCKED'],
+    pihole_down:        ['pill-warn',    'PI-HOLE DOWN'],
     no_data:            ['pill-nodata',  'NO DATA'],
     no_measurement:     ['pill-nodata',  'NO MEASUREMENT'],
   };
@@ -144,11 +145,15 @@
 
     const flagged = d.domains.filter(x => FLAGS.includes(x.status));
     const blocked = d.domains.filter(x => x.status === 'blocked').length;
+    const piholeDown = d.domains.some(x => x.status === 'pihole_down');
 
     document.getElementById('banner').innerHTML = flagged.length
       ? `<div class="err-banner">⚠ ${flagged.length} domain(s) flagged: ` +
         flagged.map(f => esc(f.domain)).join(', ') + '</div>'
-      : '';
+      : piholeDown
+        ? '<div class="err-banner" style="color:#ffaa00;border-color:rgba(255,170,0,0.4);background:rgba(255,170,0,0.06)">' +
+          '⚠ Pi-hole not answering — cross-check paused, no tampering verdict possible</div>'
+        : '';
 
     document.getElementById('stats').innerHTML = `
       <div class="stat-card">
@@ -189,7 +194,7 @@
 
     const age = Math.round((Date.now() / 1000 - d.ts) / 60);
     document.getElementById('status').textContent =
-      `${flagged.length ? flagged.length + ' FLAGGED' : 'ALL CLEAR'} · ${blocked} BLOCKS CONFIRMED`;
+      `${flagged.length ? flagged.length + ' FLAGGED' : piholeDown ? 'PI-HOLE DOWN' : 'ALL CLEAR'} · ${blocked} BLOCKS CONFIRMED`;
     document.getElementById('updated').innerHTML =
       `Measured hourly from ${esc(String(1 + 3))} probes via 9.9.9.10 · checked every 15 min · ` +
       `last poll ${age} min ago · <a href="/api/atlas">JSON</a>`;

@@ -103,6 +103,8 @@
     td { padding: 0.55rem 0.9rem; border-bottom: 1px solid #061c30; font-variant-numeric: tabular-nums; }
     tr:last-child td { border-bottom: none; }
     td.when { color: #cde3f0; }
+    .map-row, .transit-row { cursor: pointer; }
+    .map-row:hover, .transit-row:hover { background: #0a2438; }
     th.r, td.r { text-align: right; }
 
     .pill {
@@ -182,7 +184,7 @@
   </div>
 
   <div class="section-title">WORLD LATENCY — RTT TO US FROM AROUND THE GLOBE<span class="meta" id="map-meta"></span></div>
-  <div class="section-sub">Traceroutes toward our IP from probes on every continent, every 30 min. Our WAN answers nothing, so RTT is measured to the shared border hops just upstream of us (Level3/NTT/LINX, London); paths that die near the probe are dropped.</div>
+  <div class="section-sub">Traceroutes toward our IP from probes on every continent, every 30 min. Our WAN answers nothing, so RTT is measured to the shared border hops just upstream of us (Level3/NTT/LINX, London); paths that die near the probe are dropped. Click a probe dot or table row for its full traceroute in RIPE Path Analysis.</div>
   <div class="panel">
     <div class="legend" id="map-legend"></div>
     <div class="chart-wrap" id="map-wrap">
@@ -213,7 +215,7 @@
   <div class="cols">
     <div>
       <div class="section-title">REVERSE PATH<span class="meta" id="rev-meta"></span></div>
-      <div class="section-sub">Transit networks the internet crosses to reach us — the last hops of traceroutes toward our IP.</div>
+      <div class="section-sub">Transit networks the internet crosses to reach us — the last hops of traceroutes toward our IP. Click a row for a sample traceroute in RIPE Path Analysis.</div>
       <div class="tbl-wrap">
         <table>
           <thead><tr><th>TRANSIT ASN</th><th>NETWORK</th><th class="r">PROBES VIA</th></tr></thead>
@@ -240,6 +242,12 @@
 <script>
   const esc = s => String(s).replace(/[&<>"']/g,
     c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const pathAnalysisUrl = (msmId, probeId) => msmId
+    ? `https://atlas.ripe.net/pathanalysis?measurementId=${encodeURIComponent(msmId)}`
+      + (probeId !== undefined && probeId !== null ? `&sourceProbeId=${encodeURIComponent(probeId)}` : '')
+      + `&sequentialMode=true&center=${Date.now()}&window=${24 * 60 * 60 * 1000}`
+    : null;
 
   const fmtT = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fmtDT = t => new Date(t * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -490,6 +498,8 @@
   // single-hue ramp (brighter = farther), drawn at true pixel size like the charts
   const RTT_BINS = [[40, '#12527c'], [120, '#1f7fb8'], [220, '#3fb2e8'], [Infinity, '#a8e2ff']];
   const binColor = r => RTT_BINS.find(b => r < b[0])[1];
+  const TRANSIT_COLOR = '#e8c33f';
+  const dotColor = p => p.transit_asn ? TRANSIT_COLOR : binColor(p.rtt);
   let WMAP = null, MAP_PTS = [], MAP_H = 500, MAP_Y0 = 0, MAP_VH = 500;
 
   function drawMap() {
@@ -519,7 +529,7 @@
     }
     MAP_PTS.forEach(p => {
       g += `<circle cx="${p.x}" cy="${p.y}" r="7" fill="#020a18"/>`
-         + `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${binColor(p.rtt)}"/>`;
+         + `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${dotColor(p)}"/>`;
     });
     // selective labels: nearest and farthest probe (points arrive rtt-sorted);
     // drop below the dot when the usual spot would collide with HOME
@@ -538,6 +548,7 @@
     const binLbl = ['&lt;40 MS', '40–120 MS', '120–220 MS', '&gt;220 MS'];
     document.getElementById('map-legend').innerHTML =
       RTT_BINS.map((b, i) => `<span class="key"><span class="key-dot" style="background:${b[1]}"></span> ${binLbl[i]}</span>`).join('')
+      + `<span class="key"><span class="key-dot" style="background:${TRANSIT_COLOR}"></span> IN A TRANSIT ASN</span>`
       + `<span class="key"><span class="key-dot" style="background:transparent;border:1.5px solid #00cc88"></span> HOME</span>`;
 
     if (MAP_PTS.length) {
@@ -552,10 +563,16 @@
     if (MAP_PTS.length) {
       body.replaceChildren(...MAP_PTS.map(p => {
         const tr = document.createElement('tr');
+        tr.className = 'map-row';
+        tr.title = 'view traceroute in RIPE Path Analysis';
+        tr.addEventListener('click', () => window.open(pathAnalysisUrl(wm.msm_id, p.prb_id), '_blank', 'noopener'));
         const a = document.createElement('td'); a.className = 'when'; a.textContent = '#' + p.prb_id;
+        if (p.transit_asn) a.style.color = TRANSIT_COLOR;
         const c = document.createElement('td'); c.textContent = p.cc || '?';
         const v = document.createElement('td'); v.className = 'r'; v.textContent = p.rtt;
-        const m = document.createElement('td'); m.textContent = p.reached ? 'our IP (full path)' : 'ISP border (last responsive hop)';
+        const m = document.createElement('td');
+        m.textContent = (p.reached ? 'our IP (full path)' : 'ISP border (last responsive hop)')
+          + (p.transit_asn ? ` · vantage point in AS${p.transit_asn}` : '');
         tr.append(a, c, v, m);
         return tr;
       }));
@@ -566,9 +583,8 @@
     }
   }
 
-  const mwrap = document.getElementById('map-wrap'), mtip = document.getElementById('map-tip');
-  mwrap.addEventListener('pointermove', e => {
-    if (!MAP_PTS.length) return;
+  function nearestMapPoint(e) {
+    if (!MAP_PTS.length) return null;
     const svg = document.getElementById('map'), r = svg.getBoundingClientRect();
     const mx = (e.clientX - r.left) / r.width * W;
     const my = (e.clientY - r.top) / r.height * MAP_VH + MAP_Y0;
@@ -577,15 +593,29 @@
       const d = (p.x - mx) ** 2 + (p.y - my) ** 2;
       if (d < bd) { bd = d; best = p; }
     }
-    if (!best || bd > 400) { hideMapTip(); return; }
+    return best && bd <= 400 ? best : null;
+  }
+
+  const mwrap = document.getElementById('map-wrap'), mtip = document.getElementById('map-tip');
+  mwrap.style.cursor = 'pointer';
+  mwrap.addEventListener('click', e => {
+    const p = nearestMapPoint(e);
+    if (p) window.open(pathAnalysisUrl(WMAP?.msm_id, p.prb_id), '_blank', 'noopener');
+  });
+  mwrap.addEventListener('pointermove', e => {
+    if (!MAP_PTS.length) return;
+    const best = nearestMapPoint(e);
+    if (!best) { hideMapTip(); return; }
     mtip.replaceChildren();
     const tl = document.createElement('div'); tl.className = 't';
     tl.textContent = `PROBE ${best.prb_id} · ${best.cc || '?'}`;
+    if (best.transit_asn) tl.style.color = TRANSIT_COLOR;
     mtip.appendChild(tl);
     const d1 = document.createElement('div');
     const v = document.createElement('span'); v.className = 'v'; v.textContent = best.rtt + ' ms';
     const k = document.createElement('span'); k.className = 'k';
-    k.textContent = best.reached ? ' to our IP' : ' to ISP border';
+    k.textContent = (best.reached ? ' to our IP' : ' to ISP border')
+      + (best.transit_asn ? ` · in AS${best.transit_asn}` : '');
     d1.append(v, k); mtip.appendChild(d1);
     const left = best.x / W * r.width, top = (best.y - MAP_Y0) / MAP_VH * r.height;
     mtip.style.display = 'block';
@@ -715,6 +745,11 @@
     if (transit.length) {
       trBody.replaceChildren(...transit.map(t => {
         const tr = document.createElement('tr');
+        if (t.sample_probe !== undefined && d.reverse?.msm_id) {
+          tr.className = 'transit-row';
+          tr.title = 'view a sample traceroute via this ASN in RIPE Path Analysis';
+          tr.addEventListener('click', () => window.open(pathAnalysisUrl(d.reverse.msm_id, t.sample_probe), '_blank', 'noopener'));
+        }
         const a = document.createElement('td'); a.className = 'when'; a.textContent = 'AS' + t.asn;
         const n = document.createElement('td'); n.textContent = t.holder || '—';
         const p = document.createElement('td'); p.className = 'r'; p.textContent = t.probes;

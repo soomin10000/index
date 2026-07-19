@@ -62,6 +62,13 @@ WORLDMAP_SPREAD = [  # country -> probes, aiming for even continent coverage
     ("AU", 2), ("NZ", 1),
 ]
 
+# Extra hand-picked probes hosted inside transit ASNs that show up in the
+# reverse-path table — a vantage point actually sitting inside e.g. NTT (2914)
+# is a much more direct read on that network's path to us than an
+# incidentally-routed-through one. Kept separate from WORLDMAP_SPREAD's
+# country quotas and flagged in the output so the frontend can mark them.
+WORLDMAP_TRANSIT_PROBES = {2914: [7517, 1016425]}  # asn -> probe ids
+
 # NTP integrity: query the same public NTP servers from our probe and a handful
 # of world-wide probes. Our probe's measured offset to a server should track the
 # world consensus; if it drifts off on its own, something is rewriting NTP on
@@ -316,7 +323,8 @@ def check_reverse_path(session, state, ip):
         "probes": len(results),
         "median_hops": int(statistics.median(hop_counts)) if hop_counts else None,
         "transit": [{"asn": a, "probes": len(transit[a]),
-                     "holder": _asn_holder(session, a, names)} for a in as_set],
+                     "holder": _asn_holder(session, a, names),
+                     "sample_probe": min(transit[a])} for a in as_set],
         "prev_fingerprint": prev_fp if changed else None,
     }
 
@@ -337,10 +345,13 @@ def _asn_holder(session, asn, cache):
 
 def ensure_worldmap_msm(state, ip):
     """Keep one recurring world-spread traceroute aimed at our public IP,
-    recreated (never left running) when the IP moves. Same contract as the
-    exposure measurement: needs RIPE_ATLAS_KEY, otherwise hands-off."""
+    recreated (never left running) when the IP moves or the transit-probe
+    pick list changes. Same contract as the exposure measurement: needs
+    RIPE_ATLAS_KEY, otherwise hands-off."""
+    transit_ids = sorted({pid for ids in WORLDMAP_TRANSIT_PROBES.values() for pid in ids})
     wm = state.setdefault("worldmap", {})
-    if not ip or (wm.get("target") == ip and wm.get("msm_id")):
+    if not ip or (wm.get("target") == ip and wm.get("msm_id")
+                  and wm.get("transit_probes") == transit_ids):
         return wm
     key = os.environ.get("RIPE_ATLAS_KEY", "")
     if not key:
@@ -349,19 +360,24 @@ def ensure_worldmap_msm(state, ip):
     s.headers["Authorization"] = f"Key {key}"
     if wm.get("msm_id"):
         s.delete(f"{BASE}/measurements/{wm['msm_id']}/", timeout=30)
+    probes = [{"type": "country", "value": cc, "requested": n}
+              for cc, n in WORLDMAP_SPREAD]
+    if transit_ids:
+        probes.append({"type": "probes", "value": ",".join(str(i) for i in transit_ids),
+                        "requested": len(transit_ids)})
     r = s.post(f"{BASE}/measurements/", timeout=30, json={
         "definitions": [{
             "type": "traceroute", "af": 4, "protocol": "ICMP",
             "target": ip, "description": WORLDMAP_DESC,
             "interval": WORLDMAP_INTERVAL, "max_hops": 32, "packets": 3,
         }],
-        "probes": [{"type": "country", "value": cc, "requested": n}
-                   for cc, n in WORLDMAP_SPREAD],
+        "probes": probes,
         "is_oneoff": False,
     })
     if r.ok:
-        wm.update(msm_id=r.json()["measurements"][0], target=ip, created=int(time.time()))
-        print(f"worldmap measurement -> msm {wm['msm_id']} at {ip}")
+        wm.update(msm_id=r.json()["measurements"][0], target=ip,
+                  created=int(time.time()), transit_probes=transit_ids)
+        print(f"worldmap measurement -> msm {wm['msm_id']} at {ip} (+{len(transit_ids)} transit probes)")
     else:
         print(f"worldmap measurement create failed ({r.status_code}): {r.text[:200]}")
     return wm
@@ -383,6 +399,7 @@ def _probe_geo(session, prb_id, cache):
 
 
 def check_worldmap(session, state, ip):
+    transit_asn = {pid: asn for asn, ids in WORLDMAP_TRANSIT_PROBES.items() for pid in ids}
     wm = ensure_worldmap_msm(state, ip)
     if not wm.get("msm_id"):
         return {"status": "unmanaged", "note": "no measurement (key unavailable?)"}
@@ -419,18 +436,23 @@ def check_worldmap(session, state, ip):
 
     points, truncated = [], 0
     for res, ip, rtts, reached in raw:
+        prb_id = res.get("prb_id")
+        asn = transit_asn.get(prb_id)
         if not rtts or not ip:
             truncated += 1
             continue
-        if not reached and (_is_private(ip) or seen[ip] < 2):
+        # hand-picked transit probes are kept even on a lone/private last hop —
+        # they're deliberately chosen, not organic noise to filter out
+        if not asn and not reached and (_is_private(ip) or seen[ip] < 2):
             truncated += 1
             continue
-        geo = _probe_geo(session, res.get("prb_id"), geo_cache)
+        geo = _probe_geo(session, prb_id, geo_cache)
         points.append({
-            "prb_id": res.get("prb_id"),
+            "prb_id": prb_id,
             "cc": geo["cc"], "lat": geo["lat"], "lon": geo["lon"],
             "rtt": round(statistics.median(rtts), 1),
             "reached": reached,
+            "transit_asn": asn,
         })
     points.sort(key=lambda p: p["rtt"])
     return {"status": "ok" if points else "pending", "msm_id": wm["msm_id"],

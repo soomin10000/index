@@ -12,8 +12,10 @@ import threading
 import time
 import urllib.request
 import urllib.error
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Callable
 
 BASE   = Path(__file__).parent
 PAGES  = BASE / 'pages'
@@ -27,10 +29,41 @@ UNIFI_DATA = DATA / 'unifi'
 PROXIES = {
     '/api/harold':  'http://localhost:5000/api/status',
     '/api/train':   'http://localhost:8192/api/departures',
-    '/api/parents': 'http://localhost:8092/api/status',
     '/api/darren':  'http://localhost:8193/api/status',
     '/api/weather': 'http://localhost:8186/api/weather',
+    '/api/timers':  'http://localhost:8196/api/status',
 }
+
+SMOKEPING_CGI = 'http://192.168.1.212:8888/smokeping/smokeping.cgi'
+# SmokePing's classic browse windows, as hours. The CGI has no data API — these
+# PNGs (displaymode=a, the AJAX-zoom renderer) are the only way to get readings out.
+SMOKEPING_RANGES = {'3h': 3, '30h': 30, '10d': 240, '1y': 8766}
+_SP_TARGET_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$')
+_sp_cache = {}
+_sp_lock = threading.Lock()
+
+
+def _smokeping_graph(target, rng):
+    """PNG for one target/range, cached briefly — a page load is ~34 tiles and
+    each image is an rrdtool render on the Plex box."""
+    key = (target, rng)
+    now = time.time()
+    with _sp_lock:
+        hit = _sp_cache.get(key)
+        if hit and now - hit[0] < 240:
+            return hit[1]
+    url = (f'{SMOKEPING_CGI}?displaymode=a;'
+           f'start=now-{SMOKEPING_RANGES[rng]}h;end=now;target={target}')
+    req = urllib.request.Request(url, headers={'User-Agent': 'home-menu/1.0'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        body = r.read()
+    if not body.startswith(b'\x89PNG'):
+        raise ValueError('smokeping did not return a PNG (unknown target?)')
+    with _sp_lock:
+        _sp_cache[key] = (now, body)
+        if len(_sp_cache) > 200:
+            del _sp_cache[min(_sp_cache, key=lambda k: _sp_cache[k][0])]
+    return body
 
 
 def _unifi_status():
@@ -70,6 +103,9 @@ STEVE_JSON   = DATA / 'steve.json'
 STEVE_DB     = DATA / 'steve_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
+# Retired sensors whose old readings are still in the DB — hidden from the
+# dashboard, since "latest per plant" never expires a silent sensor on its own.
+MOISTURE_HIDDEN = ('monstera',)
 
 KISMET_URL  = os.environ.get('KISMET_URL', 'http://localhost:2501')
 KISMET_USER = os.environ.get('KISMET_USER')
@@ -149,19 +185,21 @@ def _moisture_data(hours=24):
     bucket = max(120, int(hours * 3600 / 300))
     cutoff = int(time.time()) - hours * 3600
     try:
+        hidden = ','.join('?' * len(MOISTURE_HIDDEN))
         conn = sqlite3.connect(MOISTURE_DB)
         latest = conn.execute(
             "SELECT plant, raw, moisture_pct, battery_v, "
             "CAST(strftime('%s', recorded_at) AS INTEGER) "
             'FROM readings WHERE id IN (SELECT MAX(id) FROM readings GROUP BY plant) '
-            'ORDER BY plant'
+            f'AND plant NOT IN ({hidden}) ORDER BY plant',
+            MOISTURE_HIDDEN,
         ).fetchall()
         rows = conn.execute(
             "SELECT plant, (CAST(strftime('%s', recorded_at) AS INTEGER) / ?) * ? AS tb, "
             'ROUND(AVG(moisture_pct), 1), CAST(ROUND(AVG(raw)) AS INTEGER) '
             "FROM readings WHERE CAST(strftime('%s', recorded_at) AS INTEGER) >= ? "
-            'GROUP BY plant, tb ORDER BY tb',
-            (bucket, bucket, cutoff),
+            f'AND plant NOT IN ({hidden}) GROUP BY plant, tb ORDER BY tb',
+            (bucket, bucket, cutoff, *MOISTURE_HIDDEN),
         ).fetchall()
         conn.close()
     except Exception as e:
@@ -707,6 +745,33 @@ def _unifi_events():
         return {'events': [], 'error': str(e)}
 
 
+@dataclass(frozen=True)
+class Route:
+    """One dispatch-table entry. `handler(request)` writes the whole response; `auth`
+    gates the route behind the cross-ref Basic-auth login; `json_ct` (POST only) rejects
+    anything but an application/json body. Every route's auth policy lives right here on
+    it — there is no separate list of "protected" paths to keep in sync."""
+    handler: Callable
+    auth: bool = False
+    json_ct: bool = False
+
+
+def _page(name, auth=False):
+    return Route(lambda h: h._file(name, 'text/html; charset=utf-8'), auth=auth)
+
+
+def _absfile(path, ct):
+    return Route(lambda h: h._abs_file(path, ct))
+
+
+def _jsonfn(fn, auth=False):
+    return Route(lambda h: h._json(fn()), auth=auth)
+
+
+def _proxy_to(url):
+    return Route(lambda h: h._proxy(url))
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         print(fmt % args)
@@ -734,145 +799,93 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?')[0]
-        if path in ('/cross_ref', '/api/cross_ref') and not self._require_cross_ref_auth():
-            return
-        if path in ('/', '/index.html'):
-            self._file('index.html', 'text/html; charset=utf-8')
-        elif path in PROXIES:
-            self._proxy(PROXIES[path])
-        elif path == '/api/unifi':
-            body = json.dumps(_unifi_status()).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', len(body))
-            self.end_headers()
-            self.wfile.write(body)
-        elif path == '/unifi':
-            self._file('unifi.html', 'text/html; charset=utf-8')
-        elif path == '/unifi/map':
-            self._file('unifi_map.html', 'text/html; charset=utf-8')
-        elif path == '/vis-network.min.js':
-            self._abs_file(STATIC / 'vis-network.min.js', 'application/javascript')
-        elif path == '/api/unifi/graph':
-            self._abs_file(UNIFI_DATA / 'topology.json', 'application/json')
-        elif path == '/api/unifi/devices':
-            self._abs_file(DEVICES_JSON, 'application/json')
-        elif path == '/unifi/devices':
-            self._file('unifi_devices.html', 'text/html; charset=utf-8')
-        elif path.startswith('/api/unifi/device'):
-            from urllib.parse import urlparse, parse_qs
-            qs = parse_qs(urlparse(self.path).query)
-            hostname = qs.get('hostname', [''])[0]
-            self._json(_unifi_device_history(hostname))
-        elif path == '/speedtest':
-            self._file('speedtest.html', 'text/html; charset=utf-8')
-        elif path == '/api/speedtest':
-            self._json(_speedtest_history())
-        elif path == '/cross_ref':
-            self._file('cross_ref.html', 'text/html; charset=utf-8')
-        elif path == '/api/cross_ref':
-            self._json(_cross_ref())
-        elif path == '/kismet':
-            self._file('kismet.html', 'text/html; charset=utf-8')
-        elif path == '/api/kismet':
-            body = _kismet_bytes()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', len(body))
-            self.end_headers()
-            self.wfile.write(body)
-        elif path == '/pihole':
-            self._file('pihole.html', 'text/html; charset=utf-8')
-        elif path == '/api/pihole':
-            self._abs_file(PIHOLE_JSON, 'application/json')
-        elif path == '/atlas':
-            self._file('atlas.html', 'text/html; charset=utf-8')
-        elif path == '/api/atlas':
-            self._abs_file(DATA / 'atlas.json', 'application/json')
-        elif path == '/uplink':
-            self._file('uplink.html', 'text/html; charset=utf-8')
-        elif path == '/api/uplink':
-            self._abs_file(DATA / 'uplink.json', 'application/json')
-        elif path == '/static/world_land.js':
-            self._abs_file(STATIC / 'world_land.js', 'application/javascript')
-        elif path == '/moisture':
-            self._file('moisture.html', 'text/html; charset=utf-8')
-        elif path == '/api/moisture':
-            from urllib.parse import urlparse, parse_qs
-            qs = parse_qs(urlparse(self.path).query)
-            try:
-                hours = max(1, min(int(qs.get('hours', ['24'])[0]), 24 * 90))
-            except ValueError:
-                hours = 24
-            self._json(_moisture_data(hours))
-        elif path == '/steve':
-            self._file('steve.html', 'text/html; charset=utf-8')
-        elif path == '/api/steve':
-            self._abs_file(STEVE_JSON, 'application/json')
-        elif path == '/api/steve/history':
-            self._json(_steve_history())
-        elif path == '/chart.min.js':
-            self._abs_file(STATIC / 'chart.min.js', 'application/javascript')
-        elif path == '/api/unifi/events':
-            body = json.dumps(_unifi_events()).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', len(body))
-            self.end_headers()
-            self.wfile.write(body)
-        elif path == '/unifi/events':
-            self._file('unifi_events.html', 'text/html; charset=utf-8')
-        elif path in ('/unifi/topology.png', '/unifi/dashboard.png'):
-            self._abs_file(UNIFI_DATA / path.split('/')[-1], 'image/png')
-        else:
+        route = ROUTES_GET.get(path)
+        if route is None:
             self.send_error(404)
+            return
+        if route.auth and not self._require_cross_ref_auth():
+            return
+        route.handler(self)
 
     def do_POST(self):
         path = self.path.split('?')[0]
-        # All state-changing endpoints need the login: the Content-Type check below only
-        # stops cross-site requests from a browser, not a hostile LAN host POSTing directly
-        # (restart rides passwordless sudo; speedtest saturates the WAN on demand).
-        if path in ('/api/capture', '/api/steve/restart', '/api/speedtest/trigger',
-                    '/api/pihole/gravity') \
-                and not self._require_cross_ref_auth():
+        route = ROUTES_POST.get(path)
+        if route is None:
+            self.send_error(404)
             return
-        # These endpoints change state (trigger a speedtest, restart a service). Requiring
-        # an application/json Content-Type means a cross-origin request needs a CORS
-        # preflight, which we don't answer — so a malicious page can't trigger them via a
-        # plain <form> (text/plain and form-urlencoded are CORS "simple" types that skip
-        # preflight and would otherwise reach this handler with no browser pushback).
-        if path in ('/api/speedtest/trigger', '/api/steve/restart', '/api/capture',
-                    '/api/pihole/gravity'):
+        # State-changing endpoints need the login: a restart rides passwordless sudo and a
+        # speedtest saturates the WAN, so a hostile LAN host must not reach them unauthenticated.
+        if route.auth and not self._require_cross_ref_auth():
+            return
+        # Requiring application/json forces a cross-origin POST through a CORS preflight, which
+        # we never answer — so a malicious page can't drive these from a plain <form> (text/plain
+        # and form-urlencoded are CORS "simple" types that skip preflight and would otherwise
+        # reach this handler with no browser pushback).
+        if route.json_ct:
             ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
             if ctype != 'application/json':
                 self.send_error(400, 'Content-Type must be application/json')
                 return
-        if path == '/api/speedtest/trigger':
-            self._json(_trigger_gateway_speedtest())
-        elif path == '/api/pihole/gravity':
-            self._json(_trigger_gravity())
-        elif path == '/api/steve/restart':
-            name = self._body_json().get('service', '')
-            if name == 'home-menu':
-                # Restarting the service that's handling this very request kills the
-                # process before a synchronous reply can be sent — the client just sees
-                # a dropped connection even though the restart succeeds. Reply first,
-                # then restart shortly after so the ack actually reaches the browser.
-                if name not in STEVE_SERVICES:
-                    self._json({'ok': False, 'error': 'unknown service'})
-                else:
-                    self._json({'ok': True})
-                    threading.Timer(0.5, subprocess.run,
-                                     args=(['sudo', '-n', 'systemctl', 'restart', 'home-menu.service'],),
-                                     kwargs={'capture_output': True, 'timeout': 15}).start()
+        route.handler(self)
+
+    # ── request-specific response builders (wired up in ROUTES_GET / ROUTES_POST) ──
+    def _res_kismet(self):
+        # _kismet_bytes() is already serialized JSON, so it bypasses _json().
+        self._raw(_kismet_bytes(), 'application/json')
+
+    def _res_unifi_device_history(self):
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        self._json(_unifi_device_history(qs.get('hostname', [''])[0]))
+
+    def _res_moisture(self):
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        try:
+            hours = max(1, min(int(qs.get('hours', ['24'])[0]), 24 * 90))
+        except ValueError:
+            hours = 24
+        self._json(_moisture_data(hours))
+
+    def _res_smokeping_graph(self):
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        target = qs.get('target', [''])[0]
+        rng = qs.get('range', ['3h'])[0]
+        if not _SP_TARGET_RE.match(target) or rng not in SMOKEPING_RANGES:
+            self.send_error(400, 'bad target or range')
+            return
+        try:
+            body = _smokeping_graph(target, rng)
+        except Exception as e:
+            self.send_error(502, f'smokeping unreachable: {e}')
+            return
+        self._raw(body, 'image/png', {'Cache-Control': 'max-age=240'})
+
+    def _res_unifi_png(self):
+        self._abs_file(UNIFI_DATA / self.path.split('?')[0].split('/')[-1], 'image/png')
+
+    def _res_steve_restart(self):
+        name = self._body_json().get('service', '')
+        if name == 'home-menu':
+            # Restarting the service that's handling this very request kills the
+            # process before a synchronous reply can be sent — the client just sees
+            # a dropped connection even though the restart succeeds. Reply first,
+            # then restart shortly after so the ack actually reaches the browser.
+            if name not in STEVE_SERVICES:
+                self._json({'ok': False, 'error': 'unknown service'})
             else:
-                self._json(_restart_steve_service(name))
-        elif path == '/api/capture':
-            mac = self._body_json().get('mac', '')
-            result, err = _capture_traffic(mac)
-            self._json({'ok': False, 'error': err} if err else {'ok': True, **result})
+                self._json({'ok': True})
+                threading.Timer(0.5, subprocess.run,
+                                 args=(['sudo', '-n', 'systemctl', 'restart', 'home-menu.service'],),
+                                 kwargs={'capture_output': True, 'timeout': 15}).start()
         else:
-            self.send_error(404)
+            self._json(_restart_steve_service(name))
+
+    def _res_capture(self):
+        mac = self._body_json().get('mac', '')
+        result, err = _capture_traffic(mac)
+        self._json({'ok': False, 'error': err} if err else {'ok': True, **result})
 
     def _body_json(self):
         """Parsed JSON request body, or {} on anything malformed. Bounded so a huge
@@ -889,13 +902,18 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return {}
 
-    def _json(self, data):
-        body = json.dumps(data).encode()
+    def _raw(self, body, ct, extra=None):
+        """Send a 200 with a pre-serialized body and Content-Type, plus any extra headers."""
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', ct)
         self.send_header('Content-Length', len(body))
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def _json(self, data):
+        self._raw(json.dumps(data).encode(), 'application/json')
 
     def _proxy(self, url):
         try:
@@ -937,6 +955,71 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(body)
         except FileNotFoundError:
             self.send_error(404)
+
+
+# ── Route tables ──────────────────────────────────────────────────────────────
+# The single source of truth for what each path serves and whether it needs the
+# cross-ref login. cross_ref is the only browser-facing route behind auth=True; the
+# four state-changing POSTs carry auth=True + json_ct=True together (see do_POST).
+ROUTES_GET = {
+    # HTML pages
+    '/':                     _page('index.html'),
+    '/index.html':           _page('index.html'),
+    '/unifi':                _page('unifi.html'),
+    '/unifi/map':            _page('unifi_map.html'),
+    '/unifi/devices':        _page('unifi_devices.html'),
+    '/unifi/events':         _page('unifi_events.html'),
+    '/speedtest':            _page('speedtest.html'),
+    '/cross_ref':            _page('cross_ref.html', auth=True),
+    '/kismet':               _page('kismet.html'),
+    '/pihole':               _page('pihole.html'),
+    '/atlas':                _page('atlas.html'),
+    '/uplink':               _page('uplink.html'),
+    '/moisture':             _page('moisture.html'),
+    '/smokeping':            _page('smokeping.html'),
+    '/steve':                _page('steve.html'),
+
+    # Static assets
+    '/vis-network.min.js':   _absfile(STATIC / 'vis-network.min.js', 'application/javascript'),
+    '/static/world_land.js': _absfile(STATIC / 'world_land.js', 'application/javascript'),
+    '/chart.min.js':         _absfile(STATIC / 'chart.min.js', 'application/javascript'),
+
+    # JSON served straight from a file on disk (written by the pollers)
+    '/api/unifi/graph':      _absfile(UNIFI_DATA / 'topology.json', 'application/json'),
+    '/api/unifi/devices':    _absfile(DEVICES_JSON, 'application/json'),
+    '/api/pihole':           _absfile(PIHOLE_JSON, 'application/json'),
+    '/api/atlas':            _absfile(DATA / 'atlas.json', 'application/json'),
+    '/api/uplink':           _absfile(DATA / 'uplink.json', 'application/json'),
+    '/api/smokeping':        _absfile(DATA / 'smokeping.json', 'application/json'),
+    '/api/steve':            _absfile(STEVE_JSON, 'application/json'),
+
+    # JSON computed on demand
+    '/api/unifi':            _jsonfn(_unifi_status),
+    '/api/unifi/events':     _jsonfn(_unifi_events),
+    '/api/speedtest':        _jsonfn(_speedtest_history),
+    '/api/steve/history':    _jsonfn(_steve_history),
+    '/api/cross_ref':        _jsonfn(_cross_ref, auth=True),
+
+    # Request-specific (parse the query string / stream raw bytes)
+    '/api/kismet':           Route(Handler._res_kismet),
+    '/api/unifi/device':     Route(Handler._res_unifi_device_history),
+    '/api/moisture':         Route(Handler._res_moisture),
+    '/api/smokeping/graph':  Route(Handler._res_smokeping_graph),
+    '/unifi/topology.png':   Route(Handler._res_unifi_png),
+    '/unifi/dashboard.png':  Route(Handler._res_unifi_png),
+}
+# Service API pass-throughs (all unauthenticated GETs) — see PROXIES.
+for _p, _u in PROXIES.items():
+    ROUTES_GET[_p] = _proxy_to(_u)
+
+ROUTES_POST = {
+    '/api/speedtest/trigger': Route(lambda h: h._json(_trigger_gateway_speedtest()),
+                                    auth=True, json_ct=True),
+    '/api/pihole/gravity':    Route(lambda h: h._json(_trigger_gravity()),
+                                    auth=True, json_ct=True),
+    '/api/steve/restart':     Route(Handler._res_steve_restart, auth=True, json_ct=True),
+    '/api/capture':           Route(Handler._res_capture, auth=True, json_ct=True),
+}
 
 
 if __name__ == '__main__':

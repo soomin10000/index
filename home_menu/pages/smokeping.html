@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SmokePing — Latency Observatory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --soot:   #161210;
+      --panel:  #211a14;
+      --line:   #3a2f24;
+      --line-lit: #55432f;
+      --ink:    #ede4d3;
+      --dim:    #a8998a;
+      --faint:  #75685a;
+      --ember:  #e8834a;
+      --ember-dim: #a05a33;
+      --font-mono: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;
+      --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    }
+
+    body {
+      background: var(--soot);
+      background-image: radial-gradient(ellipse 120% 60% at 50% -10%, rgba(232,131,74,0.05), transparent 60%);
+      color: var(--ink);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+    }
+
+    a { color: inherit; }
+
+    /* ── Sticky chrome: nav + toolbar ── */
+    .chrome {
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(22,18,16,0.94);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--line);
+    }
+    nav {
+      display: flex; align-items: baseline; gap: 1.1rem; flex-wrap: wrap;
+      padding: 0.6rem 1.3rem 0.5rem;
+    }
+    nav .home {
+      font-size: 0.66rem; letter-spacing: 0.14em; text-decoration: none;
+      color: var(--dim); transition: color .2s;
+    }
+    nav .home:hover { color: var(--ember); }
+    .wordmark {
+      font-family: var(--font-plate);
+      font-size: 0.95rem; font-weight: 700;
+      letter-spacing: 0.38em; text-transform: uppercase;
+    }
+    .wordmark em { font-style: normal; color: var(--ember); }
+    #status {
+      margin-left: auto; font-size: 0.62rem; color: var(--dim);
+      letter-spacing: 0.06em; display: flex; align-items: baseline; gap: 0.9rem;
+    }
+    #status a { color: var(--faint); text-decoration: none; }
+    #status a:hover { color: var(--ember); }
+    .live-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: var(--faint); margin-right: 0.35rem; vertical-align: 6%;
+    }
+    .live-dot.up   { background: #7fb98a; box-shadow: 0 0 6px rgba(127,185,138,0.7); }
+    .live-dot.down { background: #c9584a; box-shadow: 0 0 6px rgba(201,88,74,0.7); }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+      padding: 0.5rem 1.3rem 0.6rem;
+      border-top: 1px solid rgba(58,47,36,0.5);
+    }
+    .ranges { display: flex; gap: 0.3rem; }
+    .range-btn {
+      font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.08em;
+      color: var(--dim); background: transparent;
+      border: 1px solid var(--line); border-radius: 4px;
+      padding: 0.28rem 0.65rem; cursor: pointer;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .range-btn:hover { border-color: var(--line-lit); color: var(--ink); }
+    .range-btn.active {
+      color: var(--soot); background: var(--ember); border-color: var(--ember);
+      font-weight: 700;
+    }
+    #filter {
+      font-family: var(--font-mono); font-size: 0.66rem;
+      color: var(--ink); background: var(--panel);
+      border: 1px solid var(--line); border-radius: 4px;
+      padding: 0.3rem 0.6rem; width: 12.5rem; max-width: 40vw;
+    }
+    #filter::placeholder { color: var(--faint); }
+    #filter:focus { outline: none; border-color: var(--ember-dim); }
+    .toolbar .spacer { flex: 1; }
+    .toggle {
+      font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em;
+      color: var(--dim); background: transparent;
+      border: 1px solid var(--line); border-radius: 4px;
+      padding: 0.28rem 0.65rem; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .toggle:hover { color: var(--ink); border-color: var(--line-lit); }
+    .toggle .sw { color: var(--ember); font-weight: 700; }
+    #refreshed { font-size: 0.6rem; color: var(--faint); letter-spacing: 0.06em; }
+
+    button:focus-visible, a:focus-visible, input:focus-visible, .tile:focus-visible {
+      outline: 2px solid var(--ember); outline-offset: 2px;
+    }
+
+    /* ── Header ── */
+    header { position: relative; overflow: hidden; text-align: center; padding: 2.2rem 1.3rem 1.6rem; }
+    header h1 {
+      font-family: var(--font-plate);
+      font-size: clamp(1.7rem, 5vw, 2.6rem); font-weight: 700;
+      letter-spacing: 0.45em; text-transform: uppercase;
+      text-indent: 0.45em; /* balance the tracking */
+    }
+    header h1 em { font-style: normal; color: var(--ember); }
+    header .sub {
+      margin-top: 0.5rem; font-size: 0.63rem; color: var(--dim); letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    header .sub b { color: var(--ink); font-weight: 400; }
+
+    /* Smoke wisps — the page's one flourish */
+    .wisp {
+      position: absolute; bottom: -40px; left: 50%;
+      width: 90px; height: 220px; border-radius: 50%;
+      background: radial-gradient(ellipse at center, rgba(237,228,211,0.05), transparent 70%);
+      filter: blur(9px); pointer-events: none;
+      animation: rise 9s ease-in-out infinite;
+      opacity: 0;
+    }
+    .wisp:nth-child(2) { margin-left: -130px; animation-delay: 3s;   animation-duration: 11s; }
+    .wisp:nth-child(3) { margin-left:   90px; animation-delay: 5.5s; animation-duration: 13s; }
+    @keyframes rise {
+      0%   { transform: translate(-50%, 30%) scaleX(1);   opacity: 0; }
+      25%  { opacity: 0.9; }
+      100% { transform: translate(-46%, -95%) scaleX(1.7); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wisp { animation: none; opacity: 0; }
+      * { transition: none !important; }
+    }
+
+    /* ── Notices ── */
+    .notice {
+      max-width: 1240px; margin: 0 auto 1rem; padding: 0.7rem 1rem;
+      border: 1px solid #7a3d33; border-radius: 6px;
+      background: rgba(201,88,74,0.08);
+      font-size: 0.68rem; color: #d9a196; line-height: 1.5;
+    }
+    .notice b { color: #eec2b8; }
+
+    /* ── Sections ── */
+    .page { max-width: 1240px; margin: 0 auto; padding: 0 1.3rem 3.5rem; }
+    section { margin-bottom: 2rem; }
+    .sec-head {
+      display: flex; align-items: baseline; gap: 0.8rem;
+      margin: 1.6rem 0 0.75rem;
+    }
+    .sec-name {
+      font-family: var(--font-plate); font-size: 0.82rem; font-weight: 700;
+      letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink);
+    }
+    .sec-count { font-size: 0.6rem; color: var(--faint); letter-spacing: 0.1em; }
+    .sec-rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line), transparent); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 355px), 1fr));
+      gap: 0.9rem;
+    }
+
+    /* ── Graph tiles: plate negatives ── */
+    .tile {
+      background: var(--panel);
+      border: 1px solid var(--line); border-radius: 8px;
+      overflow: hidden; cursor: zoom-in;
+      transition: border-color .2s, transform .2s, box-shadow .2s;
+    }
+    .tile:hover {
+      border-color: var(--ember-dim);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 26px rgba(0,0,0,0.45);
+    }
+    .tile-cap {
+      display: flex; align-items: baseline; gap: 0.6rem;
+      padding: 0.5rem 0.75rem 0.45rem;
+      border-bottom: 1px solid rgba(58,47,36,0.6);
+    }
+    .tile-name { font-size: 0.72rem; color: var(--ink); letter-spacing: 0.04em; }
+    .tile-id   { font-size: 0.56rem; color: var(--faint); letter-spacing: 0.05em;
+                 margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .shot { display: block; width: 100%; aspect-ratio: 697 / 310; background: #14100c; position: relative; }
+    .shot canvas, .shot img {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    .shot img { object-fit: contain; opacity: 0; pointer-events: none; }
+    /* img stays in layout (opacity 0) so loading="lazy" still fires in ember mode.
+       negative: plain CSS-inverted plate; original: raw smokeping */
+    body.mode-negative .shot canvas, body.mode-original .shot canvas { visibility: hidden; }
+    body.mode-negative .shot img {
+      opacity: 1;
+      filter: invert(0.93) hue-rotate(180deg) saturate(1.3);
+    }
+    body.mode-negative .shot { background: #101010; }
+    body.mode-original .shot img { opacity: 1; }
+    body.mode-original .shot { background: #f5f5f5; }
+    .shot img[data-broken] { visibility: hidden; }
+    .shot.broken { position: relative; }
+    .shot.broken::after {
+      content: 'graph unavailable'; position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.62rem; color: var(--faint); letter-spacing: 0.12em;
+    }
+
+    .hidden { display: none !important; }
+
+    #empty {
+      text-align: center; color: var(--dim); font-size: 0.7rem;
+      padding: 3rem 1rem; line-height: 1.8;
+    }
+
+    /* ── Lightbox ── */
+    #box {
+      position: fixed; inset: 0; z-index: 60;
+      background: rgba(10,8,6,0.9); backdrop-filter: blur(6px);
+      display: none; align-items: center; justify-content: center;
+      padding: 1.2rem;
+    }
+    #box.open { display: flex; }
+    .box-card {
+      background: var(--panel); border: 1px solid var(--line-lit); border-radius: 10px;
+      max-width: min(96vw, 1000px); width: 100%;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+      overflow: hidden;
+    }
+    .box-head {
+      display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap;
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .box-title { font-size: 0.8rem; letter-spacing: 0.05em; }
+    .box-id { font-size: 0.6rem; color: var(--faint); }
+    .box-head .spacer { flex: 1; }
+    .box-head a { font-size: 0.62rem; color: var(--dim); text-decoration: none; }
+    .box-head a:hover { color: var(--ember); }
+    .box-close {
+      font-family: var(--font-mono); font-size: 0.8rem; color: var(--dim);
+      background: none; border: 1px solid var(--line); border-radius: 4px;
+      width: 1.7rem; height: 1.7rem; cursor: pointer;
+    }
+    .box-close:hover { color: var(--ink); border-color: var(--line-lit); }
+    .box-shot { background: #14100c; position: relative; aspect-ratio: 697 / 310; }
+    .box-shot canvas, .box-shot img {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    .box-shot img { object-fit: contain; opacity: 0; pointer-events: none; }
+    body.mode-negative .box-shot canvas, body.mode-original .box-shot canvas { visibility: hidden; }
+    body.mode-negative .box-shot img {
+      opacity: 1;
+      filter: invert(0.93) hue-rotate(180deg) saturate(1.3);
+    }
+    body.mode-negative .box-shot { background: #101010; }
+    body.mode-original .box-shot img { opacity: 1; }
+    body.mode-original .box-shot { background: #f5f5f5; }
+    .box-foot {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.6rem 1rem;
+      border-top: 1px solid var(--line);
+    }
+    .box-nav {
+      font-family: var(--font-mono); font-size: 0.64rem; color: var(--dim);
+      background: none; border: 1px solid var(--line); border-radius: 4px;
+      padding: 0.28rem 0.7rem; cursor: pointer;
+    }
+    .box-nav:hover { color: var(--ink); border-color: var(--line-lit); }
+    .box-foot .spacer { flex: 1; }
+
+    footer {
+      text-align: center; font-size: 0.58rem; color: var(--faint);
+      letter-spacing: 0.15em; padding: 0 1rem 2rem;
+    }
+
+    @media (max-width: 640px) {
+      nav { gap: 0.7rem; }
+      #status { margin-left: 0; flex-basis: 100%; }
+      #filter { width: 100%; max-width: none; }
+      .toolbar .spacer { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="chrome">
+  <nav>
+    <a class="home" href="/">&larr; HOME</a>
+    <span class="wordmark">Smoke<em>ping</em></span>
+    <span id="status"><span><span class="live-dot" id="dot"></span><span id="stat-text">loading…</span></span><a id="raw-link" href="#" target="_blank" rel="noopener">raw ui &nearr;</a></span>
+  </nav>
+  <div class="toolbar">
+    <div class="ranges" id="ranges" role="group" aria-label="Time range">
+      <button class="range-btn" data-r="3h">3 h</button>
+      <button class="range-btn" data-r="30h">30 h</button>
+      <button class="range-btn" data-r="10d">10 d</button>
+      <button class="range-btn" data-r="1y">1 y</button>
+    </div>
+    <input id="filter" type="search" placeholder="filter targets…" aria-label="Filter targets">
+    <span class="spacer"></span>
+    <button class="toggle" id="mode-toggle" aria-pressed="true">plates: <span class="sw" id="mode-word">negative</span></button>
+    <span id="refreshed"></span>
+  </div>
+</div>
+
+<header>
+  <div class="wisp" aria-hidden="true"></div>
+  <div class="wisp" aria-hidden="true"></div>
+  <div class="wisp" aria-hidden="true"></div>
+  <h1>Latency <em>Observatory</em></h1>
+  <div class="sub" id="sub-line">reading the smoke…</div>
+</header>
+
+<div class="page">
+  <div id="notice" class="notice hidden"></div>
+  <div id="sections"></div>
+  <div id="empty" class="hidden"></div>
+</div>
+
+<div id="box" role="dialog" aria-modal="true" aria-label="Graph detail">
+  <div class="box-card">
+    <div class="box-head">
+      <span class="box-title" id="box-title"></span>
+      <span class="box-id" id="box-id"></span>
+      <span class="spacer"></span>
+      <a id="box-raw" href="#" target="_blank" rel="noopener">open in smokeping &nearr;</a>
+      <button class="box-close" id="box-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="box-shot"><canvas id="box-canvas"></canvas><img id="box-img" alt=""></div>
+    <div class="box-foot">
+      <button class="box-nav" id="box-prev">&larr; prev</button>
+      <button class="box-nav" id="box-next">next &rarr;</button>
+      <span class="spacer"></span>
+      <div class="ranges" id="box-ranges" role="group" aria-label="Lightbox time range">
+        <button class="range-btn" data-r="3h">3 h</button>
+        <button class="range-btn" data-r="30h">30 h</button>
+        <button class="range-btn" data-r="10d">10 d</button>
+        <button class="range-btn" data-r="1y">1 y</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>SMOKEPING 2.9 · PLEX BOX 192.168.1.212:8888 · GRAPHS PROXIED &amp; RE-PLATED BY HOME-MENU</footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  const RANGES = ['3h', '30h', '10d', '1y'];
+  let range = localStorage.getItem('sp-range') || '3h';
+  if (!RANGES.includes(range)) range = '3h';
+  let data = null;
+  let flat = [];        // flat [{id, name, section}] for lightbox prev/next
+  let boxIdx = -1;
+
+  // Bucketed cache-buster: all tiles in a 5-min window share URLs, matching
+  // the probe step (300 s) and the server's 240 s proxy cache.
+  const bucket = () => Math.floor(Date.now() / 300000);
+  const graphUrl = (id, r) => `/api/smokeping/graph?target=${encodeURIComponent(id)}&range=${r}&t=${bucket()}`;
+
+  /* ── plate re-processing: smokeping's white PNG → ember plate ──
+     Per-pixel remap of the rrdtool render: white bg → transparent, the smoke
+     (grays) onto an ember heat ramp, the median line kept mint, red grid
+     receded — then a blurred additive pass underneath for phosphor bloom.
+     Same pixels, same data; only the plate chemistry changes. */
+  function emberPlate(img, canvas) {
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (!w) return;
+    const src = document.createElement('canvas');
+    src.width = w; src.height = h;
+    const sctx = src.getContext('2d', { willReadFrequently: true });
+    sctx.drawImage(img, 0, 0);
+    const d = sctx.getImageData(0, 0, w, h);
+    const px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      if (r > 245 && g > 245 && b > 245) {            // paper → gone
+        px[i + 3] = 0;
+      } else if (g - Math.max(r, b) > 28) {           // median line → mint
+        px[i] = 122; px[i + 1] = 240; px[i + 2] = 150;
+      } else if (r - Math.max(g, b) > 28) {           // red grid/arrows → faint rust
+        px[i] = 200; px[i + 1] = 84; px[i + 2] = 56; px[i + 3] = 80;
+      } else if (b - Math.max(r, g) > 28 || (r > 150 && b > 150 && g < 120)) {
+        px[i] = 150; px[i + 1] = 168; px[i + 2] = 255; // blue/violet loss swatches
+      } else {                                        // smoke + text: heat ramp by density
+        const t = 1 - (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        px[i]     = 90  + 165 * t;                    // 90→255
+        px[i + 1] = 42  + 148 * t;                    // 42→190
+        px[i + 2] = 18  + 104 * t;                    // 18→122
+        px[i + 3] = Math.min(255, 300 * t);
+      }
+    }
+    sctx.putImageData(d, 0, 0);
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.filter = 'blur(5px)';
+    ctx.globalAlpha = 0.55;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(src, 0, 0);
+    ctx.restore();
+    ctx.drawImage(src, 0, 0);
+  }
+
+  /* ── plates: ember / negative / original ── */
+  const MODES = ['ember', 'negative', 'original'];
+  // 'sp-plate', not the old 'sp-mode' key — the first version wrote
+  // 'negative' there on every visit, which would pin old visitors to it
+  let mode = localStorage.getItem('sp-plate');
+  if (!MODES.includes(mode)) mode = 'ember';
+  const modeBtn = document.getElementById('mode-toggle');
+  function setMode(m) {
+    mode = m;
+    document.body.classList.remove('mode-negative', 'mode-original');
+    if (m !== 'ember') document.body.classList.add('mode-' + m);
+    document.getElementById('mode-word').textContent = m;
+    localStorage.setItem('sp-plate', m);
+  }
+  modeBtn.addEventListener('click', () =>
+    setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]));
+  setMode(mode);
+
+  /* ── range pills ── */
+  function paintRanges() {
+    document.querySelectorAll('.range-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.r === range));
+  }
+  function setRange(r) {
+    range = r;
+    localStorage.setItem('sp-range', r);
+    paintRanges();
+    document.querySelectorAll('.shot img').forEach(img => {
+      const wrap = img.closest('.shot');
+      wrap.classList.remove('broken');
+      img.removeAttribute('data-broken');
+      img.src = graphUrl(img.dataset.target, range);
+    });
+    if (boxIdx >= 0) boxImg.src = graphUrl(flat[boxIdx].id, range);
+  }
+  document.querySelectorAll('#ranges .range-btn, #box-ranges .range-btn').forEach(b =>
+    b.addEventListener('click', () => setRange(b.dataset.r)));
+
+  /* ── build sections ── */
+  function build() {
+    const host = document.getElementById('sections');
+    host.innerHTML = '';
+    flat = [];
+    for (const sec of data.sections || []) {
+      const secEl = document.createElement('section');
+      secEl.dataset.sec = sec.id;
+      secEl.innerHTML =
+        `<div class="sec-head"><span class="sec-name">${esc(sec.name)}</span>` +
+        `<span class="sec-count">${sec.targets.length} target${sec.targets.length === 1 ? '' : 's'}</span>` +
+        `<span class="sec-rule"></span></div><div class="grid"></div>`;
+      const grid = secEl.querySelector('.grid');
+      for (const t of sec.targets) {
+        const idx = flat.length;
+        flat.push({ id: t.id, name: t.name, section: sec.name });
+        const tile = document.createElement('div');
+        tile.className = 'tile';
+        tile.tabIndex = 0;
+        tile.dataset.idx = idx;
+        tile.dataset.search = `${t.name} ${t.id} ${sec.name}`.toLowerCase();
+        tile.setAttribute('role', 'button');
+        tile.setAttribute('aria-label', `Enlarge latency graph for ${t.name}`);
+        tile.innerHTML =
+          `<div class="tile-cap"><span class="tile-name">${esc(t.name)}</span>` +
+          `<span class="tile-id">${esc(t.id)}</span></div>` +
+          `<div class="shot"><canvas></canvas><img loading="lazy" alt="Latency graph for ${esc(t.name)}" data-target="${esc(t.id)}"></div>`;
+        const img = tile.querySelector('img');
+        const cv = tile.querySelector('canvas');
+        img.addEventListener('error', () => {
+          img.setAttribute('data-broken', '');
+          img.closest('.shot').classList.add('broken');
+          cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+        });
+        img.addEventListener('load', () => {
+          img.removeAttribute('data-broken');
+          img.closest('.shot').classList.remove('broken');
+          emberPlate(img, cv);
+        });
+        img.src = graphUrl(t.id, range);
+        tile.addEventListener('click', () => openBox(idx));
+        tile.addEventListener('keydown', e => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBox(idx); }
+        });
+        grid.appendChild(tile);
+      }
+      host.appendChild(secEl);
+    }
+    applyFilter();
+  }
+
+  /* ── filter ── */
+  const filterEl = document.getElementById('filter');
+  function applyFilter() {
+    const q = filterEl.value.trim().toLowerCase();
+    document.querySelectorAll('#sections section').forEach(sec => {
+      let vis = 0;
+      sec.querySelectorAll('.tile').forEach(t => {
+        const show = !q || t.dataset.search.includes(q);
+        t.classList.toggle('hidden', !show);
+        if (show) vis++;
+      });
+      sec.classList.toggle('hidden', vis === 0);
+    });
+  }
+  filterEl.addEventListener('input', applyFilter);
+
+  /* ── lightbox ── */
+  const box = document.getElementById('box');
+  const boxImg = document.getElementById('box-img');
+  const boxCanvas = document.getElementById('box-canvas');
+  boxImg.addEventListener('load', () => emberPlate(boxImg, boxCanvas));
+  boxImg.addEventListener('error', () =>
+    boxCanvas.getContext('2d').clearRect(0, 0, boxCanvas.width, boxCanvas.height));
+  function openBox(idx) {
+    boxIdx = (idx + flat.length) % flat.length;
+    const t = flat[boxIdx];
+    document.getElementById('box-title').textContent = t.name;
+    document.getElementById('box-id').textContent = `${t.section} · ${t.id}`;
+    document.getElementById('box-raw').href = `${data.base}?target=${encodeURIComponent(t.id)}`;
+    boxImg.alt = `Latency graph for ${t.name}`;
+    boxImg.src = graphUrl(t.id, range);
+    box.classList.add('open');
+    document.getElementById('box-close').focus();
+  }
+  function closeBox() { box.classList.remove('open'); boxIdx = -1; }
+  document.getElementById('box-close').addEventListener('click', closeBox);
+  document.getElementById('box-prev').addEventListener('click', () => openBox(boxIdx - 1));
+  document.getElementById('box-next').addEventListener('click', () => openBox(boxIdx + 1));
+  box.addEventListener('click', e => { if (e.target === box) closeBox(); });
+  document.addEventListener('keydown', e => {
+    if (!box.classList.contains('open')) return;
+    if (e.key === 'Escape') closeBox();
+    if (e.key === 'ArrowLeft')  openBox(boxIdx - 1);
+    if (e.key === 'ArrowRight') openBox(boxIdx + 1);
+  });
+
+  /* ── status line ── */
+  function paintStatus() {
+    const dot = document.getElementById('dot');
+    const stat = document.getElementById('stat-text');
+    const age = Math.round((Date.now() / 1000 - data.ts) / 60);
+    const stale = age > 30;
+    dot.className = 'live-dot ' + (data.ok && !stale ? 'up' : 'down');
+    stat.textContent = `${data.ok ? 'live' : 'unreachable'} · ${data.target_count} targets · polled ${age < 1 ? 'just now' : age + ' m ago'}`;
+    document.getElementById('raw-link').href = data.base;
+    document.getElementById('sub-line').innerHTML =
+      `<b>${data.target_count}</b> targets · probed every <b>300 s</b> from the plex box · ` +
+      `${(data.sections || []).map(s => esc(s.name)).join(' · ').toLowerCase()}`;
+    const notice = document.getElementById('notice');
+    if (!data.ok) {
+      notice.innerHTML = `<b>SmokePing is not answering</b> (${esc(data.error)}). ` +
+        `Showing the last known target list — graphs will come up blank until it is back.`;
+      notice.classList.remove('hidden');
+    } else if (stale) {
+      notice.innerHTML = `<b>Target list is ${age} minutes old</b> — the poller may have stopped. ` +
+        `Graphs are still fetched live.`;
+      notice.classList.remove('hidden');
+    } else {
+      notice.classList.add('hidden');
+    }
+  }
+
+  /* ── load ── */
+  async function load(rebuild) {
+    try {
+      const r = await fetch('/api/smokeping');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      data = await r.json();
+    } catch (e) {
+      document.getElementById('empty').textContent =
+        'No smokeping data yet — run pollers/smokeping.py once, or check that steve can reach 192.168.1.212.';
+      document.getElementById('empty').classList.remove('hidden');
+      document.getElementById('stat-text').textContent = 'no data';
+      return;
+    }
+    document.getElementById('empty').classList.add('hidden');
+    paintStatus();
+    if (rebuild) build();
+  }
+
+  /* Re-point tile images at the current bucket (browser refetches only when
+     the 5-min bucket rolls over). */
+  let lastBucket = bucket();
+  function refreshShots() {
+    if (bucket() === lastBucket) return;
+    lastBucket = bucket();
+    document.querySelectorAll('.shot img').forEach(img => {
+      img.src = graphUrl(img.dataset.target, range);
+    });
+    document.getElementById('refreshed').textContent =
+      'plates refreshed ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  paintRanges();
+  load(true);
+  setInterval(() => { load(false); refreshShots(); }, 60000);
+</script>
+</body>
+</html>

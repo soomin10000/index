@@ -40,9 +40,19 @@ def _load_state():
 
 
 def pihole_ips(domain):
-    """A-record answer Pi-hole gives a LAN client (IPs only, CNAMEs dropped)."""
-    r = subprocess.run(["dig", f"@{PIHOLE_IP}", domain, "A", "+short", "+time=3"],
-                       capture_output=True, text=True, timeout=15)
+    """A-record answer Pi-hole gives a LAN client (IPs only, CNAMEs dropped).
+
+    Returns None when Pi-hole didn't answer at all (down/unreachable) — an
+    empty *answer* looks identical to a block, so it must not be conflated
+    with a failed *query*.
+    """
+    try:
+        r = subprocess.run(["dig", f"@{PIHOLE_IP}", domain, "A", "+short", "+time=3"],
+                           capture_output=True, text=True, timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if r.returncode != 0:
+        return None
     return [l for l in r.stdout.split()
             if l.count(".") == 3 and l.replace(".", "").isdigit()]
 
@@ -114,11 +124,12 @@ def fetch_and_write():
             fetch_err = ""
         own = [ip for r in results if r["prb_id"] == at.probe_id for ip in r["ips"]]
         external = sorted({ip for r in results if r["prb_id"] != at.probe_id for ip in r["ips"]})
-        try:
-            ph = pihole_ips(domain)
-        except Exception:
+        ph = pihole_ips(domain)
+        if ph is None:
             ph = []
-        status, note = classify(group, ph, external, own)
+            status, note = "pihole_down", f"Pi-hole at {PIHOLE_IP} not answering — comparison skipped"
+        else:
+            status, note = classify(group, ph, external, own)
         if fetch_err:
             status, note = "no_data", f"Atlas fetch failed: {fetch_err}"
         domains.append({"domain": domain, "group": group, "status": status,
@@ -132,6 +143,13 @@ def fetch_and_write():
         "domains": domains,
     }
     OUT.write_text(json.dumps(data, indent=2))
+
+    # Pi-hole unreachable is one incident, not seven — a single push on the
+    # down transition, never the per-domain tampering alerts below
+    pihole_down = any(d["status"] == "pihole_down" for d in domains)
+    if pihole_down and not state.get("pihole_down_alerted"):
+        _notify("DNS cross-check", f"Pi-hole at {PIHOLE_IP} is not answering DNS — cross-check paused")
+    state["pihole_down_alerted"] = pihole_down
 
     # notify on transition *into* an alerting status, once per status per domain
     alerted = state.get("alerted", {})

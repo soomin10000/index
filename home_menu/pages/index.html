@@ -67,15 +67,16 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr auto auto auto auto;
+      grid-template-rows: 1fr 1fr 1fr auto auto auto auto auto;
       grid-template-areas:
         "harold  weather  weather"
-        "harold  train    parents"
+        "harold  train    train"
         "bbc     bbc      darren"
+        "timers  timers   timers"
         "unifi   unifi    wireless"
         "pihole  pihole   atlas"
         "steve   steve    uplink"
-        "plants  plants   plants";
+        "plants  plants   smoke";
       gap: 0.85rem;
       width: 100%;
       max-width: 980px;
@@ -85,7 +86,6 @@
     #c-harold  { grid-area: harold; }
     #c-weather { grid-area: weather; }
     #c-train   { grid-area: train; }
-    #c-parents { grid-area: parents; }
     #c-bbc     { grid-area: bbc; }
     #c-darren  { grid-area: darren; }
     #c-unifi    { grid-area: unifi; }
@@ -95,6 +95,8 @@
     #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
     #c-plants  { grid-area: plants; }
+    #c-smoke   { grid-area: smoke; }
+    #c-timers  { grid-area: timers; }
 
     /* Card base — breaker module on the panel */
     .card {
@@ -181,6 +183,12 @@
       font-family: var(--font-mono); letter-spacing: 0.05em;
     }
 
+    .c-foot-link {
+      color: var(--ink-dim); text-decoration: underline dotted;
+      text-underline-offset: 2px;
+    }
+    .c-foot-link:hover { color: var(--ink); }
+
     /* ── Card-specific overrides ── */
 
     #c-harold { justify-content: center; }
@@ -233,13 +241,14 @@
         grid-template-areas:
           "weather  weather"
           "harold   train"
-          "parents  darren"
+          "darren   darren"
+          "timers   timers"
           "bbc      bbc"
           "unifi    wireless"
           "pihole   atlas"
           "uplink   uplink"
           "steve    steve"
-          "plants   plants";
+          "plants   smoke";
       }
       #c-harold .c-val { font-size: 3.2rem; }
     }
@@ -247,7 +256,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "parents" "darren" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve" "plants";
+          "weather" "harold" "train" "darren" "timers" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve" "plants" "smoke";
       }
     }
   </style>
@@ -287,14 +296,6 @@
     <div class="c-foot">:8192</div>
   </a>
 
-  <a class="card is-loading" id="c-parents" style="--a:#ab47bc" href="http://192.168.1.183:8092">
-    <div class="tape">Parental</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">😈</span><span class="c-name">Bad Parents</span></div>
-    <div class="c-metric"><span class="c-val" id="p-val">—</span></div>
-    <div class="c-sub" id="p-sub"></div>
-    <div class="c-foot">:8092</div>
-  </a>
-
   <a class="card" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
     <div class="tape">Novelty</div>
     <div class="c-head"><span class="lamp on"></span><span class="c-icon">📰</span><span class="c-name">BBC News Spoofer</span></div>
@@ -309,6 +310,14 @@
     <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
     <div class="c-sub" id="d-sub"></div>
     <div class="c-foot">:8193</div>
+  </a>
+
+  <a class="card is-loading" id="c-timers" style="--a:#f2a03d" href="http://192.168.1.183:8196">
+    <div class="tape">Kitchen</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">⏲️</span><span class="c-name">Watched Pot</span></div>
+    <div class="c-metric"><span class="c-val" id="tm-val">—</span><span class="c-unit" id="tm-unit"></span></div>
+    <div class="c-sub" id="tm-sub"></div>
+    <div class="c-foot">:8196</div>
   </a>
 
   <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
@@ -340,7 +349,7 @@
     <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
     <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
     <div class="c-sub" id="up-sub"></div>
-    <div class="c-foot">RIPE Atlas probe · dns roots</div>
+    <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
   </a>
 
   <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
@@ -365,6 +374,14 @@
     <div class="c-metric"><span class="c-val" id="pl-val">—</span><span class="c-unit" id="pl-unit">%</span></div>
     <div class="c-sub" id="pl-sub"></div>
     <div class="c-foot">soil moisture · esp32c6 · :8082</div>
+  </a>
+
+  <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
+    <div class="tape">Latency</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">💨</span><span class="c-name">SmokePing</span></div>
+    <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
+    <div class="c-sub" id="sp-sub"></div>
+    <div class="c-foot">plex box · :8888 · 300 s step</div>
   </a>
 
 </main>
@@ -466,22 +483,6 @@
     } catch { setCard('train', { val: 'Offline' }, true); }
   }
 
-  async function parents() {
-    try {
-      const d = await get('/api/parents');
-      if (d.blocked) {
-        const rem = d.unblock_at ? Math.max(0, Math.round((d.unblock_at - Date.now()/1000)/60)) : null;
-        setCard('parents', {
-          val: 'Blocked',
-          sub: `${dot('dot-red')}${rem != null ? rem+' min left' : 'Until unblocked'}`,
-          accent: 'var(--down)', lamp: 'down',
-        });
-      } else {
-        setCard('parents', { val: 'Allowed', sub: `${dot('dot-on')}TikTok is on`, accent: 'var(--ok)', lamp: 'on' });
-      }
-    } catch { setCard('parents', { val: 'Offline' }, true); }
-  }
-
   async function darren() {
     try {
       const d = await get('/api/darren');
@@ -492,6 +493,30 @@
       const lamp   = { Run:'on', Finished:'on', Error:'down' }[state];
       setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent, lamp });
     } catch { setCard('darren', { val: 'Offline' }, true); }
+  }
+
+  async function timers() {
+    try {
+      const d = await get('/api/timers');
+      if (d.ringing > 0) {
+        setCard('timers', {
+          val: 'Ready!', unit: '',
+          sub: `${dot('dot-off')}${d.ringing === 1 ? 'A pot needs taking off' : d.ringing + ' pots need taking off'}`,
+          accent: '#e4553a', lamp: 'warn',
+        });
+      } else if (d.next) {
+        const r = Math.max(0, Math.round(d.next.remaining));
+        const h = Math.floor(r / 3600), m = Math.floor(r % 3600 / 60), s = r % 60;
+        const val = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+        setCard('timers', {
+          val, unit: '',
+          sub: `${dot('dot-on')}${d.next.emoji} ${esc(d.next.name)} · ${d.active}/${d.max} burners`,
+          accent: '#f2a03d', lamp: 'on',
+        });
+      } else {
+        setCard('timers', { val: 'Idle', unit: '', sub: 'No pots on' });
+      }
+    } catch { setCard('timers', { val: 'Offline', unit: '' }, true); }
   }
 
   async function weather() {
@@ -627,10 +652,38 @@
         ? `${dot('dot-red')}NTP clock skew vs world`
         : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · clock ok`;
       setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
+      const wmId = d.worldmap?.msm_id;
+      // pick the most interesting probe to open by default: one that never
+      // reached us, else whichever has the worst RTT (points arrive rtt-sorted)
+      const pts = d.worldmap?.points || [];
+      const notable = pts.find(p => !p.reached) || pts[pts.length - 1];
+      const linkEl = document.getElementById('up-path-link');
+      if (linkEl) {
+        const windowMs = 24 * 60 * 60 * 1000;
+        linkEl.innerHTML = wmId
+          ? `<a class="c-foot-link" href="https://atlas.ripe.net/pathanalysis?measurementId=${encodeURIComponent(wmId)}${notable ? `&sourceProbeId=${encodeURIComponent(notable.prb_id)}` : ''}&sequentialMode=true&center=${Date.now()}&window=${windowMs}" target="_blank" rel="noopener" onclick="event.stopPropagation()">path analysis ↗</a>`
+          : '';
+      }
     } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
   }
 
-  function refresh() { harold(); train(); parents(); darren(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); }
+  async function smoke() {
+    try {
+      const d = await get('/api/smokeping');
+      const age = (Date.now() / 1000 - d.ts) / 60;
+      const stale = age > 30;
+      const up = d.ok && !stale;
+      const sub = up
+        ? `${dot('dot-on')}${(d.sections || []).map(s => esc(s.name)).join(' · ').toLowerCase()}`
+        : `${dot('dot-red')}${!d.ok ? 'smokeping unreachable' : 'poller silent ' + Math.round(age) + ' min'}`;
+      setCard('smoke', {
+        val: d.target_count, unit: ' targets', sub,
+        accent: up ? '#e8834a' : 'var(--down)', lamp: up ? 'on' : 'down',
+      });
+    } catch { setCard('smoke', { val: 'No data', unit: '' }, true); }
+  }
+
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); smoke(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
