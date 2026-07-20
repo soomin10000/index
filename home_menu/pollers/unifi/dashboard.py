@@ -130,15 +130,22 @@ def render():
     weak_rows  = conn.execute(
         "SELECT ts, hostname, signal, retry_pct FROM weak_client_log ORDER BY ts"
     ).fetchall()
-    cong_rows  = conn.execute(
-        "SELECT ts, ap, radio, cu_total FROM congestion_log ORDER BY ts"
+    # Continuous per-poll samples (every radio, every poll) rather than
+    # congestion_log, which only has a row once cu_total crosses the alert
+    # threshold — that's fine for dedup-alerting but too sparse to trend on.
+    util_rows  = conn.execute(
+        "SELECT ts, ap, radio, cu_total FROM radio_util_log ORDER BY ts"
     ).fetchall()
     speed_rows = conn.execute(
         "SELECT ts, ping_ms, download_mbps, upload_mbps FROM speedtest_log ORDER BY ts"
     ).fetchall()
+    event_rows = conn.execute(
+        "SELECT ts, type, message FROM events_log "
+        "WHERE type IN ('device_joined', 'device_left', 'channel_changed') ORDER BY ts"
+    ).fetchall()
     conn.close()
 
-    if not weak_rows and not cong_rows and not speed_rows:
+    if not weak_rows and not util_rows and not speed_rows:
         return
 
     clients = defaultdict(lambda: {"ts": [], "signal": [], "retry_pct": []})
@@ -148,9 +155,14 @@ def render():
         clients[hostname]["retry_pct"].append(retry_pct)
 
     radios = defaultdict(lambda: {"ts": [], "cu_total": []})
-    for ts, ap, radio, cu_total in cong_rows:
-        radios[f"{ap} · {radio}"]["ts"].append(datetime.fromtimestamp(ts))
-        radios[f"{ap} · {radio}"]["cu_total"].append(cu_total)
+    hourly = defaultdict(lambda: defaultdict(list))  # radio -> hour(0-23) -> [cu_total]
+    for ts, ap, radio, cu_total in util_rows:
+        name = f"{ap} · {radio}"
+        when = datetime.fromtimestamp(ts)
+        radios[name]["ts"].append(when)
+        radios[name]["cu_total"].append(cu_total)
+        if cu_total is not None:
+            hourly[name][when.hour].append(cu_total)
 
     speed_ts   = [datetime.fromtimestamp(r[0]) for r in speed_rows]
     speed_ping = [r[1] for r in speed_rows]
@@ -161,7 +173,7 @@ def render():
     if clients:
         panels += ["signal", "retry"]
     if radios:
-        panels += ["congestion"]
+        panels += ["congestion", "hourly"]
     if speed_rows:
         panels += ["throughput", "latency"]
     if not panels:
@@ -177,19 +189,26 @@ def render():
 
     xfmt = mdates.DateFormatter("%d %b\n%H:%M")
 
+    EVENT_STYLE = {
+        "device_joined":   (GOOD, "▲ joined"),
+        "device_left":     (MUTE, "▽ left"),
+        "channel_changed": (WARN, "◆ channel Δ"),
+    }
+
     TITLES = {
         "signal": "SIGNAL STRENGTH", "retry": "TX RETRY RATE",
-        "congestion": "CHANNEL UTILISATION", "throughput": "WAN THROUGHPUT",
-        "latency": "WAN LATENCY",
+        "congestion": "CHANNEL UTILISATION", "hourly": "CONGESTION BY HOUR OF DAY",
+        "throughput": "WAN THROUGHPUT", "latency": "WAN LATENCY",
     }
     YLABELS = {
-        "signal": "dBm", "retry": "%", "congestion": "%",
+        "signal": "dBm", "retry": "%", "congestion": "%", "hourly": "avg %",
         "throughput": "Mbps", "latency": "ms",
     }
 
     for ax, panel in zip(axes, panels):
         _style_ax(ax, TITLES[panel], YLABELS[panel])
-        ax.xaxis.set_major_formatter(xfmt)
+        if panel != "hourly":
+            ax.xaxis.set_major_formatter(xfmt)
 
         if panel in ("signal", "retry"):
             names  = list(clients.keys())
@@ -223,6 +242,45 @@ def render():
                 _line(ax, radios[name]["ts"], smooth, color)
             _threshold(ax, 70, "70% congested")
             ax.set_ylim(0, 100)
+            ax.yaxis.set_major_locator(mticker.MultipleLocator(25))
+            ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+
+            # Device join/leave + channel-change ticks, so a congestion spike
+            # can be visually traced back to a likely cause.
+            present = [t for t in ("device_joined", "device_left", "channel_changed")
+                       if any(r[1] == t for r in event_rows)]
+            for ts, ev_type, _msg in event_rows:
+                color, _ = EVENT_STYLE[ev_type]
+                ax.axvline(datetime.fromtimestamp(ts), color=color, linewidth=0.9,
+                           linestyle=(0, (1, 2)), alpha=0.5, zorder=3)
+            x = 0.0
+            for t in present:
+                color, label = EVENT_STYLE[t]
+                ax.text(x, 1.16, f"{label}   ", transform=ax.transAxes, color=color,
+                        fontsize=8.5, va="bottom", ha="left")
+                x += 0.018 * (len(label) + 3)
+            _legend(ax, names, colors)
+
+        elif panel == "hourly":
+            names  = list(radios.keys())
+            colors = PALETTE[:len(names)]
+            hours = list(range(24))
+            ax.axhspan(70, 100, color=CRIT, alpha=0.05, zorder=0)
+            ax.axhspan(50,  70, color=WARN, alpha=0.05, zorder=0)
+            for name, color in zip(names, colors):
+                avgs = [np.mean(hourly[name][h]) if hourly[name].get(h) else None for h in hours]
+                pts = [(h, v) for h, v in zip(hours, avgs) if v is not None]
+                if not pts:
+                    continue
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                ax.plot(xs, ys, color=color, linewidth=1.8, alpha=0.95, zorder=4)
+                ax.scatter(xs, ys, color=color, s=14, zorder=5, linewidths=0)
+            ax.set_xlim(-0.5, 23.5)
+            ax.set_ylim(0, 100)
+            ax.set_xlabel("hour of day (local)")
+            ax.xaxis.set_major_locator(mticker.MultipleLocator(2))
+            ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%02d:00"))
             ax.yaxis.set_major_locator(mticker.MultipleLocator(25))
             ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
             _legend(ax, names, colors)

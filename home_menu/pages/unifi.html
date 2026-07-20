@@ -255,6 +255,61 @@
 
     .skl { color: transparent; background: rgba(255,255,255,0.04); border-radius: 3px; }
 
+    /* ── Client detail drawer ──────────────────────────────────────── */
+    table.clients tbody tr { cursor: pointer; }
+
+    #detail-backdrop {
+      position: fixed; inset: 0; background: rgba(5,8,12,0.5);
+      z-index: 190; opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    #detail-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    #detail {
+      position: fixed; top: 0; right: -420px; width: 400px; max-width: 92vw; height: 100vh;
+      background: var(--panel); border-left: 1px solid var(--border);
+      z-index: 200; display: flex; flex-direction: column;
+      transition: right .25s cubic-bezier(.4,0,.2,1);
+      box-shadow: -12px 0 40px rgba(0,0,0,0.45);
+    }
+    #detail.open { right: 0; }
+    #detail-header {
+      padding: 16px 18px 14px; border-bottom: 1px solid var(--border);
+      background: var(--panel-2); flex-shrink: 0;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    #detail-type { font-family: var(--sans); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mute); margin-bottom: 4px; }
+    #detail-name { font-size: 16px; font-weight: 600; color: var(--ink); }
+    #detail-name.flagged { color: var(--crit); }
+    #detail-close {
+      margin-left: auto; cursor: pointer; color: var(--dim);
+      font-size: 15px; line-height: 1; flex-shrink: 0; transition: color .15s;
+    }
+    #detail-close:hover { color: var(--crit); }
+
+    #detail-meta {
+      padding: 13px 18px; flex-shrink: 0;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dmeta-key { display: block; font-family: var(--sans); font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mute); margin-bottom: 1px; }
+    .dmeta-val { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+
+    #detail-body { flex: 1; overflow-y: auto; padding: 16px 18px 30px; }
+    .dd-section { margin-bottom: 20px; }
+    .dd-section h3 {
+      font-family: var(--sans); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--mute); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    .dd-spark-wrap { position: relative; margin-bottom: 12px; }
+    .dd-spark-label { font-family: var(--sans); font-size: 10px; color: var(--mute); margin-bottom: 5px; letter-spacing: 0.06em; }
+    canvas.dd-spark { width: 100%; height: 60px; display: block; border-radius: 3px; }
+    .dd-no-history { font-family: var(--mono); font-size: 11.5px; color: var(--mute); padding: 6px 0; }
+    .dd-event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(28,39,50,0.55); font-size: 11.5px; }
+    .dd-event:last-child { border-bottom: none; }
+    .dd-event-time { flex-shrink: 0; width: 62px; font-family: var(--mono); font-size: 10px; color: var(--mute); line-height: 1.5; }
+    .dd-event-title { font-weight: 600; color: var(--ink); }
+    .dd-event-msg { font-family: var(--mono); font-size: 10.5px; color: var(--dim); margin-top: 1px; word-break: break-word; }
+
     @media (max-width: 1000px) {
       .grid { grid-template-columns: 1fr; }
       .kpi-row { grid-template-columns: repeat(3, 1fr); }
@@ -409,6 +464,32 @@
 
 </div>
 
+<div id="detail-backdrop" onclick="closeDetail()"></div>
+<div id="detail">
+  <div id="detail-header">
+    <div>
+      <div id="detail-type"></div>
+      <div id="detail-name"></div>
+    </div>
+    <span id="detail-close" onclick="closeDetail()">✕</span>
+  </div>
+  <div id="detail-meta"></div>
+  <div id="detail-body">
+    <div class="dd-section">
+      <h3>Pi-hole · DNS profile</h3>
+      <div id="detail-pihole"></div>
+    </div>
+    <div class="dd-section">
+      <h3>Signal history · 7 days</h3>
+      <div id="detail-charts"></div>
+    </div>
+    <div class="dd-section">
+      <h3>Events</h3>
+      <div id="detail-events"></div>
+    </div>
+  </div>
+</div>
+
 <script>
   const ESC = { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC[c]);
@@ -454,6 +535,8 @@
   }
 
   // ── clients table (source: /api/cross_ref — UniFi + Pi-hole merged) ──
+  let renderedClients = [];
+
   async function loadClients() {
     try {
       const d = await (await fetch('/api/cross_ref')).json();
@@ -465,8 +548,9 @@
         if (fa !== fb) return fb - fa;
         return (b.dns_total || 0) - (a.dns_total || 0);
       });
+      renderedClients = devs;
 
-      const rows = devs.map(x => {
+      const rows = devs.map((x, i) => {
         const name = esc(x.display_name || x.hostname || x.ip || x.mac || 'unknown');
         const vendor = x.vendor ? `<span class="c-vendor">${esc(x.vendor)}</span>` : '';
         const flagged = !!x.flagged;
@@ -490,7 +574,7 @@
                 `<span class="blk" style="color:${pc};background:${bg}">${pct}%<span style="color:var(--mute)"> blk</span></span>`;
         }
 
-        return `<tr>
+        return `<tr data-idx="${i}">
           <td><div class="c-name"><span class="st" style="background:${stColor}" title="${stTitle}"></span>${name}</div>${vendor}</td>
           <td class="c-ip">${esc(x.ip || '—')}</td>
           <td class="c-conn">${link}</td>
@@ -665,6 +749,155 @@
     $('img-dashboard').src = '/unifi/dashboard.png' + bust();
     $('topo-ts').textContent = 'refreshed ' + ts;
     $('dash-ts').textContent = 'refreshed ' + ts;
+  }
+
+  // ── client detail drawer ─────────────────────────────────────────────
+  $('clients-body').addEventListener('click', (ev) => {
+    const tr = ev.target.closest('tr[data-idx]');
+    if (!tr) return;
+    const x = renderedClients[Number(tr.dataset.idx)];
+    if (x) openDetail(x);
+  });
+
+  function closeDetail() {
+    $('detail').classList.remove('open');
+    $('detail-backdrop').classList.remove('open');
+  }
+
+  function drawDetailSpark(canvas, values, color, min, max, threshold) {
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--inset').trim();
+    ctx.fillRect(0, 0, W, H);
+    if (!values.length) return;
+
+    const pad = 4, span = (max - min) || 1;
+    const px = i => pad + (i / (values.length - 1 || 1)) * (W - pad * 2);
+    const py = v => H - pad - ((v - min) / span) * (H - pad * 2);
+
+    if (threshold != null) {
+      const ty = py(threshold);
+      ctx.strokeStyle = 'rgba(248,81,73,0.4)';
+      ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(pad, ty); ctx.lineTo(W - pad, ty); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(px(0), H);
+    values.forEach((v, i) => ctx.lineTo(px(i), py(v)));
+    ctx.lineTo(px(values.length - 1), H);
+    ctx.closePath();
+    ctx.fillStyle = color + '18';
+    ctx.fill();
+
+    ctx.beginPath();
+    values.forEach((v, i) => i === 0 ? ctx.moveTo(px(i), py(v)) : ctx.lineTo(px(i), py(v)));
+    ctx.strokeStyle = color; ctx.lineWidth = 1.8; ctx.stroke();
+
+    const lx = px(values.length - 1), ly = py(values[values.length - 1]);
+    ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+  }
+
+  async function openDetail(x) {
+    $('detail').classList.add('open');
+    $('detail-backdrop').classList.add('open');
+
+    $('detail-type').textContent = x.is_wired ? 'WIRED CLIENT' : 'WIRELESS CLIENT';
+    const nameEl = $('detail-name');
+    nameEl.textContent = x.display_name || x.hostname || x.mac || 'unknown';
+    nameEl.className = x.flagged ? 'flagged' : '';
+
+    const meta = [
+      ['IP', x.ip || '—'],
+      ['MAC', x.mac || '—'],
+      ['VENDOR', x.vendor || '—'],
+      ['SSID', x.ssid || '—'],
+      ['AP', x.ap || '—'],
+      ['FIRST SEEN', x.first_seen ? new Date(x.first_seen*1000).toLocaleDateString('en-GB') : '—'],
+      ['DNS QUERIES', x.dns_total != null ? fmt(x.dns_total) : '—'],
+      ['DNS BLOCKED', x.dns_blocked != null ? `${fmt(x.dns_blocked)} (${x.dns_pct}%)` : '—'],
+    ];
+    $('detail-meta').innerHTML = meta.map(([k,v]) =>
+      `<div><span class="dmeta-key">${k}</span><span class="dmeta-val">${esc(v)}</span></div>`
+    ).join('');
+
+    // Pi-hole inline summary
+    const phSection = $('detail-pihole');
+    if (x.dns_total != null) {
+      const blockedW = Math.round(x.dns_pct);
+      const fwdW = Math.max(0, 100 - blockedW);
+      const pc = x.dns_pct >= 25 ? 'var(--crit)' : x.dns_pct >= 8 ? 'var(--warn)' : 'var(--good)';
+      phSection.innerHTML = `
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;font-size:11px;font-family:var(--mono)">
+          <span style="color:var(--ink);font-weight:600">${fmt(x.dns_total)}</span>
+          <span style="color:var(--mute)">queries</span>
+          <span style="color:${pc};font-weight:600;margin-left:auto">${x.dns_pct}% blocked</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:var(--inset);overflow:hidden;display:flex">
+          <div style="width:${blockedW}%;background:var(--crit);opacity:0.8"></div>
+          <div style="width:${fwdW}%;background:var(--accent);opacity:0.35"></div>
+        </div>
+        <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:10px;font-family:var(--mono);color:var(--mute)">
+          <span><span style="color:var(--crit)">■</span> blocked ${fmt(x.dns_blocked)}</span>
+          <span><span style="color:var(--accent)">■</span> allowed ${fmt(x.dns_total - (x.dns_blocked||0))}</span>
+        </div>`;
+    } else {
+      phSection.innerHTML = '<div class="dd-no-history">Not matched in Pi-hole — likely uses IPv6 privacy addressing</div>';
+    }
+
+    $('detail-charts').innerHTML = '<div class="dd-no-history">Loading…</div>';
+    $('detail-events').innerHTML = '';
+
+    if (!x.hostname) {
+      $('detail-charts').innerHTML = '<div class="dd-no-history">No hostname — history unavailable</div>';
+      return;
+    }
+
+    try {
+      const data = await (await fetch(`/api/unifi/device?hostname=${encodeURIComponent(x.hostname)}`)).json();
+
+      const chartsEl = $('detail-charts');
+      if (!data.history || !data.history.length) {
+        chartsEl.innerHTML = '<div class="dd-no-history">No flagged history in the last 7 days</div>';
+      } else {
+        const signals = data.history.map(h => h.signal);
+        const retries = data.history.map(h => h.retry_pct);
+        chartsEl.innerHTML = `
+          <div class="dd-spark-wrap">
+            <div class="dd-spark-label">SIGNAL (dBm)</div>
+            <canvas class="dd-spark" id="dd-spark-sig"></canvas>
+          </div>
+          <div class="dd-spark-wrap">
+            <div class="dd-spark-label">RETRY RATE (%)</div>
+            <canvas class="dd-spark" id="dd-spark-ret"></canvas>
+          </div>`;
+        requestAnimationFrame(() => {
+          drawDetailSpark($('dd-spark-sig'), signals, '#f85149', Math.min(...signals)-5, Math.max(...signals)+5, -70);
+          drawDetailSpark($('dd-spark-ret'), retries, '#d6a419', 0, Math.max(...retries, 12), 10);
+        });
+      }
+
+      const evEl = $('detail-events');
+      if (!data.events || !data.events.length) {
+        evEl.innerHTML = '<div class="dd-no-history">No events recorded yet</div>';
+      } else {
+        evEl.innerHTML = data.events.map(e => {
+          const t = new Date(e.ts * 1000).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+          const dt = new Date(e.ts * 1000).toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+          return `<div class="dd-event">
+            <span class="dd-event-time">${t}<br>${dt}</span>
+            <div><div class="dd-event-title">${esc(e.title)}</div><div class="dd-event-msg">${esc(e.message)}</div></div>
+          </div>`;
+        }).join('');
+      }
+    } catch (err) {
+      $('detail-charts').innerHTML = `<div class="dd-no-history">Error: ${esc(err.message)}</div>`;
+    }
   }
 
   // ── boot + polling ──────────────────────────────────────────────────

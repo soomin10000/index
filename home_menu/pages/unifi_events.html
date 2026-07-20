@@ -91,6 +91,12 @@
     .type-new_device .event-title { color: #00aaff; }
     .type-speedtest  .event-dot   { color: #cc88ff; background: #cc88ff; }
     .type-speedtest  .event-title { color: #cc88ff; }
+    .type-device_joined   .event-dot   { color: #33ff88; background: #33ff88; }
+    .type-device_joined   .event-title { color: #33ff88; }
+    .type-device_left     .event-dot   { color: #667788; background: #667788; }
+    .type-device_left     .event-title { color: #667788; }
+    .type-channel_changed .event-dot   { color: #ffcc33; background: #ffcc33; }
+    .type-channel_changed .event-title { color: #ffcc33; }
 
     #empty { text-align: center; padding: 4rem; color: #1a3a50; font-size: 0.8rem; letter-spacing: 0.1em; }
   </style>
@@ -115,12 +121,14 @@
   <button class="filter-btn" onclick="setFilter('weak')">WEAK CLIENTS</button>
   <button class="filter-btn" onclick="setFilter('congestion')">CONGESTION</button>
   <button class="filter-btn" onclick="setFilter('resolved')">RESOLVED</button>
+  <button class="filter-btn" onclick="setFilter('device_joined')">JOINED</button>
+  <button class="filter-btn" onclick="setFilter('device_left')">LEFT</button>
+  <button class="filter-btn" onclick="setFilter('channel_changed')">CHANNEL Δ</button>
   <span id="updated"></span>
 </div>
 
-<div id="feed">
-  <div id="empty" style="display:none">NO EVENTS YET</div>
-</div>
+<div id="feed"></div>
+<div id="empty" style="display:none">NO EVENTS YET</div>
 
 <script>
 const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -132,7 +140,8 @@ let activeFilter = 'all';
 function setFilter(f) {
   activeFilter = f;
   document.querySelectorAll('.filter-btn').forEach((b, i) => {
-    b.classList.toggle('active', ['all','new_device','weak','congestion','resolved'][i] === f);
+    b.classList.toggle('active', ['all','new_device','weak','congestion','resolved',
+                                   'device_joined','device_left','channel_changed'][i] === f);
   });
   render();
 }
@@ -156,7 +165,6 @@ function render() {
   if (!evs.length) {
     empty.style.display = 'block';
     feed.innerHTML = '';
-    feed.appendChild(empty);
     return;
   }
 

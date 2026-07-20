@@ -25,7 +25,8 @@ from checks import check_congestion
 import topology
 import dashboard
 from db import (open_db, log_poll, last_flagged_congestion,
-                check_new_devices, log_speedtest, log_event, get_known_devices)
+                check_new_devices, log_speedtest, log_event, get_known_devices,
+                log_radio_util, prune_radio_util)
 
 try:
     from notify_sender import notify as _notify_send
@@ -133,6 +134,22 @@ def _guess_device_type(vendor: str) -> str:
         if any(kw in v for kw in keywords):
             return label
     return ""
+
+
+def _display_name(mac, hostname="", known_devs=None):
+    """Same fallback chain as write_devices_json's per-station display_name:
+    hostname → guessed device type from vendor → raw vendor string → mac.
+    Needed for events (e.g. device_left) where we only have a bare mac and no
+    live station record to pull a hostname from."""
+    if hostname:
+        return hostname
+    kd = (known_devs or {}).get(mac, {})
+    hostname = kd.get("hostname") or ""
+    if hostname:
+        return hostname
+    vendor = kd.get("vendor") or _vendor(mac)
+    guess = _guess_device_type(vendor)
+    return guess or vendor or mac
 
 
 # ── Speedtest ─────────────────────────────────────────────────────────────────
@@ -250,6 +267,26 @@ def _regenerate_visuals(devices, stations, wlans):
 def _congestion_key(f): return f"{f['ap']}:{f['radio']}"
 
 
+def _radio_samples(devices):
+    """Every AP radio's current cu_total/num_sta/channel, unconditionally —
+    the continuous feed check_congestion()'s threshold filtering can't give us."""
+    samples = []
+    for dev in devices:
+        radio_stats = dev.get("radio_table_stats")
+        if not radio_stats:
+            continue
+        ap_name = dev.get("name", dev.get("mac", "unknown"))
+        for radio in radio_stats:
+            samples.append({
+                "ap":       ap_name,
+                "radio":    radio.get("name", radio.get("radio", "unknown")),
+                "cu_total": radio.get("cu_total"),
+                "num_sta":  radio.get("num_sta"),
+                "channel":  radio.get("channel"),
+            })
+    return samples
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def run(interval, client):
@@ -260,7 +297,15 @@ def run(interval, client):
 
     # Speed test: once per hour
     speedtest_every = max(1, 3600 // interval)
+    # Prune old radio_util_log rows: once per day
+    prune_every = max(1, 86400 // interval)
     poll_count = 0
+
+    # Seeded on the first poll below (not here) so a process restart doesn't
+    # read "everyone just joined" / "every radio just changed channel" off an
+    # empty baseline.
+    prev_active_macs = None
+    prev_channels = None
 
     log.info("Poll loop started — interval %ds, speedtest every %d polls", interval, speedtest_every)
 
@@ -308,12 +353,57 @@ def run(interval, client):
         except Exception as e:
             log.warning("Device check failed: %s", e)
 
+        # Continuous utilization/channel logging — every radio, every poll,
+        # unlike congestion_log which only gets a row once cu_total > threshold.
+        # Powers the dashboard's time-of-day trend view.
+        radio_samples = _radio_samples(devices)
+        log_radio_util(db, radio_samples)
+
+        # Device join/leave — separate from check_new_devices() above, which
+        # only fires once per MAC ever. This tracks online/offline transitions
+        # for already-known devices, for correlating against congestion spikes.
+        try:
+            curr_active_macs = {s["mac"] for s in stations if s.get("mac")}
+            if prev_active_macs is not None:
+                known_devs = get_known_devices(db)
+                for mac in curr_active_macs - prev_active_macs:
+                    sta = next((s for s in stations if s.get("mac") == mac), {})
+                    name = _display_name(mac, sta.get("hostname", ""), known_devs)
+                    log_event(db, "device_joined", "Device joined", name)
+                for mac in prev_active_macs - curr_active_macs:
+                    name = _display_name(mac, "", known_devs)
+                    log_event(db, "device_left", "Device left", name)
+            prev_active_macs = curr_active_macs
+        except Exception as e:
+            log.warning("Join/leave tracking failed: %s", e)
+
+        # Channel changes — the real UniFi event/alarm API (EVT_AP_RadarDetected
+        # etc.) isn't reachable with this console's API-key auth (confirmed 404).
+        # An "auto" radio's channel changing is a practical proxy: APs switch
+        # channel automatically on DFS radar detection, so this catches those
+        # along with any other forced channel move worth correlating.
+        try:
+            curr_channels = {(s["ap"], s["radio"]): s["channel"] for s in radio_samples}
+            if prev_channels is not None:
+                for key, channel in curr_channels.items():
+                    prev = prev_channels.get(key)
+                    if prev is not None and prev != channel:
+                        ap, radio = key
+                        msg = f"{ap} {radio}: channel {prev} → {channel}"
+                        log.info("Channel change: %s", msg)
+                        log_event(db, "channel_changed", "Channel changed", msg)
+            prev_channels = curr_channels
+        except Exception as e:
+            log.warning("Channel-change tracking failed: %s", e)
+
         log_poll(db, congestion, [])
         write_devices_json(devices, stations, db=db)
 
         poll_count += 1
         if poll_count % speedtest_every == 0:
             trigger_speedtest(client)
+        if poll_count % prune_every == 0:
+            prune_radio_util(db)
         sync_speedtest(db, client)
 
         _regenerate_visuals(devices, stations, wlans)

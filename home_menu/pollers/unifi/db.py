@@ -25,6 +25,19 @@ CREATE TABLE IF NOT EXISTS congestion_log (
     num_sta  INTEGER
 );
 
+-- Unlike congestion_log (only written when cu_total crosses the alert
+-- threshold), this logs every radio on every poll so trend analysis has
+-- the full curve to work with, not just threshold-crossing events.
+CREATE TABLE IF NOT EXISTS radio_util_log (
+    id       INTEGER PRIMARY KEY,
+    ts       INTEGER NOT NULL,
+    ap       TEXT    NOT NULL,
+    radio    TEXT    NOT NULL,
+    cu_total INTEGER,
+    num_sta  INTEGER,
+    channel  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS known_devices (
     mac        TEXT    PRIMARY KEY,
     hostname   TEXT,
@@ -51,6 +64,7 @@ CREATE TABLE IF NOT EXISTS events_log (
 
 CREATE INDEX IF NOT EXISTS weak_client_log_ts  ON weak_client_log (ts);
 CREATE INDEX IF NOT EXISTS congestion_log_ts   ON congestion_log (ts);
+CREATE INDEX IF NOT EXISTS radio_util_log_ts   ON radio_util_log (ts);
 CREATE INDEX IF NOT EXISTS speedtest_log_ts    ON speedtest_log (ts);
 CREATE INDEX IF NOT EXISTS events_log_ts       ON events_log (ts);
 """
@@ -95,6 +109,26 @@ def log_poll(conn, congestion_flags, weak_flags, ts=None):
             )
 
 
+def log_radio_util(conn, samples, ts=None):
+    """samples: list of {"ap", "radio", "cu_total", "num_sta", "channel"} — one
+    entry per radio seen this poll, logged unconditionally (unlike congestion_log,
+    which only gets a row once a threshold is crossed)."""
+    if ts is None:
+        ts = int(time.time())
+    with conn:
+        for s in samples:
+            conn.execute(
+                "INSERT INTO radio_util_log (ts, ap, radio, cu_total, num_sta, channel) VALUES (?,?,?,?,?,?)",
+                (ts, s["ap"], s["radio"], s.get("cu_total"), s.get("num_sta"), str(s.get("channel"))),
+            )
+
+
+def prune_radio_util(conn, keep_days=90):
+    cutoff = int(time.time()) - keep_days * 86400
+    with conn:
+        conn.execute("DELETE FROM radio_util_log WHERE ts < ?", (cutoff,))
+
+
 def check_new_devices(conn, all_macs_info, ts=None):
     """
     Compare seen MACs against known_devices table.
@@ -117,9 +151,14 @@ def check_new_devices(conn, all_macs_info, ts=None):
                 )
                 new_devices.append(dev)
             else:
+                # Keep the existing hostname when this poll doesn't report one
+                # (common — devices don't always broadcast it) instead of
+                # blanking out a name we already knew.
                 conn.execute(
-                    "UPDATE known_devices SET last_seen=?, hostname=? WHERE mac=?",
-                    (ts, dev.get("hostname", ""), mac),
+                    "UPDATE known_devices SET last_seen=?, "
+                    "hostname=COALESCE(NULLIF(?, ''), hostname), "
+                    "vendor=COALESCE(NULLIF(?, ''), vendor) WHERE mac=?",
+                    (ts, dev.get("hostname", ""), dev.get("vendor", ""), mac),
                 )
 
     return new_devices
@@ -145,9 +184,10 @@ def get_events(conn, limit=200):
 
 def get_known_devices(conn):
     rows = conn.execute(
-        "SELECT mac, first_seen, last_seen FROM known_devices"
+        "SELECT mac, hostname, vendor, first_seen, last_seen FROM known_devices"
     ).fetchall()
-    return {r[0]: {"first_seen": r[1], "last_seen": r[2]} for r in rows}
+    return {r[0]: {"hostname": r[1], "vendor": r[2], "first_seen": r[3], "last_seen": r[4]}
+            for r in rows}
 
 
 def get_latest_speedtest(conn):
