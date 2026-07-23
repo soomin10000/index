@@ -102,6 +102,7 @@ KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
 STEVE_DB     = DATA / 'steve_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
+REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
 # Retired sensors whose old readings are still in the DB — hidden from the
 # dashboard, since "latest per plant" never expires a silent sensor on its own.
@@ -700,6 +701,56 @@ def _unifi_device_history(hostname):
         return {'history': [], 'events': [], 'error': str(e)}
 
 
+def _unifi_radio_history(days=3):
+    """Continuous per-radio utilization (for the timeline chart), hour-of-day
+    averages (over a longer 14-day window — more data makes a better hourly
+    signal than the timeline's shorter lookback), and the events worth
+    overlaying on that timeline."""
+    if not UNIFI_DB.exists():
+        return {'radios': [], 'hourly': [], 'events': []}
+    try:
+        conn = sqlite3.connect(UNIFI_DB)
+        cutoff = int(time.time()) - days * 86400
+
+        rows = conn.execute(
+            'SELECT ts, ap, radio, cu_total, num_sta FROM radio_util_log WHERE ts>=? ORDER BY ts',
+            (cutoff,)
+        ).fetchall()
+        radios = {}
+        for ts, ap, radio, cu, n in rows:
+            radios.setdefault(f'{ap} · {radio}', []).append({'ts': ts, 'cu': cu, 'num_sta': n})
+
+        hourly_cutoff = int(time.time()) - 14 * 86400
+        hrows = conn.execute(
+            'SELECT ts, ap, radio, cu_total FROM radio_util_log WHERE ts>=? AND cu_total IS NOT NULL',
+            (hourly_cutoff,)
+        ).fetchall()
+        hourly_acc = {}
+        for ts, ap, radio, cu in hrows:
+            key = f'{ap} · {radio}'
+            hour = time.localtime(ts).tm_hour
+            hourly_acc.setdefault(key, {}).setdefault(hour, []).append(cu)
+        hourly = [
+            {'name': key, 'hours': [{'hour': h, 'avg_cu': round(sum(vs) / len(vs), 1)}
+                                     for h, vs in sorted(hours.items())]}
+            for key, hours in hourly_acc.items()
+        ]
+
+        events = conn.execute(
+            "SELECT ts, type, title, message FROM events_log WHERE ts>=? AND type IN "
+            "('device_joined','device_left','channel_changed','congestion','resolved') ORDER BY ts",
+            (cutoff,)
+        ).fetchall()
+        conn.close()
+        return {
+            'radios': [{'name': k, 'points': v} for k, v in radios.items()],
+            'hourly': hourly,
+            'events': [{'ts': r[0], 'type': r[1], 'title': r[2], 'message': r[3]} for r in events],
+        }
+    except Exception as e:
+        return {'radios': [], 'hourly': [], 'events': [], 'error': str(e)}
+
+
 def _trigger_gateway_speedtest():
     try:
         import sys
@@ -837,6 +888,15 @@ class Handler(BaseHTTPRequestHandler):
         from urllib.parse import urlparse, parse_qs
         qs = parse_qs(urlparse(self.path).query)
         self._json(_unifi_device_history(qs.get('hostname', [''])[0]))
+
+    def _res_unifi_radio_history(self):
+        from urllib.parse import urlparse, parse_qs
+        qs = parse_qs(urlparse(self.path).query)
+        try:
+            days = max(1, min(int(qs.get('days', ['3'])[0]), 14))
+        except ValueError:
+            days = 3
+        self._json(_unifi_radio_history(days))
 
     def _res_moisture(self):
         from urllib.parse import urlparse, parse_qs
@@ -978,6 +1038,7 @@ ROUTES_GET = {
     '/moisture':             _page('moisture.html'),
     '/smokeping':            _page('smokeping.html'),
     '/steve':                _page('steve.html'),
+    '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
     # Static assets
     '/vis-network.min.js':   _absfile(STATIC / 'vis-network.min.js', 'application/javascript'),
@@ -1003,6 +1064,7 @@ ROUTES_GET = {
     # Request-specific (parse the query string / stream raw bytes)
     '/api/kismet':           Route(Handler._res_kismet),
     '/api/unifi/device':     Route(Handler._res_unifi_device_history),
+    '/api/unifi/history':    Route(Handler._res_unifi_radio_history),
     '/api/moisture':         Route(Handler._res_moisture),
     '/api/smokeping/graph':  Route(Handler._res_smokeping_graph),
     '/unifi/topology.png':   Route(Handler._res_unifi_png),

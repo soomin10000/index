@@ -246,7 +246,7 @@
     .log-time { font-family: var(--mono); font-size: 10px; color: var(--mute); margin-top: 3px; letter-spacing: 0.04em; }
 
     /* ── Snapshot images ───────────────────────────────────────────── */
-    .snap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .snap-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
     .snap img { width: 100%; display: block; background: var(--inset); }
     .snap .cap {
       padding: 8px 14px; font-family: var(--mono); font-size: 10.5px;
@@ -254,6 +254,42 @@
     }
 
     .skl { color: transparent; background: rgba(255,255,255,0.04); border-radius: 3px; }
+
+    /* ── Multi-series line charts (channel utilisation / hour of day) ─── */
+    .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 10px 15px 0; }
+    .chart-legend .item {
+      display: flex; align-items: center; gap: 6px; cursor: pointer;
+      font-family: var(--mono); font-size: 10.5px; color: var(--dim);
+      user-select: none; transition: opacity .15s;
+    }
+    .chart-legend .item.off { opacity: 0.35; }
+    .chart-legend .item .sw { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+    .chart-wrap { padding: 10px 15px 14px; position: relative; }
+    svg.linechart { width: 100%; height: 220px; display: block; overflow: visible; cursor: crosshair; }
+    .lc-series { fill: none; stroke-width: 1.8; transition: opacity .15s; }
+    .lc-dot { transition: opacity .15s; }
+    .lc-band { opacity: 0.06; }
+    .lc-threshold { stroke: var(--crit); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.55; }
+    .lc-grid { stroke: var(--border); stroke-width: 1; }
+    .lc-axis-label { font-family: var(--mono); font-size: 9.5px; fill: var(--mute); }
+    .lc-cross { stroke: var(--dim); stroke-width: 1; opacity: 0; }
+    .lc-event { cursor: pointer; }
+    .chart-tip {
+      position: absolute; pointer-events: none; opacity: 0;
+      transform: translate(-50%, -110%); transition: opacity .1s;
+      background: var(--inset); border: 1px solid var(--border-2); border-radius: 3px;
+      padding: 6px 9px; font-family: var(--mono); font-size: 10.5px; color: var(--ink);
+      white-space: nowrap; z-index: 5; line-height: 1.6;
+    }
+    .chart-tip .row { display: flex; align-items: center; gap: 6px; }
+    .chart-tip .sw { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+    .chart-tip .tt { color: var(--mute); font-size: 10px; }
+
+    .log-item.flash { animation: flash-hl 1.6s ease-out; }
+    @keyframes flash-hl {
+      0%   { background: rgba(53,208,214,0.22); }
+      100% { background: transparent; }
+    }
 
     /* ── Client detail drawer ──────────────────────────────────────── */
     table.clients tbody tr { cursor: pointer; }
@@ -448,17 +484,38 @@
     </div>
   </div>
 
+  <!-- Channel utilisation -->
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-head">
+      <span class="eyebrow">Channel utilisation</span>
+      <span class="count" id="util-range"></span>
+    </div>
+    <div class="chart-legend" id="util-legend"></div>
+    <div class="chart-wrap">
+      <svg class="linechart" id="util-chart" viewBox="0 0 900 220" preserveAspectRatio="none"></svg>
+      <div class="chart-tip" id="util-tip"></div>
+    </div>
+  </div>
+
+  <!-- Congestion by hour of day -->
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-head">
+      <span class="eyebrow">Congestion by hour of day</span>
+      <span class="count">14-day average</span>
+    </div>
+    <div class="chart-legend" id="hourly-legend"></div>
+    <div class="chart-wrap">
+      <svg class="linechart" id="hourly-chart" viewBox="0 0 900 200" preserveAspectRatio="none"></svg>
+      <div class="chart-tip" id="hourly-tip"></div>
+    </div>
+  </div>
+
   <!-- Snapshots -->
   <div class="snap-grid" style="margin-top:14px">
     <div class="panel snap">
       <div class="panel-head"><span class="eyebrow">Topology</span></div>
       <img id="img-topology" alt="Network topology">
       <div class="cap" id="topo-ts">—</div>
-    </div>
-    <div class="panel snap">
-      <div class="panel-head"><span class="eyebrow">Client history</span></div>
-      <img id="img-dashboard" alt="Client history">
-      <div class="cap" id="dash-ts">—</div>
     </div>
   </div>
 
@@ -651,10 +708,13 @@
 
   // ── event log (source: /api/unifi/events) ───────────────────────────
   const EV = {
-    congestion:  'var(--warn)',
-    resolved:    'var(--good)',
-    new_device:  'var(--accent)',
-    error:       'var(--crit)',
+    congestion:       'var(--warn)',
+    resolved:         'var(--good)',
+    new_device:       'var(--accent)',
+    device_joined:    'var(--good)',
+    device_left:      'var(--mute)',
+    channel_changed:  'var(--warn)',
+    error:            'var(--crit)',
   };
   async function loadEvents() {
     try {
@@ -663,7 +723,7 @@
       $('events-count').textContent = (d.events || []).length + ' logged';
       $('log').innerHTML = ev.length ? ev.map(e => {
         const c = EV[e.type] || 'var(--mute)';
-        return `<div class="log-item">
+        return `<div class="log-item" data-ts="${e.ts}">
           <div class="log-dot" style="background:${c}"></div>
           <div>
             <div class="log-title">${esc(e.title || e.type || 'event')}</div>
@@ -675,6 +735,21 @@
     } catch (e) {
       $('log').innerHTML = '<div class="log-item"><div class="log-dot" style="background:var(--crit)"></div><div><div class="log-msg">event feed unavailable</div></div></div>';
     }
+  }
+
+  // Jump from a chart's event tick to its entry in the log panel — the nearest
+  // logged item by timestamp, since the chart's own event list and the log
+  // panel's 40-item window can drift apart slightly.
+  function jumpToEvent(ts) {
+    const items = [...document.querySelectorAll('#log .log-item[data-ts]')];
+    if (!items.length) return;
+    let best = items[0], bestDiff = Infinity;
+    for (const el of items) {
+      const diff = Math.abs(Number(el.dataset.ts) - ts);
+      if (diff < bestDiff) { bestDiff = diff; best = el; }
+    }
+    best.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    best.classList.remove('flash'); void best.offsetWidth; best.classList.add('flash');
   }
 
   // ── throughput sparkline (source: /api/speedtest) ───────────────────
@@ -746,9 +821,7 @@
   function loadImages() {
     const ts = new Date().toLocaleTimeString('en-GB');
     $('img-topology').src  = '/unifi/topology.png'  + bust();
-    $('img-dashboard').src = '/unifi/dashboard.png' + bust();
     $('topo-ts').textContent = 'refreshed ' + ts;
-    $('dash-ts').textContent = 'refreshed ' + ts;
   }
 
   // ── client detail drawer ─────────────────────────────────────────────
@@ -900,12 +973,227 @@
     }
   }
 
+  // ── channel utilisation + hour-of-day charts (source: /api/unifi/history) ──
+  // Dark-mode categorical order validated against this page's --panel surface
+  // with the skill's palette checker (lightness band, CVD ΔE, contrast) — same
+  // fixed order used for both charts so a radio keeps its color across them.
+  const CHART_PALETTE = ['#3987e5','#008300','#d55181','#c98500','#199e70','#d95926','#9085e9','#e66767'];
+  const EVENT_TICK_COLOR = {
+    congestion: 'var(--warn)', resolved: 'var(--good)',
+    device_joined: 'var(--good)', device_left: 'var(--mute)', channel_changed: 'var(--warn)',
+  };
+
+  function seriesColors(names) {
+    const sorted = [...names].sort();
+    const map = {};
+    sorted.forEach((n, i) => map[n] = CHART_PALETTE[i % CHART_PALETTE.length]);
+    return map;
+  }
+
+  function buildLegend(el, names, colors, hidden, onToggle) {
+    el.innerHTML = names.map(n =>
+      `<span class="item${hidden.has(n) ? ' off' : ''}" data-name="${esc(n)}">
+        <span class="sw" style="background:${colors[n]}"></span>${esc(n)}
+      </span>`
+    ).join('');
+    el.querySelectorAll('.item').forEach(item => {
+      item.addEventListener('click', () => {
+        const n = item.dataset.name;
+        hidden.has(n) ? hidden.delete(n) : hidden.add(n);
+        item.classList.toggle('off');
+        onToggle();
+      });
+    });
+  }
+
+  function renderUtilChart(radios, events) {
+    const svg = $('util-chart'), tip = $('util-tip');
+    const W = 900, H = 220, padL = 34, padR = 10, padT = 10, padB = 30, eventRowH = 14;
+    const plotH = H - padT - padB - eventRowH;
+    const names = radios.map(r => r.name);
+    const colors = seriesColors(names);
+    const hidden = new Set();
+
+    if (!radios.length) {
+      svg.innerHTML = '';
+      $('util-legend').innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--mute)">no utilisation data yet</span>';
+      return;
+    }
+
+    const allTs = [...new Set(radios.flatMap(r => r.points.map(p => p.ts)))].sort((a,b) => a-b);
+    const minTs = allTs[0], maxTs = allTs[allTs.length - 1];
+    const span = (maxTs - minTs) || 1;
+    const x = ts => padL + (ts - minTs) / span * (W - padL - padR);
+    const y = v => padT + (1 - v / 100) * plotH;
+
+    const seriesMaps = radios.map(r => ({ name: r.name, map: new Map(r.points.map(p => [p.ts, p])) }));
+
+    function draw() {
+      let svgBody = `
+        <rect class="lc-band" x="${padL}" y="${y(100)}" width="${W-padL-padR}" height="${y(70)-y(100)}" fill="var(--crit)"/>
+        <rect class="lc-band" x="${padL}" y="${y(70)}" width="${W-padL-padR}" height="${y(50)-y(70)}" fill="var(--warn)"/>`;
+      [0,25,50,75,100].forEach(v => {
+        svgBody += `<line class="lc-grid" x1="${padL}" x2="${W-padR}" y1="${y(v)}" y2="${y(v)}"/>
+          <text class="lc-axis-label" x="${padL-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`;
+      });
+      svgBody += `<line class="lc-threshold" x1="${padL}" x2="${W-padR}" y1="${y(70)}" y2="${y(70)}"/>`;
+
+      // x-axis date ticks (5 evenly spaced)
+      for (let i = 0; i <= 4; i++) {
+        const ts = minTs + (span * i / 4);
+        const lbl = new Date(ts * 1000).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }) +
+                    ' ' + new Date(ts * 1000).toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' });
+        svgBody += `<text class="lc-axis-label" x="${x(ts)}" y="${H-eventRowH-8}" text-anchor="${i===0?'start':i===4?'end':'middle'}">${lbl}</text>`;
+      }
+
+      seriesMaps.forEach(({ name, map }) => {
+        if (hidden.has(name)) return;
+        const pts = radios.find(r => r.name === name).points;
+        if (!pts.length) return;
+        const d = pts.map((p,i) => (i?'L':'M') + x(p.ts).toFixed(1) + ' ' + y(p.cu ?? 0).toFixed(1)).join(' ');
+        const last = pts[pts.length-1];
+        svgBody += `<path class="lc-series" d="${d}" stroke="${colors[name]}"/>
+          <circle class="lc-dot" cx="${x(last.ts).toFixed(1)}" cy="${y(last.cu ?? 0).toFixed(1)}" r="3" fill="${colors[name]}"/>`;
+      });
+
+      // event ticks in the strip below the plot
+      const tickY = H - eventRowH / 2 - 4;
+      (events || []).forEach(e => {
+        if (e.ts < minTs || e.ts > maxTs) return;
+        const c = EVENT_TICK_COLOR[e.type] || 'var(--mute)';
+        svgBody += `<g class="lc-event" data-ts="${e.ts}" data-title="${esc(e.title)}: ${esc(e.message||'')}">
+          <circle cx="${x(e.ts).toFixed(1)}" cy="${tickY}" r="7" fill="transparent"/>
+          <circle cx="${x(e.ts).toFixed(1)}" cy="${tickY}" r="2.5" fill="${c}"/>
+        </g>`;
+      });
+
+      svgBody += `<line class="lc-cross" id="util-cross" x1="0" x2="0" y1="${padT}" y2="${H-eventRowH-padB+20}"/>`;
+      svg.innerHTML = svgBody;
+
+      svg.querySelectorAll('.lc-event').forEach(g => {
+        g.addEventListener('click', () => jumpToEvent(Number(g.dataset.ts)));
+      });
+    }
+    draw();
+
+    buildLegend($('util-legend'), names, colors, hidden, draw);
+    $('util-range').textContent = `${new Date(minTs*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short'})} – ${new Date(maxTs*1000).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`;
+
+    svg.addEventListener('mousemove', ev => {
+      const rect = svg.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) / rect.width * W;
+      const mts = minTs + (mx - padL) / (W - padL - padR) * span;
+      let best = allTs[0], bestDiff = Infinity;
+      for (const t of allTs) { const diff = Math.abs(t - mts); if (diff < bestDiff) { bestDiff = diff; best = t; } }
+      const cross = $('util-cross');
+      if (cross) { cross.setAttribute('x1', x(best)); cross.setAttribute('x2', x(best)); cross.setAttribute('opacity','0.5'); }
+
+      const rows = seriesMaps
+        .filter(({name}) => !hidden.has(name))
+        .map(({name, map}) => ({ name, p: map.get(best) }))
+        .filter(r => r.p);
+      if (!rows.length) { tip.style.opacity = '0'; return; }
+      const dt = new Date(best*1000).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+      tip.innerHTML = `<div class="tt">${dt}</div>` + rows.map(r =>
+        `<div class="row"><span class="sw" style="background:${colors[r.name]}"></span>${esc(r.name)}: ${r.p.cu ?? '—'}% · ${r.p.num_sta ?? 0} clients</div>`
+      ).join('');
+      tip.style.left = (x(best) / W * rect.width) + 'px';
+      tip.style.top = (y(rows[0].p.cu ?? 0) / H * rect.height) + 'px';
+      tip.style.opacity = '1';
+    });
+    svg.addEventListener('mouseleave', () => {
+      tip.style.opacity = '0';
+      const cross = $('util-cross'); if (cross) cross.setAttribute('opacity','0');
+    });
+  }
+
+  function renderHourlyChart(hourly) {
+    const svg = $('hourly-chart'), tip = $('hourly-tip');
+    const W = 900, H = 200, padL = 34, padR = 10, padT = 10, padB = 26;
+    const plotH = H - padT - padB;
+    const names = hourly.map(r => r.name);
+    const colors = seriesColors(names);
+    const hidden = new Set();
+
+    if (!hourly.length) {
+      svg.innerHTML = '';
+      $('hourly-legend').innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--mute)">not enough history yet</span>';
+      return;
+    }
+
+    const x = h => padL + h / 23 * (W - padL - padR);
+    const y = v => padT + (1 - v / 100) * plotH;
+    const seriesMaps = hourly.map(r => ({ name: r.name, map: new Map(r.hours.map(h => [h.hour, h.avg_cu])) }));
+
+    function draw() {
+      let svgBody = `
+        <rect class="lc-band" x="${padL}" y="${y(100)}" width="${W-padL-padR}" height="${y(70)-y(100)}" fill="var(--crit)"/>
+        <rect class="lc-band" x="${padL}" y="${y(70)}" width="${W-padL-padR}" height="${y(50)-y(70)}" fill="var(--warn)"/>`;
+      [0,25,50,75,100].forEach(v => {
+        svgBody += `<line class="lc-grid" x1="${padL}" x2="${W-padR}" y1="${y(v)}" y2="${y(v)}"/>
+          <text class="lc-axis-label" x="${padL-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`;
+      });
+      svgBody += `<line class="lc-threshold" x1="${padL}" x2="${W-padR}" y1="${y(70)}" y2="${y(70)}"/>`;
+      for (let h = 0; h <= 23; h += 3) {
+        svgBody += `<text class="lc-axis-label" x="${x(h)}" y="${H-8}" text-anchor="middle">${String(h).padStart(2,'0')}:00</text>`;
+      }
+      seriesMaps.forEach(({ name, map }) => {
+        if (hidden.has(name)) return;
+        const pts = [];
+        for (let h = 0; h <= 23; h++) if (map.has(h)) pts.push({ h, v: map.get(h) });
+        if (!pts.length) return;
+        const d = pts.map((p,i) => (i?'L':'M') + x(p.h).toFixed(1) + ' ' + y(p.v).toFixed(1)).join(' ');
+        svgBody += `<path class="lc-series" d="${d}" stroke="${colors[name]}"/>`;
+        pts.forEach(p => { svgBody += `<circle class="lc-dot" cx="${x(p.h).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.5" fill="${colors[name]}"/>`; });
+      });
+      svgBody += `<line class="lc-cross" id="hourly-cross" x1="0" x2="0" y1="${padT}" y2="${H-padB}"/>`;
+      svg.innerHTML = svgBody;
+    }
+    draw();
+    buildLegend($('hourly-legend'), names, colors, hidden, draw);
+
+    svg.addEventListener('mousemove', ev => {
+      const rect = svg.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) / rect.width * W;
+      const hour = Math.max(0, Math.min(23, Math.round((mx - padL) / (W - padL - padR) * 23)));
+      const cross = $('hourly-cross');
+      if (cross) { cross.setAttribute('x1', x(hour)); cross.setAttribute('x2', x(hour)); cross.setAttribute('opacity','0.5'); }
+
+      const rows = seriesMaps
+        .filter(({name}) => !hidden.has(name))
+        .map(({name, map}) => ({ name, v: map.get(hour) }))
+        .filter(r => r.v != null);
+      if (!rows.length) { tip.style.opacity = '0'; return; }
+      tip.innerHTML = `<div class="tt">${String(hour).padStart(2,'0')}:00</div>` + rows.map(r =>
+        `<div class="row"><span class="sw" style="background:${colors[r.name]}"></span>${esc(r.name)}: ${r.v}%</div>`
+      ).join('');
+      tip.style.left = (x(hour) / W * rect.width) + 'px';
+      tip.style.top = (y(rows[0].v) / H * rect.height) + 'px';
+      tip.style.opacity = '1';
+    });
+    svg.addEventListener('mouseleave', () => {
+      tip.style.opacity = '0';
+      const cross = $('hourly-cross'); if (cross) cross.setAttribute('opacity','0');
+    });
+  }
+
+  async function loadCharts() {
+    try {
+      const d = await (await fetch('/api/unifi/history?days=3')).json();
+      renderUtilChart(d.radios || [], d.events || []);
+      renderHourlyChart(d.hourly || []);
+    } catch (e) {
+      $('util-legend').innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--crit)">chart feed unavailable</span>';
+    }
+  }
+
   // ── boot + polling ──────────────────────────────────────────────────
   function refresh() { loadStatus(); loadClients(); loadDeviceCounts(); loadEvents(); }
-  refresh(); loadSpark(); loadImages();
+  refresh(); loadSpark(); loadImages(); loadCharts();
   setInterval(refresh, 30000);
   setInterval(loadSpark, 120000);
   setInterval(loadImages, 300000);
+  setInterval(loadCharts, 300000);
 </script>
 </body>
 </html>
