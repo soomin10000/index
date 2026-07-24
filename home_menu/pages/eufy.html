@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eufy</title>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link { font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); text-decoration: none; }
+  .home-link:hover { color: var(--ink); }
+  .plate-name { font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em; color: var(--ink); text-transform: uppercase; }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; color: var(--ink-dim);
+  }
+  .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--ink-faint); display: inline-block; box-shadow: inset 0 1px 1px rgba(0,0,0,0.4); }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 900px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.4rem; }
+  .filter-chip {
+    padding: 0.35rem 0.85rem; border-radius: 999px; border: 1px solid var(--bezel);
+    background: var(--panel); color: var(--ink-dim);
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.04em;
+    cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s;
+  }
+  .filter-chip:hover { border-color: var(--bezel-lit); color: var(--ink); }
+  .filter-chip.active { border-color: var(--copper); color: var(--ink); background: color-mix(in srgb, var(--copper) 14%, var(--panel)); }
+
+  .feed { display: flex; flex-direction: column; gap: 0.6rem; }
+  .feed-item {
+    background: var(--panel); border: 1px solid var(--bezel); border-left: 3px solid var(--bezel-lit);
+    border-radius: 4px; padding: 0.75rem 1rem; display: flex; align-items: flex-start; gap: 0.85rem;
+    animation: rise 0.35s ease both;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .feed-icon { font-size: 1.25rem; line-height: 1.4; flex-shrink: 0; }
+  .feed-body { flex: 1; min-width: 0; }
+  .feed-top { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+  .feed-message { font-size: 0.82rem; font-weight: 600; }
+  .feed-device { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); letter-spacing: 0.04em; }
+  .feed-time { margin-left: auto; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); white-space: nowrap; }
+
+  .feed-item.critical { border-left-color: var(--down); }
+  .feed-item.critical .feed-message { color: var(--down); }
+  .feed-item.notice { border-left-color: var(--warn); }
+
+  .empty {
+    text-align: center; padding: 3rem 1rem; color: var(--ink-faint);
+    font-family: var(--font-mono); font-size: 0.75rem;
+  }
+
+  .vacuum-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.1rem 1.3rem; margin-bottom: 1.6rem;
+    display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap;
+  }
+  .vacuum-icon { font-size: 2rem; line-height: 1; }
+  .vacuum-battery { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; }
+  .vacuum-battery-val { font-family: var(--font-mono); font-size: 1.6rem; font-weight: 600; color: var(--ink); }
+  .vacuum-battery-val.low { color: var(--warn); }
+  .vacuum-battery-val.critical { color: var(--down); }
+  .vacuum-battery-cap { font-size: 0.58rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); }
+  .vacuum-facts { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 180px; }
+  .vacuum-status { font-size: 0.9rem; font-weight: 600; }
+  .vacuum-sub { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
+  .vacuum-error { color: var(--down); }
+
+  footer.updated {
+    max-width: 900px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">EUFY</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+  <div class="eyebrow">ROBOVAC</div>
+  <div class="vacuum-card" id="vacuum-card">
+    <div class="empty" style="padding:0.5rem 0">Loading…</div>
+  </div>
+
+  <div class="eyebrow">SECURITY EVENT LOG</div>
+
+  <div class="filters" id="filters"></div>
+
+  <div class="feed" id="feed">
+    <div class="empty">Loading…</div>
+  </div>
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  // Icon + severity per raw eufy-security-ws event kind (or vacuum property name).
+  const KIND_META = {
+    'motion detected':          { icon: '🚶', level: '' },
+    'radar motion detected':    { icon: '📡', level: '' },
+    'person detected':          { icon: '🧍', level: '' },
+    'pet detected':             { icon: '🐾', level: '' },
+    'dog detected':             { icon: '🐶', level: '' },
+    'vehicle detected':         { icon: '🚗', level: '' },
+    'stranger person detected': { icon: '⚠️', level: 'critical' },
+    'crying detected':          { icon: '😢', level: 'notice' },
+    'sound detected':           { icon: '🔊', level: '' },
+    'rings':                    { icon: '🔔', level: 'notice' },
+    'package delivered':        { icon: '📦', level: '' },
+    'package stranded':         { icon: '📦', level: 'notice' },
+    'package taken':            { icon: '📦', level: 'critical' },
+    'someone loitering':        { icon: '🚷', level: 'critical' },
+    'low battery':              { icon: '🔋', level: 'notice' },
+    'sensor open':              { icon: '🚪', level: 'notice' },
+    'tampering':                { icon: '🛠️', level: 'critical' },
+    'jammed':                   { icon: '🔒', level: 'critical' },
+    'alarm 911':                { icon: '🚨', level: 'critical' },
+    'shake alarm':              { icon: '📳', level: 'critical' },
+    'battery fully charged':    { icon: '🔋', level: '' },
+    'cleaningStatus':           { icon: '🧹', level: '' },
+    'battery':                  { icon: '🔋', level: 'notice' },
+  };
+  const meta = kind => KIND_META[kind] || { icon: '🔔', level: '' };
+
+  function relTime(ts) {
+    const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.round(s / 60) + 'm ago';
+    if (s < 86400) return Math.round(s / 3600) + 'h ago';
+    return Math.round(s / 86400) + 'd ago';
+  }
+
+  const ACTIVITY_ICON = { docked: '🔌', cleaning: '🧹', returning: '↩️', idle: '💤' };
+
+  function fmtDuration(s) {
+    if (!s) return '0m';
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  async function loadVacuum() {
+    const card = document.getElementById('vacuum-card');
+    try {
+      const r = await fetch('/api/eufy/vacuum');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      if (d.error || !d.online) {
+        card.innerHTML = `<div class="empty" style="padding:0.5rem 0">${esc(d.error || 'Vacuum offline')}</div>`;
+        return;
+      }
+      const battCls = d.battery < 10 ? 'critical' : d.battery < 20 ? 'low' : '';
+      const icon = ACTIVITY_ICON[d.activity] || '🤖';
+      const hasError = d.error_code && d.error_code !== 0;
+      const parts = [`Mode ${esc(d.work_mode ?? '—')}`, `Fan ${esc(d.fan_speed ?? '—')}`];
+      if (d.cleaning_time_s) parts.push(`${fmtDuration(d.cleaning_time_s)} cleaned`);
+      if (d.cleaning_area_m2) parts.push(`${d.cleaning_area_m2} m²`);
+      const age = Math.round(Date.now() / 1000 - d.ts);
+      parts.push(age < 60 ? 'just now' : `${Math.round(age / 60)}m ago`);
+      card.innerHTML = `
+        <span class="vacuum-icon">${icon}</span>
+        <div class="vacuum-battery">
+          <span class="vacuum-battery-val ${battCls}">${d.battery ?? '—'}%</span>
+          <span class="vacuum-battery-cap">Battery</span>
+        </div>
+        <div class="vacuum-facts">
+          <span class="vacuum-status">${esc(d.name || 'Robovac')} · ${esc(d.work_status ?? '—')}</span>
+          <span class="vacuum-sub">${parts.join(' · ')}</span>
+          ${hasError ? `<span class="vacuum-sub vacuum-error">Error code ${esc(d.error_code)}</span>` : ''}
+        </div>
+      `;
+    } catch (e) {
+      card.innerHTML = '<div class="empty" style="padding:0.5rem 0">Could not load vacuum status.</div>';
+    }
+  }
+
+  let allEvents = [];
+  let activeDevice = 'all';
+
+  function renderFilters() {
+    const devices = ['all', ...new Set(allEvents.map(e => e.device).filter(Boolean))];
+    document.getElementById('filters').innerHTML = devices.map(d =>
+      `<button class="filter-chip${d === activeDevice ? ' active' : ''}" data-device="${esc(d)}">${d === 'all' ? 'All' : esc(d)}</button>`
+    ).join('');
+    document.querySelectorAll('.filter-chip').forEach(btn => {
+      btn.addEventListener('click', () => { activeDevice = btn.dataset.device; renderFilters(); renderFeed(); });
+    });
+  }
+
+  function renderFeed() {
+    const feed = document.getElementById('feed');
+    const events = activeDevice === 'all' ? allEvents : allEvents.filter(e => e.device === activeDevice);
+    if (!events.length) {
+      feed.innerHTML = '<div class="empty">No events yet.</div>';
+      return;
+    }
+    feed.innerHTML = events.slice(0, 200).map(e => {
+      const m = meta(e.kind);
+      const cls = m.level ? ' ' + m.level : '';
+      const when = new Date(e.ts * 1000).toLocaleString('en-GB');
+      return `<div class="feed-item${cls}">
+        <span class="feed-icon">${m.icon}</span>
+        <div class="feed-body">
+          <div class="feed-top">
+            <span class="feed-message">${esc(e.message)}</span>
+            <span class="feed-time" title="${esc(when)}">${relTime(e.ts)}</span>
+          </div>
+          ${e.device ? `<div class="feed-device">${esc(e.device)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  async function load() {
+    try {
+      const r = await fetch('/api/eufy');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      allEvents = d.events || [];
+      renderFilters();
+      renderFeed();
+      document.getElementById('status-lamp').className = 'lamp on';
+      document.getElementById('status-text').textContent =
+        allEvents.length ? `${allEvents.length} EVENTS` : 'NO EVENTS';
+      document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+    } catch (e) {
+      document.getElementById('status-lamp').className = 'lamp down';
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      if (!allEvents.length) document.getElementById('feed').innerHTML = '<div class="empty">Could not load event log.</div>';
+    }
+  }
+
+  load();
+  loadVacuum();
+  setInterval(load, 10000);
+  setInterval(loadVacuum, 10000);
+</script>
+</body>
+</html>

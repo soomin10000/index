@@ -67,16 +67,18 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr auto auto auto auto auto;
+      grid-template-rows: auto auto auto auto 1fr 1fr 1fr auto auto;
       grid-template-areas:
+        "unifi   unifi    wireless"
+        "pihole  pihole   atlas"
+        "uplink  uplink   smoke"
+        "steve   steve    steve"
+        "eufy    eufy     eufy"
         "harold  weather  weather"
         "harold  train    train"
         "bbc     bbc      darren"
         "timers  timers   timers"
-        "unifi   unifi    wireless"
-        "pihole  pihole   atlas"
-        "steve   steve    uplink"
-        "plants  plants   smoke";
+        "plants  plants   plants";
       gap: 0.85rem;
       width: 100%;
       max-width: 980px;
@@ -94,6 +96,7 @@
     #c-atlas   { grid-area: atlas; }
     #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
+    #c-eufy    { grid-area: eufy; }
     #c-plants  { grid-area: plants; }
     #c-smoke   { grid-area: smoke; }
     #c-timers  { grid-area: timers; }
@@ -206,7 +209,7 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-pihole .c-sub, #c-steve .c-sub { flex: 0 1 auto; }
+    #c-pihole .c-sub, #c-steve .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
 
     /* Status dots used inside .c-sub lines */
     .dot {
@@ -239,16 +242,17 @@
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         grid-template-areas:
+          "unifi    wireless"
+          "pihole   atlas"
+          "uplink   smoke"
+          "steve    steve"
+          "eufy     eufy"
           "weather  weather"
           "harold   train"
           "darren   darren"
           "timers   timers"
           "bbc      bbc"
-          "unifi    wireless"
-          "pihole   atlas"
-          "uplink   uplink"
-          "steve    steve"
-          "plants   smoke";
+          "plants   plants";
       }
       #c-harold .c-val { font-size: 3.2rem; }
     }
@@ -256,7 +260,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "weather" "harold" "train" "darren" "timers" "bbc" "unifi" "wireless" "pihole" "atlas" "uplink" "steve" "plants" "smoke";
+          "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
       }
     }
   </style>
@@ -270,6 +274,70 @@
 </header>
 
 <main>
+
+  <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
+    <div class="tape">Network</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
+    <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
+    <div class="c-sub" id="u-sub"></div>
+    <div class="c-foot">unifi_poller</div>
+  </a>
+
+  <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
+    <div class="tape">RF Recon</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
+    <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
+    <div class="c-sub" id="wl-sub"></div>
+    <div class="c-foot">kismet · wlx00c0cabaea2c</div>
+  </a>
+
+  <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
+    <div class="tape">DNS</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🕳️</span><span class="c-name">Pi-hole</span></div>
+    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
+    <div class="c-sub" id="pihole-sub"></div>
+    <div class="c-foot">bazza · 192.168.1.246</div>
+  </a>
+
+  <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
+    <div class="tape">DNS integrity</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌍</span><span class="c-name">Atlas Cross-check</span></div>
+    <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
+    <div class="c-sub" id="at-sub"></div>
+    <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
+  </a>
+
+  <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
+    <div class="tape">WAN</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
+    <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
+    <div class="c-sub" id="up-sub"></div>
+    <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
+  </a>
+
+  <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
+    <div class="tape">Latency</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">💨</span><span class="c-name">SmokePing</span></div>
+    <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
+    <div class="c-sub" id="sp-sub"></div>
+    <div class="c-foot">plex box · :8888 · 300 s step</div>
+  </a>
+
+  <a class="card is-loading" id="c-steve" style="--a:#b8875a" href="/steve">
+    <div class="tape">Chassis</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">steve</span></div>
+    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+    <div class="c-sub" id="steve-sub"></div>
+    <div class="c-foot">CPU · MEM · DISK · services</div>
+  </a>
+
+  <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
+    <div class="tape">Security</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🔔</span><span class="c-name">Eufy</span></div>
+    <div class="c-metric"><span class="c-val" id="ef-val">—</span><span class="c-unit" id="ef-unit"></span></div>
+    <div class="c-sub" id="ef-sub"></div>
+    <div class="c-foot">eufy-security-ws · doorbell &amp; cameras</div>
+  </a>
 
   <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
     <div class="tape">Harold</div>
@@ -320,68 +388,12 @@
     <div class="c-foot">:8196</div>
   </a>
 
-  <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
-    <div class="tape">RF Recon</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
-    <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
-    <div class="c-sub" id="wl-sub"></div>
-    <div class="c-foot">kismet · wlx00c0cabaea2c</div>
-  </a>
-
-  <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
-    <div class="tape">DNS</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🕳️</span><span class="c-name">Pi-hole</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
-    <div class="c-sub" id="pihole-sub"></div>
-    <div class="c-foot">bazza · 192.168.1.246</div>
-  </a>
-
-  <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
-    <div class="tape">DNS integrity</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌍</span><span class="c-name">Atlas Cross-check</span></div>
-    <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
-    <div class="c-sub" id="at-sub"></div>
-    <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
-  </a>
-
-  <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
-    <div class="tape">WAN</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
-    <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
-    <div class="c-sub" id="up-sub"></div>
-    <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
-  </a>
-
-  <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
-    <div class="tape">Network</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
-    <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
-    <div class="c-sub" id="u-sub"></div>
-    <div class="c-foot">unifi_poller</div>
-  </a>
-
-  <a class="card is-loading" id="c-steve" style="--a:#b8875a" href="/steve">
-    <div class="tape">Chassis</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">steve</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
-    <div class="c-sub" id="steve-sub"></div>
-    <div class="c-foot">CPU · MEM · DISK · services</div>
-  </a>
-
   <a class="card is-loading" id="c-plants" style="--a:#8bc34a" href="/moisture">
     <div class="tape">Greenhouse</div>
     <div class="c-head"><span class="lamp"></span><span class="c-icon">🪴</span><span class="c-name">Plants</span></div>
     <div class="c-metric"><span class="c-val" id="pl-val">—</span><span class="c-unit" id="pl-unit">%</span></div>
     <div class="c-sub" id="pl-sub"></div>
     <div class="c-foot">soil moisture · esp32c6 · :8082</div>
-  </a>
-
-  <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
-    <div class="tape">Latency</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">💨</span><span class="c-name">SmokePing</span></div>
-    <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
-    <div class="c-sub" id="sp-sub"></div>
-    <div class="c-foot">plex box · :8888 · 300 s step</div>
   </a>
 
 </main>
@@ -409,6 +421,14 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
     } finally { clearTimeout(t); }
+  }
+
+  async function poll(id, path, handler, offlineText = 'Offline') {
+    try {
+      handler(await get(path));
+    } catch {
+      setCard(id, { val: offlineText, unit: '' }, true);
+    }
   }
 
   function setCard(id, { val, unit, sub, accent, lamp } = {}, offline = false) {
@@ -449,241 +469,216 @@
     return '⛈️';
   }
 
-  async function harold() {
-    try {
-      const d = await get('/api/harold');
-      const dps = d.dps || {};
-      const temp = dps['3'], on = dps['1'], mode = MODE[dps['4']] ?? dps['4'] ?? '';
-      const accent = temp >= 30 ? '#ff4500' : temp >= 20 ? '#ff8c00' : '#42a5f5';
-      setCard('harold', {
-        val: temp ?? '—', unit: '°C',
-        sub: `${dot(on ? 'dot-on' : 'dot-off')}${on ? 'On' : 'Off'}${mode ? ' · '+esc(mode) : ''}`,
-        accent, lamp: on ? 'on' : undefined,
+  const harold = () => poll('harold', '/api/harold', d => {
+    const dps = d.dps || {};
+    const temp = dps['3'], on = dps['1'], mode = MODE[dps['4']] ?? dps['4'] ?? '';
+    const accent = temp >= 30 ? '#ff4500' : temp >= 20 ? '#ff8c00' : '#42a5f5';
+    setCard('harold', {
+      val: temp ?? '—', unit: '°C',
+      sub: `${dot(on ? 'dot-on' : 'dot-off')}${on ? 'On' : 'Off'}${mode ? ' · '+esc(mode) : ''}`,
+      accent, lamp: on ? 'on' : undefined,
+    });
+  });
+
+  const train = () => poll('train', '/api/train', d => {
+    const svcs = d.trainServices || [];
+    const next = svcs.find(s => s.etd !== 'Cancelled');
+    if (!next) { setCard('train', { val: 'None', sub: 'No services', lamp: 'warn' }); return; }
+    const dest = esc(next.destination?.[0]?.locationName ?? '?');
+    const std = next.std ?? '—', etd = next.etd ?? '—';
+    const time = (etd && etd !== 'On time' && etd !== '—') ? etd : std;
+    const onTime = etd === 'On time';
+    const status = onTime ? 'On time' : etd !== '—' && etd !== 'On time' ? `Exp ${esc(etd)}` : '';
+    const plat = next.platform ? ` · Plat ${esc(next.platform)}` : '';
+    setCard('train', {
+      val: time,
+      sub: `${dot(onTime ? 'dot-on' : 'dot-off')}${dest}${status ? ' · '+status : ''}${plat}`,
+      lamp: onTime ? 'on' : 'warn',
+    });
+  });
+
+  const darren = () => poll('darren', '/api/darren', d => {
+    const state = d.operation_state ?? 'Unknown';
+    const rem = mins(d.remaining_seconds);
+    const parts = [esc(d.program), d.program_phase !== 'None' ? esc(d.program_phase) : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
+    const accent = { Run:'#26c6da', Finished:'var(--ok)', Error:'var(--down)', Ready:'var(--ink-dim)', Inactive:'var(--ink-faint)' }[state] ?? 'var(--ink-dim)';
+    const lamp   = { Run:'on', Finished:'on', Error:'down' }[state];
+    setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent, lamp });
+  });
+
+  const timers = () => poll('timers', '/api/timers', d => {
+    if (d.ringing > 0) {
+      setCard('timers', {
+        val: 'Ready!', unit: '',
+        sub: `${dot('dot-off')}${d.ringing === 1 ? 'A pot needs taking off' : d.ringing + ' pots need taking off'}`,
+        accent: '#e4553a', lamp: 'warn',
       });
-    } catch { setCard('harold', { val: 'Offline', unit: '' }, true); }
-  }
-
-  async function train() {
-    try {
-      const d = await get('/api/train');
-      const svcs = d.trainServices || [];
-      const next = svcs.find(s => s.etd !== 'Cancelled');
-      if (!next) { setCard('train', { val: 'None', sub: 'No services', lamp: 'warn' }); return; }
-      const dest = esc(next.destination?.[0]?.locationName ?? '?');
-      const std = next.std ?? '—', etd = next.etd ?? '—';
-      const time = (etd && etd !== 'On time' && etd !== '—') ? etd : std;
-      const onTime = etd === 'On time';
-      const status = onTime ? 'On time' : etd !== '—' && etd !== 'On time' ? `Exp ${esc(etd)}` : '';
-      const plat = next.platform ? ` · Plat ${esc(next.platform)}` : '';
-      setCard('train', {
-        val: time,
-        sub: `${dot(onTime ? 'dot-on' : 'dot-off')}${dest}${status ? ' · '+status : ''}${plat}`,
-        lamp: onTime ? 'on' : 'warn',
+    } else if (d.next) {
+      const r = Math.max(0, Math.round(d.next.remaining));
+      const h = Math.floor(r / 3600), m = Math.floor(r % 3600 / 60), s = r % 60;
+      const val = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+      setCard('timers', {
+        val, unit: '',
+        sub: `${dot('dot-on')}${d.next.emoji} ${esc(d.next.name)} · ${d.active}/${d.max} burners`,
+        accent: '#f2a03d', lamp: 'on',
       });
-    } catch { setCard('train', { val: 'Offline' }, true); }
-  }
+    } else {
+      setCard('timers', { val: 'Idle', unit: '', sub: 'No pots on' });
+    }
+  });
 
-  async function darren() {
-    try {
-      const d = await get('/api/darren');
-      const state = d.operation_state ?? 'Unknown';
-      const rem = mins(d.remaining_seconds);
-      const parts = [esc(d.program), d.program_phase !== 'None' ? esc(d.program_phase) : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
-      const accent = { Run:'#26c6da', Finished:'var(--ok)', Error:'var(--down)', Ready:'var(--ink-dim)', Inactive:'var(--ink-faint)' }[state] ?? 'var(--ink-dim)';
-      const lamp   = { Run:'on', Finished:'on', Error:'down' }[state];
-      setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent, lamp });
-    } catch { setCard('darren', { val: 'Offline' }, true); }
-  }
+  const weather = () => poll('weather', '/api/weather', j => {
+    const d = j.data;
+    if (!d) { setCard('weather', { val: '—', unit: '' }); return; }
+    const temp  = d.temperature_2m != null ? Math.round(d.temperature_2m) : null;
+    const feels = d.apparent_temperature != null ? Math.round(d.apparent_temperature) : null;
+    const wind  = d.wind_speed_10m != null ? Math.round(d.wind_speed_10m) : null;
+    const dir   = d.wind_direction_10m != null ? compassDir(d.wind_direction_10m) : '';
+    const parts = [esc(d.description), feels != null ? `Feels ${feels}°C` : null, wind != null ? `${wind} mph ${dir}` : null].filter(Boolean);
+    const emoji = wmoEmoji(d.weather_code ?? 0, !!d.is_day);
+    document.getElementById('w-emoji').textContent = emoji;
+    setCard('weather', { val: temp ?? '—', unit: '°C', sub: parts.join(' · '), lamp: 'on' });
+  });
 
-  async function timers() {
-    try {
-      const d = await get('/api/timers');
-      if (d.ringing > 0) {
-        setCard('timers', {
-          val: 'Ready!', unit: '',
-          sub: `${dot('dot-off')}${d.ringing === 1 ? 'A pot needs taking off' : d.ringing + ' pots need taking off'}`,
-          accent: '#e4553a', lamp: 'warn',
-        });
-      } else if (d.next) {
-        const r = Math.max(0, Math.round(d.next.remaining));
-        const h = Math.floor(r / 3600), m = Math.floor(r % 3600 / 60), s = r % 60;
-        const val = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
-        setCard('timers', {
-          val, unit: '',
-          sub: `${dot('dot-on')}${d.next.emoji} ${esc(d.next.name)} · ${d.active}/${d.max} burners`,
-          accent: '#f2a03d', lamp: 'on',
-        });
-      } else {
-        setCard('timers', { val: 'Idle', unit: '', sub: 'No pots on' });
-      }
-    } catch { setCard('timers', { val: 'Offline', unit: '' }, true); }
-  }
+  const unifi = () => poll('unifi', '/api/unifi', d => {
+    if (d.error) { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
+    const fc = d.flagged_clients || [];
+    const cg = d.flagged_congestion || [];
+    const n  = fc.length;
+    const accent = n > 0 ? 'var(--down)' : 'var(--ok)';
+    const clientLines = fc.map(c => `${dot('dot-red')}${esc(c.hostname)} ${c.signal} dBm · ${c.retry_pct}% retries`).join('<br>');
+    const congLines   = cg.map(c => `${dot('dot-red')}${esc(c.ap)} ${esc(c.radio)} ${c.cu_total}% util`).join('<br>');
+    const sub = [clientLines, congLines].filter(Boolean).join('<br>') || `${dot('dot-on')}All clear`;
+    setCard('unifi', { val: n, unit: n === 1 ? ' flagged' : ' flagged', sub, accent, lamp: n > 0 ? 'down' : 'on' });
+  });
 
-  async function weather() {
-    try {
-      const j = await get('/api/weather');
-      const d = j.data;
-      if (!d) { setCard('weather', { val: '—', unit: '' }); return; }
-      const temp  = d.temperature_2m != null ? Math.round(d.temperature_2m) : null;
-      const feels = d.apparent_temperature != null ? Math.round(d.apparent_temperature) : null;
-      const wind  = d.wind_speed_10m != null ? Math.round(d.wind_speed_10m) : null;
-      const dir   = d.wind_direction_10m != null ? compassDir(d.wind_direction_10m) : '';
-      const parts = [esc(d.description), feels != null ? `Feels ${feels}°C` : null, wind != null ? `${wind} mph ${dir}` : null].filter(Boolean);
-      const emoji = wmoEmoji(d.weather_code ?? 0, !!d.is_day);
-      document.getElementById('w-emoji').textContent = emoji;
-      setCard('weather', { val: temp ?? '—', unit: '°C', sub: parts.join(' · '), lamp: 'on' });
-    } catch { setCard('weather', { val: 'Offline', unit: '' }, true); }
-  }
+  const pihole = () => poll('pihole', '/api/pihole', d => {
+    if (d.error) { setCard('pihole', { val: '?', unit: '' }, true); return; }
+    const s = d.summary;
+    const sub = `${s.total.toLocaleString()} queries · ${s.cached.toLocaleString()} cached`;
+    setCard('pihole', { val: s.percent_blocked + '%', unit: 'blocked', sub, lamp: 'on' });
+  });
 
-  async function unifi() {
-    try {
-      const d = await get('/api/unifi');
-      if (d.error) { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
-      const fc = d.flagged_clients || [];
-      const cg = d.flagged_congestion || [];
-      const n  = fc.length;
-      const accent = n > 0 ? 'var(--down)' : 'var(--ok)';
-      const clientLines = fc.map(c => `${dot('dot-red')}${esc(c.hostname)} ${c.signal} dBm · ${c.retry_pct}% retries`).join('<br>');
-      const congLines   = cg.map(c => `${dot('dot-red')}${esc(c.ap)} ${esc(c.radio)} ${c.cu_total}% util`).join('<br>');
-      const sub = [clientLines, congLines].filter(Boolean).join('<br>') || `${dot('dot-on')}All clear`;
-      setCard('unifi', { val: n, unit: n === 1 ? ' flagged' : ' flagged', sub, accent, lamp: n > 0 ? 'down' : 'on' });
-    } catch { setCard('unifi', { val: 'Offline', unit: '' }, true); }
-  }
+  const wireless = () => poll('wireless', '/api/kismet', d => {
+    if (d.error) { setCard('wireless', { val: 'No data', unit: '' }, true); return; }
+    const unknown = (d.unknown_clients || []).length;
+    const alerts  = (d.alerts || []).length;
+    const accent  = alerts > 0 ? 'var(--down)' : unknown > 0 ? 'var(--warn)' : '#a78bfa';
+    const parts   = [];
+    if (unknown > 0) parts.push(`${dot('dot-red')}${unknown} unknown clients`);
+    if (alerts > 0)  parts.push(`${dot('dot-red')}${alerts} alerts`);
+    if (!parts.length) parts.push(`${dot('dot-on')}All clear`);
+    const lamp = alerts > 0 ? 'down' : unknown > 0 ? 'warn' : 'on';
+    setCard('wireless', { val: d.device_count, unit: ' devices', sub: parts.join('<br>'), accent, lamp });
+  });
 
-  async function pihole() {
-    try {
-      const d = await get('/api/pihole');
-      if (d.error) { setCard('pihole', { val: '?', unit: '' }, true); return; }
-      const s = d.summary;
-      const sub = `${s.total.toLocaleString()} queries · ${s.cached.toLocaleString()} cached`;
-      document.getElementById('pihole-sub').textContent = sub;
-      setCard('pihole', { val: s.percent_blocked + '%', unit: 'blocked', lamp: 'on' });
-    } catch { setCard('pihole', { val: 'Offline', unit: '' }, true); }
-  }
+  const steve = () => poll('steve', '/api/steve', d => {
+    if (d.error) { setCard('steve', { val: '?', unit: '' }, true); return; }
+    const down = (d.services || []).filter(s => s.active !== 'active');
+    const restarted = (d.services || []).filter(s => s.active === 'active' && s.restarts > 0);
+    const accent = down.length ? 'var(--down)' : restarted.length ? 'var(--warn)' : 'var(--copper)';
+    const lamp   = down.length ? 'down' : restarted.length ? 'warn' : 'on';
+    const parts = [];
+    if (down.length) parts.push(`${dot('dot-red')}${down.map(s => s.name).join(', ')} down`);
+    if (restarted.length) parts.push(`${dot('dot-amber')}${restarted.length} restarted`);
+    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%`);
+    setCard('steve', {
+      val: down.length ? down.length : 'OK', unit: down.length ? ' down' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+  });
 
-  async function wireless() {
-    try {
-      const d = await get('/api/kismet');
-      if (d.error) { setCard('wireless', { val: 'No data', unit: '' }, true); return; }
-      const unknown = (d.unknown_clients || []).length;
-      const alerts  = (d.alerts || []).length;
-      const accent  = alerts > 0 ? 'var(--down)' : unknown > 0 ? 'var(--warn)' : '#a78bfa';
-      const parts   = [];
-      if (unknown > 0) parts.push(`${dot('dot-red')}${unknown} unknown clients`);
-      if (alerts > 0)  parts.push(`${dot('dot-red')}${alerts} alerts`);
-      if (!parts.length) parts.push(`${dot('dot-on')}All clear`);
-      const lamp = alerts > 0 ? 'down' : unknown > 0 ? 'warn' : 'on';
-      setCard('wireless', { val: d.device_count, unit: ' devices', sub: parts.join('<br>'), accent, lamp });
-    } catch { setCard('wireless', { val: 'Offline', unit: '' }, true); }
-  }
+  const atlas = () => poll('atlas', '/api/atlas', d => {
+    if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
+    const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
+    const flagged = (d.domains || []).filter(x => FLAGS.includes(x.status));
+    const blocked = (d.domains || []).filter(x => x.status === 'blocked').length;
+    const lamp = flagged.length ? 'down' : 'on';
+    const accent = flagged.length ? 'var(--down)' : '#4dd0e1';
+    const parts = flagged.length
+      ? [`${dot('dot-red')}${flagged.map(f => esc(f.domain)).join(', ')}`]
+      : [`${dot('dot-on')}world agrees with pi-hole`];
+    parts.push(`${blocked} blocks confirmed · ${(d.credits?.balance ?? 0).toLocaleString()} credits`);
+    setCard('atlas', { val: flagged.length, unit: ' flagged', sub: parts.join('<br>'), accent, lamp });
+  }, 'No data');
 
-  async function steve() {
-    try {
-      const d = await get('/api/steve');
-      if (d.error) { setCard('steve', { val: '?', unit: '' }, true); return; }
-      const down = (d.services || []).filter(s => s.active !== 'active');
-      const restarted = (d.services || []).filter(s => s.active === 'active' && s.restarts > 0);
-      const accent = down.length ? 'var(--down)' : restarted.length ? 'var(--warn)' : 'var(--copper)';
-      const lamp   = down.length ? 'down' : restarted.length ? 'warn' : 'on';
-      const parts = [];
-      if (down.length) parts.push(`${dot('dot-red')}${down.map(s => s.name).join(', ')} down`);
-      if (restarted.length) parts.push(`${dot('dot-amber')}${restarted.length} restarted`);
-      parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%`);
-      setCard('steve', {
-        val: down.length ? down.length : 'OK', unit: down.length ? ' down' : '',
-        sub: parts.join('<br>'), accent, lamp,
-      });
-    } catch { setCard('steve', { val: 'Offline', unit: '' }, true); }
-  }
+  const plants = () => poll('plants', '/api/moisture?hours=1', d => {
+    const ps = d.plants || [];
+    if (!ps.length) { setCard('plants', { val: 'No data', unit: '' }, true); return; }
+    const cls = p => p.age_s > 900 ? 'stale' : p.moisture_pct < 20 ? 'down' : p.moisture_pct < 35 ? 'warn' : 'ok';
+    const rank = { ok: 0, warn: 1, down: 2, stale: 3 };
+    const worst = ps.reduce((w, p) => rank[cls(p)] > rank[w] ? cls(p) : w, 'ok');
+    const DOTS = { ok: 'dot-on', warn: 'dot-amber', down: 'dot-red', stale: 'dot-off' };
+    const sub = ps.map(p => `${dot(DOTS[cls(p)])}${esc(p.plant)} ${p.moisture_pct}%${cls(p) === 'stale' ? ' · sensor silent' : ''}`).join('<br>');
+    const driest = Math.min(...ps.map(p => p.moisture_pct));
+    const accent = worst === 'ok' ? '#8bc34a' : worst === 'warn' ? 'var(--warn)' : 'var(--down)';
+    const lamp = worst === 'ok' ? 'on' : worst === 'warn' ? 'warn' : 'down';
+    setCard('plants', { val: driest, unit: '%', sub, accent, lamp });
+  });
 
-  async function atlas() {
-    try {
-      const d = await get('/api/atlas');
-      if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
-      const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
-      const flagged = (d.domains || []).filter(x => FLAGS.includes(x.status));
-      const blocked = (d.domains || []).filter(x => x.status === 'blocked').length;
-      const lamp = flagged.length ? 'down' : 'on';
-      const accent = flagged.length ? 'var(--down)' : '#4dd0e1';
-      const parts = flagged.length
-        ? [`${dot('dot-red')}${flagged.map(f => esc(f.domain)).join(', ')}`]
-        : [`${dot('dot-on')}world agrees with pi-hole`];
-      parts.push(`${blocked} blocks confirmed · ${(d.credits?.balance ?? 0).toLocaleString()} credits`);
-      setCard('atlas', { val: flagged.length, unit: ' flagged', sub: parts.join('<br>'), accent, lamp });
-    } catch { setCard('atlas', { val: 'No data', unit: '' }, true); }
-  }
+  const uplink = () => poll('uplink', '/api/uplink', d => {
+    if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
+    const up = d.probe?.connected;
+    const rtt = d.last?.rtt, loss = d.last?.loss;
+    const bgpAlert = d.bgp?.status === 'alert';
+    const expOpen = d.exposure?.status === 'open';
+    const ntpAlert = d.ntp?.status === 'alert';
+    const bad = !up || bgpAlert || expOpen || ntpAlert;
+    const lamp = bad ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
+    const accent = bad ? 'var(--down)' : '#00cc88';
+    const sub = !up
+      ? `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`
+      : bgpAlert
+      ? `${dot('dot-red')}BGP: ${esc((d.bgp.notes || ['alert'])[0])}`
+      : expOpen
+      ? `${dot('dot-red')}UDP/53 open to the internet`
+      : ntpAlert
+      ? `${dot('dot-red')}NTP clock skew vs world`
+      : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · clock ok`;
+    setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
+    const wmId = d.worldmap?.msm_id;
+    // pick the most interesting probe to open by default: one that never
+    // reached us, else whichever has the worst RTT (points arrive rtt-sorted)
+    const pts = d.worldmap?.points || [];
+    const notable = pts.find(p => !p.reached) || pts[pts.length - 1];
+    const linkEl = document.getElementById('up-path-link');
+    if (linkEl) {
+      const windowMs = 24 * 60 * 60 * 1000;
+      linkEl.innerHTML = wmId
+        ? `<a class="c-foot-link" href="https://atlas.ripe.net/pathanalysis?measurementId=${encodeURIComponent(wmId)}${notable ? `&sourceProbeId=${encodeURIComponent(notable.prb_id)}` : ''}&sequentialMode=true&center=${Date.now()}&window=${windowMs}" target="_blank" rel="noopener" onclick="event.stopPropagation()">path analysis ↗</a>`
+        : '';
+    }
+  }, 'No data');
 
-  async function plants() {
-    try {
-      const d = await get('/api/moisture?hours=1');
-      const ps = d.plants || [];
-      if (!ps.length) { setCard('plants', { val: 'No data', unit: '' }, true); return; }
-      const cls = p => p.age_s > 900 ? 'stale' : p.moisture_pct < 20 ? 'down' : p.moisture_pct < 35 ? 'warn' : 'ok';
-      const rank = { ok: 0, warn: 1, down: 2, stale: 3 };
-      const worst = ps.reduce((w, p) => rank[cls(p)] > rank[w] ? cls(p) : w, 'ok');
-      const DOTS = { ok: 'dot-on', warn: 'dot-amber', down: 'dot-red', stale: 'dot-off' };
-      const sub = ps.map(p => `${dot(DOTS[cls(p)])}${esc(p.plant)} ${p.moisture_pct}%${cls(p) === 'stale' ? ' · sensor silent' : ''}`).join('<br>');
-      const driest = Math.min(...ps.map(p => p.moisture_pct));
-      const accent = worst === 'ok' ? '#8bc34a' : worst === 'warn' ? 'var(--warn)' : 'var(--down)';
-      const lamp = worst === 'ok' ? 'on' : worst === 'warn' ? 'warn' : 'down';
-      setCard('plants', { val: driest, unit: '%', sub, accent, lamp });
-    } catch { setCard('plants', { val: 'Offline', unit: '' }, true); }
-  }
+  const smoke = () => poll('smoke', '/api/smokeping', d => {
+    const age = (Date.now() / 1000 - d.ts) / 60;
+    const stale = age > 30;
+    const up = d.ok && !stale;
+    const sub = up
+      ? `${dot('dot-on')}${(d.sections || []).map(s => esc(s.name)).join(' · ').toLowerCase()}`
+      : `${dot('dot-red')}${!d.ok ? 'smokeping unreachable' : 'poller silent ' + Math.round(age) + ' min'}`;
+    setCard('smoke', {
+      val: d.target_count, unit: ' targets', sub,
+      accent: up ? '#e8834a' : 'var(--down)', lamp: up ? 'on' : 'down',
+    });
+  }, 'No data');
 
-  async function uplink() {
-    try {
-      const d = await get('/api/uplink');
-      if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
-      const up = d.probe?.connected;
-      const rtt = d.last?.rtt, loss = d.last?.loss;
-      const bgpAlert = d.bgp?.status === 'alert';
-      const expOpen = d.exposure?.status === 'open';
-      const ntpAlert = d.ntp?.status === 'alert';
-      const bad = !up || bgpAlert || expOpen || ntpAlert;
-      const lamp = bad ? 'down' : (loss > 0 || rtt === null) ? 'warn' : 'on';
-      const accent = bad ? 'var(--down)' : '#00cc88';
-      const sub = !up
-        ? `${dot('dot-red')}probe ${esc(d.probe?.status || 'down')} — uplink may be out`
-        : bgpAlert
-        ? `${dot('dot-red')}BGP: ${esc((d.bgp.notes || ['alert'])[0])}`
-        : expOpen
-        ? `${dot('dot-red')}UDP/53 open to the internet`
-        : ntpAlert
-        ? `${dot('dot-red')}NTP clock skew vs world`
-        : `${dot(loss > 0 ? 'dot-amber' : 'dot-on')}${loss ?? '—'}% loss · bgp ok · clock ok`;
-      setCard('uplink', { val: up ? (rtt ?? '—') : 'DOWN', unit: up ? ' ms' : '', sub, accent, lamp });
-      const wmId = d.worldmap?.msm_id;
-      // pick the most interesting probe to open by default: one that never
-      // reached us, else whichever has the worst RTT (points arrive rtt-sorted)
-      const pts = d.worldmap?.points || [];
-      const notable = pts.find(p => !p.reached) || pts[pts.length - 1];
-      const linkEl = document.getElementById('up-path-link');
-      if (linkEl) {
-        const windowMs = 24 * 60 * 60 * 1000;
-        linkEl.innerHTML = wmId
-          ? `<a class="c-foot-link" href="https://atlas.ripe.net/pathanalysis?measurementId=${encodeURIComponent(wmId)}${notable ? `&sourceProbeId=${encodeURIComponent(notable.prb_id)}` : ''}&sequentialMode=true&center=${Date.now()}&window=${windowMs}" target="_blank" rel="noopener" onclick="event.stopPropagation()">path analysis ↗</a>`
-          : '';
-      }
-    } catch { setCard('uplink', { val: 'No data', unit: '' }, true); }
-  }
+  const eufy = () => poll('eufy', '/api/eufy', d => {
+    const events = d.events || [];
+    if (!events.length) { setCard('eufy', { val: '0', unit: ' today', sub: `${dot('dot-off')}No events yet`, lamp: 'on' }); return; }
+    const dayAgo = Date.now() / 1000 - 86400;
+    const today = events.filter(e => e.ts >= dayAgo).length;
+    const latest = events[0];
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - latest.ts) / 60));
+    const when = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
+    setCard('eufy', {
+      val: today, unit: ' today',
+      sub: `${dot('dot-on')}${esc(latest.message)} · ${when}`,
+      accent: '#5c9fd8', lamp: 'on',
+    });
+  }, 'No data');
 
-  async function smoke() {
-    try {
-      const d = await get('/api/smokeping');
-      const age = (Date.now() / 1000 - d.ts) / 60;
-      const stale = age > 30;
-      const up = d.ok && !stale;
-      const sub = up
-        ? `${dot('dot-on')}${(d.sections || []).map(s => esc(s.name)).join(' · ').toLowerCase()}`
-        : `${dot('dot-red')}${!d.ok ? 'smokeping unreachable' : 'poller silent ' + Math.round(age) + ' min'}`;
-      setCard('smoke', {
-        val: d.target_count, unit: ' targets', sub,
-        accent: up ? '#e8834a' : 'var(--down)', lamp: up ? 'on' : 'down',
-      });
-    } catch { setCard('smoke', { val: 'No data', unit: '' }, true); }
-  }
-
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); smoke(); }
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); smoke(); eufy(); }
   refresh();
   setInterval(refresh, 30000);
 </script>

@@ -100,6 +100,8 @@ def _unifi_status():
 PIHOLE_JSON  = DATA / 'pihole.json'
 KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
+EUFY_JSON    = DATA / 'eufy.json'
+EUFY_VACUUM_JSON = DATA / 'eufy_vacuum.json'
 STEVE_DB     = DATA / 'steve_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
@@ -1038,6 +1040,7 @@ ROUTES_GET = {
     '/moisture':             _page('moisture.html'),
     '/smokeping':            _page('smokeping.html'),
     '/steve':                _page('steve.html'),
+    '/eufy':                 _page('eufy.html'),
     '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
     # Static assets
@@ -1053,6 +1056,8 @@ ROUTES_GET = {
     '/api/uplink':           _absfile(DATA / 'uplink.json', 'application/json'),
     '/api/smokeping':        _absfile(DATA / 'smokeping.json', 'application/json'),
     '/api/steve':            _absfile(STEVE_JSON, 'application/json'),
+    '/api/eufy':             _absfile(EUFY_JSON, 'application/json'),
+    '/api/eufy/vacuum':      _absfile(EUFY_VACUUM_JSON, 'application/json'),
 
     # JSON computed on demand
     '/api/unifi':            _jsonfn(_unifi_status),
