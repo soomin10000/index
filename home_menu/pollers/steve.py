@@ -30,7 +30,7 @@ HISTORY_RETENTION_SECONDS = 48 * 3600
 
 # The home-stack services running on steve — not the generic OS units.
 SERVICES = [
-    "bad-parents", "bbc-spoofer", "bettercap", "darren",
+    "bad-parents", "bbc-spoofer", "darren",
     "eufy-listener", "eufy-security-ws", "home-menu", "kismet",
     "next-train", "unifi-poller", "weather",
 ]
