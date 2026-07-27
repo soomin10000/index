@@ -95,6 +95,19 @@
   .feed-item.critical .feed-message { color: var(--down); }
   .feed-item.notice { border-left-color: var(--warn); }
 
+  .feed-thumb {
+    width: 64px; height: 64px; object-fit: cover; border-radius: 4px; flex-shrink: 0;
+    border: 1px solid var(--bezel); cursor: zoom-in; background: var(--inset);
+  }
+
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(10,10,10,0.88); z-index: 100;
+    display: flex; align-items: center; justify-content: center; padding: 2rem;
+    cursor: zoom-out;
+  }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.6); }
+  .lightbox.hidden { display: none; }
+
   .empty {
     text-align: center; padding: 3rem 1rem; color: var(--ink-faint);
     font-family: var(--font-mono); font-size: 0.75rem;
@@ -146,6 +159,8 @@
 </main>
 
 <footer class="updated" id="updated"></footer>
+
+<div class="lightbox hidden" id="lightbox"><img id="lightbox-img" src="" alt=""></div>
 
 <script>
   const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -254,8 +269,9 @@
       const m = meta(e.kind);
       const cls = m.level ? ' ' + m.level : '';
       const when = new Date(e.ts * 1000).toLocaleString('en-GB');
+      const thumbSrc = e.snapshot ? `/eufy/snapshot/${encodeURIComponent(e.snapshot)}` : '';
       return `<div class="feed-item${cls}">
-        <span class="feed-icon">${m.icon}</span>
+        ${thumbSrc ? `<img class="feed-thumb" src="${esc(thumbSrc)}" data-full="${esc(thumbSrc)}" alt="Snapshot" loading="lazy">` : `<span class="feed-icon">${m.icon}</span>`}
         <div class="feed-body">
           <div class="feed-top">
             <span class="feed-message">${esc(e.message)}</span>
@@ -265,7 +281,19 @@
         </div>
       </div>`;
     }).join('');
+    feed.querySelectorAll('.feed-thumb').forEach(img => {
+      img.addEventListener('click', () => openLightbox(img.dataset.full));
+    });
   }
+
+  function openLightbox(src) {
+    document.getElementById('lightbox-img').src = src;
+    document.getElementById('lightbox').classList.remove('hidden');
+  }
+  document.getElementById('lightbox').addEventListener('click', () => {
+    document.getElementById('lightbox').classList.add('hidden');
+    document.getElementById('lightbox-img').src = '';
+  });
 
   async function load() {
     try {

@@ -102,6 +102,8 @@ KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
 EUFY_JSON    = DATA / 'eufy.json'
 EUFY_VACUUM_JSON = DATA / 'eufy_vacuum.json'
+EUFY_SNAPSHOTS = DATA / 'eufy_snapshots'
+_EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
 STEVE_DB     = DATA / 'steve_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
@@ -852,7 +854,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split('?')[0]
-        route = ROUTES_GET.get(path)
+        if path.startswith('/eufy/snapshot/'):
+            route = ROUTES_GET.get('/eufy/snapshot/')
+        else:
+            route = ROUTES_GET.get(path)
         if route is None:
             self.send_error(404)
             return
@@ -926,6 +931,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _res_unifi_png(self):
         self._abs_file(UNIFI_DATA / self.path.split('?')[0].split('/')[-1], 'image/png')
+
+    def _res_eufy_snapshot(self):
+        name = self.path.split('?')[0].split('/')[-1]
+        if not _EUFY_SNAPSHOT_RE.match(name):
+            self.send_error(404)
+            return
+        ct = 'image/png' if name.lower().endswith('.png') else 'image/jpeg'
+        self._abs_file(EUFY_SNAPSHOTS / name, ct)
 
     def _res_steve_restart(self):
         name = self._body_json().get('service', '')
@@ -1074,6 +1087,7 @@ ROUTES_GET = {
     '/api/smokeping/graph':  Route(Handler._res_smokeping_graph),
     '/unifi/topology.png':   Route(Handler._res_unifi_png),
     '/unifi/dashboard.png':  Route(Handler._res_unifi_png),
+    '/eufy/snapshot/':       Route(Handler._res_eufy_snapshot),
 }
 # Service API pass-throughs (all unauthenticated GETs) — see PROXIES.
 for _p, _u in PROXIES.items():
