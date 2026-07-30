@@ -11,27 +11,28 @@ PIHOLE_PASSWORD = os.environ.get("PIHOLE_PASSWORD", "")
 
 
 class PiholeClient:
-    def __init__(self, url=PIHOLE_URL, password=PIHOLE_PASSWORD):
+    def __init__(self, url=PIHOLE_URL, password=PIHOLE_PASSWORD, verify=True):
         self.url = url.rstrip("/")
         self.password = password
+        self.verify = verify
         self._sid = None
         self._login()
 
     def _login(self):
         r = requests.post(f"{self.url}/api/auth",
-                          json={"password": self.password}, timeout=10)
+                          json={"password": self.password}, timeout=10, verify=self.verify)
         r.raise_for_status()
         self._sid = r.json()["session"]["sid"]
 
     def _get(self, path, **params):
         r = requests.get(f"{self.url}/api/{path}",
                          headers={"X-FTL-SID": self._sid},
-                         params=params, timeout=10)
+                         params=params, timeout=10, verify=self.verify)
         if r.status_code == 401:
             self._login()
             r = requests.get(f"{self.url}/api/{path}",
                              headers={"X-FTL-SID": self._sid},
-                             params=params, timeout=10)
+                             params=params, timeout=10, verify=self.verify)
         r.raise_for_status()
         return r.json()
 
@@ -67,7 +68,7 @@ class PiholeClient:
         """Run a gravity update. Blocks until Pi-hole finishes (minutes with big
         lists) and returns the run's text output."""
         r = requests.post(f"{self.url}/api/action/gravity",
-                          headers={"X-FTL-SID": self._sid}, timeout=timeout)
+                          headers={"X-FTL-SID": self._sid}, timeout=timeout, verify=self.verify)
         r.raise_for_status()
         return r.text
 
@@ -75,5 +76,5 @@ class PiholeClient:
         # Pi-hole caps concurrent API sessions ("api_seats_exceeded") — free the seat
         if self._sid:
             requests.delete(f"{self.url}/api/auth",
-                            headers={"X-FTL-SID": self._sid}, timeout=10)
+                            headers={"X-FTL-SID": self._sid}, timeout=10, verify=self.verify)
             self._sid = None

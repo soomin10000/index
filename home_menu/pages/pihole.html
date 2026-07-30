@@ -62,6 +62,82 @@
     .gravity-btn:hover:not(:disabled) { border-color: #00ffcc; color: #00ffcc; }
     .gravity-btn:disabled { opacity: 0.6; cursor: default; }
 
+    /* Redundancy panel — two nodes + the sync relationship between them */
+    .redund-eyebrow {
+      font-size: 0.6rem; letter-spacing: 0.24em; color: #5a8fb8;
+      margin-bottom: 0.6rem;
+    }
+    .redund-row {
+      display: flex; align-items: stretch;
+      background: rgba(4,14,30,0.9);
+      border: 1px solid #0a2a40; border-radius: 12px;
+      overflow: hidden; margin-bottom: 1.6rem;
+    }
+    .node-card { flex: 1 1 0; min-width: 0; padding: 1.1rem 1.3rem; }
+    .node-card.is-down { opacity: 0.55; }
+    .node-head { display: flex; align-items: center; gap: 0.55rem; margin-bottom: 0.55rem; }
+    .node-role { font-size: 0.62rem; letter-spacing: 0.16em; color: #8fb8d8; font-weight: bold; }
+    .node-role small { color: #5a8fb8; font-weight: normal; letter-spacing: 0.1em; }
+    .node-host { font-size: 1.08rem; font-weight: bold; color: #cfe8ff; margin-bottom: 0.75rem; }
+    .node-ip { font-size: 0.66rem; color: #5a8fb8; font-weight: normal; margin-left: 0.45rem; }
+    .node-line {
+      display: flex; justify-content: space-between; font-size: 0.68rem;
+      padding: 0.24rem 0; color: #5a8fb8; border-top: 1px dashed rgba(90,143,184,0.15);
+    }
+    .node-line:first-of-type { border-top: none; }
+    .node-line b { color: #cfe8ff; font-weight: bold; }
+    .node-badge {
+      display: inline-block; margin-top: 0.75rem; font-size: 0.55rem; letter-spacing: 0.1em;
+      color: #00ffcc; border: 1px solid rgba(0,255,204,0.35); border-radius: 3px;
+      padding: 0.2rem 0.5rem;
+    }
+    .node-down-msg { font-size: 0.68rem; color: #ff4444; padding: 0.5rem 0 0.2rem; }
+
+    .node-lamp {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+      background: #00cc88; box-shadow: 0 0 7px 1px #00cc88;
+      animation: lamp-pulse 2.4s ease-in-out infinite;
+    }
+    .node-lamp.warn { background: #ffaa00; box-shadow: 0 0 7px 1px #ffaa00; }
+    .node-lamp.down {
+      background: #ff4444; box-shadow: 0 0 7px 1px #ff4444;
+      animation: lamp-pulse 1s ease-in-out infinite;
+    }
+    @keyframes lamp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    .rail {
+      flex: 0 0 172px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.4rem; padding: 1rem 0.7rem; text-align: center;
+      border-left: 1px solid #0a2a40; border-right: 1px solid #0a2a40;
+      background: rgba(2,10,24,0.5);
+    }
+    .rail-track { width: 100%; height: 2px; background: rgba(90,143,184,0.18); position: relative; }
+    .rail-dot {
+      position: absolute; top: 50%; left: 0; width: 6px; height: 6px; margin-top: -3px;
+      border-radius: 50%; background: #00ffcc; box-shadow: 0 0 8px 2px rgba(0,255,204,0.7);
+      animation: rail-travel 3.6s linear infinite;
+    }
+    .rail.warn .rail-dot { background: #ffaa00; box-shadow: 0 0 8px 2px rgba(255,170,0,0.7); }
+    .rail.down .rail-dot { animation: none; opacity: 0.3; background: #ff4444; box-shadow: none; left: 50%; }
+    @keyframes rail-travel {
+      0%   { left: 0%;   opacity: 0; }
+      8%   { opacity: 1; }
+      92%  { opacity: 1; }
+      100% { left: 100%; opacity: 0; }
+    }
+    .rail-badge { font-size: 0.6rem; letter-spacing: 0.12em; font-weight: bold; color: #00ffcc; margin-top: 0.1rem; }
+    .rail.warn .rail-badge { color: #ffaa00; }
+    .rail.down .rail-badge { color: #ff4444; }
+    .rail-sub { font-size: 0.54rem; color: #5a8fb8; line-height: 1.4; }
+
+    @media (max-width: 760px) {
+      .redund-row { flex-direction: column; }
+      .rail { flex-basis: auto; border-left: none; border-right: none; border-top: 1px solid #0a2a40; border-bottom: 1px solid #0a2a40; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .node-lamp, .rail-dot { animation: none !important; opacity: 1; }
+    }
+
     /* Chart cards */
     .chart-grid {
       display: grid;
@@ -97,6 +173,9 @@
 </nav>
 
 <div class="page">
+  <div class="redund-eyebrow">DNS REDUNDANCY</div>
+  <div class="redund-row" id="redund"></div>
+
   <div class="stat-grid" id="stats"></div>
 
   <div class="chart-grid wide">
@@ -165,6 +244,70 @@ const baseOpts = {
 
 function glow(color, alpha=0.12) { return color.replace('#', '#') + Math.round(alpha*255).toString(16).padStart(2,'0'); }
 
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+function fmtAge(ts) {
+  if (!ts) return 'never';
+  const h = (Date.now() / 1000 - ts) / 3600;
+  if (h < 1)  return `${Math.max(1, Math.round(h * 60))}m ago`;
+  if (h < 48) return `${h.toFixed(0)}h ago`;
+  return `${(h / 24).toFixed(0)}d ago`;
+}
+
+// The redundancy story is the point of running a second Pi-hole at all, so it
+// gets top billing: two nodes, and whether the hourly nebula-sync between them
+// is actually keeping steve's gravity list current with bazza's.
+function renderRedundancy(d) {
+  const s   = d.summary;
+  const sec = d.secondary || { reachable: false };
+
+  const priG = s.gravity.domains || 0;
+  const secG = sec.reachable ? (sec.summary.gravity.domains || 0) : 0;
+  const driftPct = (sec.reachable && priG) ? Math.abs(priG - secG) / priG * 100 : null;
+  const inSync = sec.reachable && driftPct !== null && driftPct < 2;
+
+  const state   = !sec.reachable ? 'down' : inSync ? 'ok' : 'warn';
+  const label   = !sec.reachable ? 'NO REDUNDANCY' : inSync ? 'IN SYNC' : 'DRIFT DETECTED';
+  const railSub = !sec.reachable
+    ? esc(sec.error || 'unreachable')
+    : `gravity rebuilt ${fmtAge(sec.summary.gravity.last_update)}<br>nebula-sync · hourly`;
+
+  const secBody = sec.reachable ? `
+      <div class="node-line"><span>QUERIES TODAY</span><b>${sec.summary.total.toLocaleString()}</b></div>
+      <div class="node-line"><span>BLOCKED</span><b class="c-red">${sec.summary.percent_blocked}%</b></div>
+      <div class="node-line"><span>GRAVITY</span><b class="c-teal">${(secG / 1e6).toFixed(2)}M</b></div>
+      <div class="node-line"><span>UPDATED</span><b>${fmtAge(sec.summary.gravity.last_update)}</b></div>
+      <div class="node-badge">OWN LOCAL RESOLVER</div>
+    ` : `<div class="node-down-msg">${esc(sec.error || 'Unreachable')}</div>`;
+
+  document.getElementById('redund').innerHTML = `
+    <div class="node-card">
+      <div class="node-head"><span class="node-lamp ok"></span><span class="node-role">PRIMARY</span></div>
+      <div class="node-host">bazza <span class="node-ip">192.168.1.246</span></div>
+      <div class="node-line"><span>QUERIES TODAY</span><b>${s.total.toLocaleString()}</b></div>
+      <div class="node-line"><span>BLOCKED</span><b class="c-red">${s.percent_blocked}%</b></div>
+      <div class="node-line"><span>GRAVITY</span><b class="c-teal">${(priG / 1e6).toFixed(2)}M</b></div>
+      <div class="node-line"><span>UPDATED</span><b>${fmtAge(s.gravity.last_update)}</b></div>
+    </div>
+
+    <div class="rail ${state}">
+      <div class="rail-track"><div class="rail-dot"></div></div>
+      <div class="rail-badge">${label}</div>
+      <div class="rail-sub">${railSub}</div>
+    </div>
+
+    <div class="node-card ${sec.reachable ? '' : 'is-down'}">
+      <div class="node-head">
+        <span class="node-lamp ${state}"></span>
+        <span class="node-role">SECONDARY <small>· FAILOVER</small></span>
+      </div>
+      <div class="node-host">steve <span class="node-ip">${sec.host || ''}</span></div>
+      ${secBody}
+    </div>
+  `;
+}
+
 let charts = {};
 function mkChart(id, type, data, opts={}) {
   if (charts[id]) charts[id].destroy();
@@ -197,6 +340,8 @@ async function load() {
   const r = await fetch('/api/pihole?t=' + Date.now());
   const d = await r.json();
   const s = d.summary;
+
+  renderRedundancy(d);
 
   // Stat cards
   const cacheRate = s.total ? ((s.cached / s.total) * 100).toFixed(1) : 0;
