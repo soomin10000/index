@@ -607,7 +607,8 @@
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
-    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%`);
+    const banned = d.fail2ban?.currently_banned || 0;
+    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${banned ? ` · ${banned} banned` : ''}`);
     setCard('wacky', {
       val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
       sub: parts.join('<br>'), accent, lamp,

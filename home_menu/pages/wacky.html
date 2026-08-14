@@ -144,6 +144,34 @@
     font-family: var(--font-mono); font-size: 0.68rem; color: var(--down);
   }
 
+  /* ── Fail2ban ticker ── */
+  .ticker-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1rem 0 1rem 1.6rem; display: flex; align-items: center; gap: 1rem;
+  }
+  .ticker-label {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); white-space: nowrap; flex-shrink: 0;
+  }
+  .ticker-viewport { flex: 1; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 3%, #000 97%, transparent); }
+  .ticker-track {
+    display: flex; gap: 2.4rem; width: max-content;
+    animation: ticker-scroll 22s linear infinite;
+  }
+  .ticker-track.paused { animation-play-state: paused; }
+  .ticker-viewport:hover .ticker-track { animation-play-state: paused; }
+  @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .ticker-item {
+    font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink);
+    white-space: nowrap; display: inline-flex; align-items: center; gap: 0.5rem;
+  }
+  .ticker-item .ban-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--down); flex-shrink: 0;
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--down) 60%, transparent);
+  }
+  .ticker-empty { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
+  .ticker-count { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); flex-shrink: 0; padding-right: 1.6rem; }
+
   /* ── Alerts ── */
   .ack-btn {
     padding: 0.3rem 0.8rem; border-radius: 4px; border: 1px solid var(--bezel);
@@ -215,6 +243,11 @@
       <div class="legend" id="legend"></div>
     </div>
     <canvas id="ch-history" height="70"></canvas>
+  </section>
+
+  <section>
+    <div class="eyebrow">FAIL2BAN — SSHD JAIL</div>
+    <div class="ticker-card" id="ticker-card"></div>
   </section>
 
   <section>
@@ -355,6 +388,21 @@
     } catch {}
   }
 
+  function renderTicker(f2b) {
+    const card = document.getElementById('ticker-card');
+    const ips = (f2b && f2b.banned_ips) || [];
+    if (!ips.length) {
+      card.innerHTML = `<span class="ticker-label">SSHD</span><span class="ticker-empty">No active bans</span>`;
+      return;
+    }
+    const items = ips.map(ip => `<span class="ticker-item"><span class="ban-dot"></span>${esc(ip)}</span>`).join('');
+    // duplicated once so the -50% translateX loop is seamless
+    card.innerHTML = `
+      <span class="ticker-count">${ips.length} banned</span>
+      <div class="ticker-viewport"><div class="ticker-track${ips.length < 4 ? ' paused' : ''}">${items}${items}</div></div>
+    `;
+  }
+
   function procRow(p) {
     return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
   }
@@ -437,6 +485,8 @@
 
       const diskCls = d.disk.percent > 90 ? 'down' : d.disk.percent > 75 ? 'warn' : 'ok';
       setGauge('disk', d.disk.percent, diskCls, d.disk.percent + '%', 'DISK /', `${d.disk.used_gb} / ${d.disk.total_gb} GB`);
+
+      renderTicker(d.fail2ban);
 
       const otherFailed = document.getElementById('other-failed');
       otherFailed.textContent = d.other_failed && d.other_failed.length

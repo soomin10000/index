@@ -37,6 +37,7 @@ echo '===UPTIME==='; cat /proc/uptime
 echo '===TOPCPU==='; ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head -5
 echo '===TOPMEM==='; ps -eo pid,comm,%cpu,%mem --sort=-%mem --no-headers | head -5
 echo '===FAILED==='; systemctl list-units --type=service --state=failed --no-legend --plain
+echo '===FAIL2BAN==='; sudo -n /usr/bin/fail2ban-client status sshd
 """
 
 
@@ -105,6 +106,19 @@ def _parse_failed(block):
         if parts:
             failed.append(parts[0])
     return failed
+
+
+def _parse_fail2ban(block):
+    currently = total = 0
+    ips = []
+    for line in block.splitlines():
+        if "Currently banned:" in line:
+            currently = int(line.rsplit(":", 1)[1].strip() or 0)
+        elif "Total banned:" in line:
+            total = int(line.rsplit(":", 1)[1].strip() or 0)
+        elif "Banned IP list:" in line:
+            ips = line.split(":", 1)[1].split()
+    return {"currently_banned": currently, "total_banned": total, "banned_ips": ips}
 
 
 def _log_history(ts, load1, mem_pct, disk_pct):
@@ -203,6 +217,7 @@ def fetch_and_write():
         top_cpu = _parse_procs(sections["TOPCPU"])
         top_mem = _parse_procs(sections["TOPMEM"])
         other_failed = _parse_failed(sections["FAILED"])
+        fail2ban = _parse_fail2ban(sections["FAIL2BAN"])
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"wacky poll failed: {e}")
@@ -216,6 +231,7 @@ def fetch_and_write():
         "disk": disk,
         "uptime_seconds": uptime_seconds,
         "other_failed": other_failed,
+        "fail2ban": fail2ban,
         "top_cpu": top_cpu,
         "top_mem": top_mem,
     }
