@@ -10,16 +10,19 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
-OUT        = DATA / "wacky.json"
-STATE_FILE = DATA / "wacky_state.json"
-DB_FILE    = DATA / "wacky_history.db"
+OUT         = DATA / "wacky.json"
+STATE_FILE  = DATA / "wacky_state.json"
+DB_FILE     = DATA / "wacky_history.db"
+GEOIP_CACHE = DATA / "wacky_geoip_cache.json"
 HISTORY_RETENTION_SECONDS = 48 * 3600
 
 SSH_TIMEOUT = 15
+GEOIP_TIMEOUT = 4
 
 # ── Alert thresholds (same values as steve.py) ──
 DISK_WARN_PCT = 80
@@ -118,7 +121,50 @@ def _parse_fail2ban(block):
             total = int(line.rsplit(":", 1)[1].strip() or 0)
         elif "Banned IP list:" in line:
             ips = line.split(":", 1)[1].split()
-    return {"currently_banned": currently, "total_banned": total, "banned_ips": ips}
+    return {"currently_banned": currently, "total_banned": total,
+            "banned_ips": _annotate_banned_ips(ips)}
+
+
+def _country_flag(cc):
+    if not cc or len(cc) != 2:
+        return ""
+    return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper())
+
+
+def _lookup_country(ip):
+    try:
+        url = f"http://ip-api.com/json/{ip}?fields=status,countryCode"
+        with urllib.request.urlopen(url, timeout=GEOIP_TIMEOUT) as r:
+            data = json.loads(r.read())
+        if data.get("status") == "success":
+            return data.get("countryCode")
+    except Exception:
+        pass
+    return None
+
+
+def _annotate_banned_ips(ips):
+    """Country lookups are memoised forever in GEOIP_CACHE, keyed by IP — an
+    IP's country essentially never changes, and the ban list is short, so this
+    keeps steady-state polling from hitting ip-api.com at all. Failed lookups
+    are NOT cached, so a transient failure just retries next poll."""
+    try:
+        cache = json.loads(GEOIP_CACHE.read_text()) if GEOIP_CACHE.exists() else {}
+    except Exception:
+        cache = {}
+    changed = False
+    out = []
+    for ip in ips:
+        cc = cache.get(ip)
+        if cc is None:
+            cc = _lookup_country(ip)
+            if cc:
+                cache[ip] = cc
+                changed = True
+        out.append({"ip": ip, "cc": cc, "flag": _country_flag(cc)})
+    if changed:
+        GEOIP_CACHE.write_text(json.dumps(cache))
+    return out
 
 
 def _log_history(ts, load1, mem_pct, disk_pct):

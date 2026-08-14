@@ -395,7 +395,7 @@
       card.innerHTML = `<span class="ticker-label">SSHD</span><span class="ticker-empty">No active bans</span>`;
       return;
     }
-    const items = ips.map(ip => `<span class="ticker-item"><span class="ban-dot"></span>${esc(ip)}</span>`).join('');
+    const items = ips.map(e => `<span class="ticker-item"><span class="ban-dot"></span>${e.flag ? e.flag + ' ' : ''}${esc(e.ip)}</span>`).join('');
     // duplicated once so the -50% translateX loop is seamless
     card.innerHTML = `
       <span class="ticker-count">${ips.length} banned</span>
