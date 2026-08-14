@@ -73,6 +73,7 @@
         "pihole  pihole   atlas"
         "uplink  uplink   smoke"
         "steve   steve    steve"
+        "wacky   wacky    wacky"
         "eufy    eufy     eufy"
         "harold  weather  weather"
         "harold  train    train"
@@ -96,6 +97,7 @@
     #c-atlas   { grid-area: atlas; }
     #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
+    #c-wacky   { grid-area: wacky; }
     #c-eufy    { grid-area: eufy; }
     #c-plants  { grid-area: plants; }
     #c-smoke   { grid-area: smoke; }
@@ -209,7 +211,7 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-pihole .c-sub, #c-steve .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
+    #c-pihole .c-sub, #c-steve .c-sub, #c-wacky .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
 
     /* Status dots used inside .c-sub lines */
     .dot {
@@ -246,6 +248,7 @@
           "pihole   atlas"
           "uplink   smoke"
           "steve    steve"
+          "wacky    wacky"
           "eufy     eufy"
           "weather  weather"
           "harold   train"
@@ -260,7 +263,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
+          "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "wacky" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
       }
     }
   </style>
@@ -329,6 +332,14 @@
     <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
     <div class="c-sub" id="steve-sub"></div>
     <div class="c-foot">CPU · MEM · DISK · services</div>
+  </a>
+
+  <a class="card is-loading" id="c-wacky" style="--a:#4db6ac" href="/wacky">
+    <div class="tape">Chassis</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">wacky</span></div>
+    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+    <div class="c-sub" id="wacky-sub"></div>
+    <div class="c-foot">CPU · MEM · DISK · tailscale</div>
   </a>
 
   <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
@@ -588,6 +599,21 @@
     });
   });
 
+  const wacky = () => poll('wacky', '/api/wacky', d => {
+    if (d.error) { setCard('wacky', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    const critical = alerts.filter(a => a.level === 'critical').length;
+    const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#4db6ac';
+    const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const parts = [];
+    if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
+    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%`);
+    setCard('wacky', {
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+  });
+
   const atlas = () => poll('atlas', '/api/atlas', d => {
     if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
     const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
@@ -678,7 +704,7 @@
     });
   }, 'No data');
 
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); atlas(); uplink(); plants(); smoke(); eufy(); }
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); }
   refresh();
   setInterval(refresh, 30000);
 </script>

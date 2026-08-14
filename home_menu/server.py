@@ -34,36 +34,121 @@ PROXIES = {
     '/api/timers':  'http://localhost:8196/api/status',
 }
 
-SMOKEPING_CGI = 'http://192.168.1.212:8888/smokeping/smokeping.cgi'
-# SmokePing's classic browse windows, as hours. The CGI has no data API — these
-# PNGs (displaymode=a, the AJAX-zoom renderer) are the only way to get readings out.
+# SmokePing's classic browse windows, as hours.
 SMOKEPING_RANGES = {'3h': 3, '30h': 30, '10d': 240, '1y': 8766}
+SMOKEPING_RRD_DIR = DATA / 'smokeping_rrd'
+# Dead/decommissioned probes — 100% loss / nan RTT since the card was built,
+# not worth a tile. Filtered here rather than at the CGI-scrape poller so
+# smokeping.py keeps mirroring SmokePing's own target list faithfully.
+# DNSProbes.{Download,Upload}-sivel are a menu-scrape mislabeling (the real
+# RRDs are SpeedTest throughput probes, not DNS) — permanently 404, and
+# speedtest is tracked elsewhere anyway, so just hidden rather than fixed.
+SMOKEPING_HIDDEN = {
+    'Internal.shed', 'Internal.down_front',
+    'DNSProbes.Download-sivel', 'DNSProbes.Upload-sivel',
+}
 _SP_TARGET_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$')
+_SP_PING_DS_RE = re.compile(r'ds\[ping(\d+)\]')
 _sp_cache = {}
+_sp_ping_count_cache = {}  # rrd path -> pings/interval (schema is static, cached indefinitely)
 _sp_lock = threading.Lock()
 
 
-def _smokeping_graph(target, rng):
-    """PNG for one target/range, cached briefly — a page load is ~34 tiles and
-    each image is an rrdtool render on the Plex box."""
+def _smokeping_status():
+    try:
+        data = json.loads((DATA / 'smokeping.json').read_text())
+    except Exception:
+        return {'ts': 0, 'ok': False, 'error': 'no data yet', 'sections': [], 'target_count': 0,
+                'base': ''}
+    sections = []
+    for sec in data.get('sections', []):
+        targets = [t for t in sec['targets'] if t['id'] not in SMOKEPING_HIDDEN]
+        if targets:
+            sections.append({**sec, 'targets': targets})
+    data['sections'] = sections
+    data['target_count'] = sum(len(s['targets']) for s in sections)
+    return data
+
+
+def _smokeping_ping_count(rrd):
+    """Pings/interval for one RRD — not a constant across targets. The
+    default FPing probe sends 20, but e.g. this instance's DNS-query probes
+    (DNSProbes.*) only send 5; hardcoding 20 made DEF:pingN reference a
+    nonexistent DS and killed the whole xport for those targets. Schema is
+    static for a given file, so cache indefinitely (unlike the data cache)."""
+    with _sp_lock:
+        hit = _sp_ping_count_cache.get(rrd)
+    if hit is not None:
+        return hit
+    proc = subprocess.run(['rrdtool', 'info', rrd], capture_output=True, timeout=10)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors='replace').strip() or 'rrdtool info failed')
+    nums = [int(m) for m in _SP_PING_DS_RE.findall(proc.stdout.decode(errors='replace'))]
+    count = max(nums) if nums else 0
+    with _sp_lock:
+        _sp_ping_count_cache[rrd] = count
+    return count
+
+
+def _smokeping_series(target, rng):
+    """Median/loss/smoke-band series for one target/range, read straight off
+    the local RRD mirror (pollers/smokeping_rrd.py) with `rrdtool xport`
+    instead of proxying a pre-rendered PNG from the NAS's CGI. Cached briefly
+    — a page load is ~34 tiles, each a subprocess spawn.
+
+    The "smoke" is real SmokePing's namesake effect: each interval's
+    individual ping RTTs, sorted and paired symmetrically from the outside
+    in (min+max, 2nd-min+2nd-max, ...), give nested bands. Stacking them
+    with equal, low alpha client-side lets ordinary alpha compositing do the
+    density gradient — no min/max box, no percentile math needed here."""
     key = (target, rng)
     now = time.time()
     with _sp_lock:
         hit = _sp_cache.get(key)
-        if hit and now - hit[0] < 240:
+        if hit and now - hit[0] < 60:
             return hit[1]
-    url = (f'{SMOKEPING_CGI}?displaymode=a;'
-           f'start=now-{SMOKEPING_RANGES[rng]}h;end=now;target={target}')
-    req = urllib.request.Request(url, headers={'User-Agent': 'home-menu/1.0'})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        body = r.read()
-    if not body.startswith(b'\x89PNG'):
-        raise ValueError('smokeping did not return a PNG (unknown target?)')
+    section, _, name = target.partition('.')
+    rrd = SMOKEPING_RRD_DIR / section / f'{name}.rrd'
+    if not rrd.is_file():
+        raise FileNotFoundError(f'no RRD mirrored for target {target!r}')
+    rrd = str(rrd)
+    ping_count = _smokeping_ping_count(rrd)
+    ping_defs = [f'DEF:p{i}={rrd}:ping{i}:AVERAGE' for i in range(1, ping_count + 1)]
+    ping_xports = [f'XPORT:p{i}:p{i}' for i in range(1, ping_count + 1)]
+    cmd = [
+        'rrdtool', 'xport', '--json',
+        '-s', f'now-{SMOKEPING_RANGES[rng]}h', '-e', 'now',
+        f'DEF:med={rrd}:median:AVERAGE', f'DEF:loss={rrd}:loss:AVERAGE',
+        *ping_defs, 'XPORT:med:median', 'XPORT:loss:loss', *ping_xports,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=10)
+    if proc.returncode != 0:
+        raise RuntimeError(proc.stderr.decode(errors='replace').strip() or 'rrdtool xport failed')
+    raw = json.loads(proc.stdout)
+    step, start = raw['meta']['step'], raw['meta']['start']
+    band_count = ping_count // 2
+    points = []
+    for i, row in enumerate(raw['data']):
+        med, loss = row[0], row[1]
+        pings = [p for p in row[2:] if p is not None]
+        pings.sort()
+        bands = None
+        if band_count and len(pings) == ping_count:
+            bands = [[round(pings[b] * 1000, 3), round(pings[-1 - b] * 1000, 3)]
+                     for b in range(band_count)]
+        points.append({
+            't': start + i * step,
+            'median_ms': None if med is None else round(med * 1000, 3),
+            # loss DS counts lost pings out of ping_count sent per interval
+            'loss_pct': None if loss is None or not ping_count else round(loss / ping_count * 100, 1),
+            'bands': bands,
+        })
+    result = {'target': target, 'range': rng, 'step': step, 'points': points}
     with _sp_lock:
-        _sp_cache[key] = (now, body)
+        _sp_cache[key] = (now, result)
         if len(_sp_cache) > 200:
             del _sp_cache[min(_sp_cache, key=lambda k: _sp_cache[k][0])]
-    return body
+    return result
 
 
 def _unifi_status():
@@ -105,6 +190,8 @@ EUFY_VACUUM_JSON = DATA / 'eufy_vacuum.json'
 EUFY_SNAPSHOTS = DATA / 'eufy_snapshots'
 _EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
 STEVE_DB     = DATA / 'steve_history.db'
+WACKY_JSON   = DATA / 'wacky.json'
+WACKY_DB     = DATA / 'wacky_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
@@ -172,6 +259,20 @@ def _steve_history():
         return {'points': []}
     try:
         conn = sqlite3.connect(STEVE_DB)
+        rows = conn.execute(
+            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
+        ).fetchall()
+        conn.close()
+        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
+    except Exception as e:
+        return {'points': [], 'error': str(e)}
+
+
+def _wacky_history():
+    if not WACKY_DB.exists():
+        return {'points': []}
+    try:
+        conn = sqlite3.connect(WACKY_DB)
         rows = conn.execute(
             'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
         ).fetchall()
@@ -914,7 +1015,7 @@ class Handler(BaseHTTPRequestHandler):
             hours = 24
         self._json(_moisture_data(hours))
 
-    def _res_smokeping_graph(self):
+    def _res_smokeping_series(self):
         from urllib.parse import urlparse, parse_qs
         qs = parse_qs(urlparse(self.path).query)
         target = qs.get('target', [''])[0]
@@ -923,11 +1024,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400, 'bad target or range')
             return
         try:
-            body = _smokeping_graph(target, rng)
-        except Exception as e:
-            self.send_error(502, f'smokeping unreachable: {e}')
+            data = _smokeping_series(target, rng)
+        except FileNotFoundError as e:
+            self.send_error(404, str(e))
             return
-        self._raw(body, 'image/png', {'Cache-Control': 'max-age=240'})
+        except Exception as e:
+            self.send_error(502, f'smokeping rrd read failed: {e}')
+            return
+        self._json(data)
 
     def _res_unifi_png(self):
         self._abs_file(UNIFI_DATA / self.path.split('?')[0].split('/')[-1], 'image/png')
@@ -1053,6 +1157,7 @@ ROUTES_GET = {
     '/moisture':             _page('moisture.html'),
     '/smokeping':            _page('smokeping.html'),
     '/steve':                _page('steve.html'),
+    '/wacky':                _page('wacky.html'),
     '/eufy':                 _page('eufy.html'),
     '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
@@ -1067,8 +1172,10 @@ ROUTES_GET = {
     '/api/pihole':           _absfile(PIHOLE_JSON, 'application/json'),
     '/api/atlas':            _absfile(DATA / 'atlas.json', 'application/json'),
     '/api/uplink':           _absfile(DATA / 'uplink.json', 'application/json'),
-    '/api/smokeping':        _absfile(DATA / 'smokeping.json', 'application/json'),
+    '/api/smokeping':        _jsonfn(_smokeping_status),
+    '/api/smokeping/rrd':    _absfile(DATA / 'smokeping_rrd.json', 'application/json'),
     '/api/steve':            _absfile(STEVE_JSON, 'application/json'),
+    '/api/wacky':            _absfile(WACKY_JSON, 'application/json'),
     '/api/eufy':             _absfile(EUFY_JSON, 'application/json'),
     '/api/eufy/vacuum':      _absfile(EUFY_VACUUM_JSON, 'application/json'),
 
@@ -1077,6 +1184,7 @@ ROUTES_GET = {
     '/api/unifi/events':     _jsonfn(_unifi_events),
     '/api/speedtest':        _jsonfn(_speedtest_history),
     '/api/steve/history':    _jsonfn(_steve_history),
+    '/api/wacky/history':    _jsonfn(_wacky_history),
     '/api/cross_ref':        _jsonfn(_cross_ref, auth=True),
 
     # Request-specific (parse the query string / stream raw bytes)
@@ -1084,7 +1192,7 @@ ROUTES_GET = {
     '/api/unifi/device':     Route(Handler._res_unifi_device_history),
     '/api/unifi/history':    Route(Handler._res_unifi_radio_history),
     '/api/moisture':         Route(Handler._res_moisture),
-    '/api/smokeping/graph':  Route(Handler._res_smokeping_graph),
+    '/api/smokeping/series': Route(Handler._res_smokeping_series),
     '/unifi/topology.png':   Route(Handler._res_unifi_png),
     '/unifi/dashboard.png':  Route(Handler._res_unifi_png),
     '/eufy/snapshot/':       Route(Handler._res_eufy_snapshot),

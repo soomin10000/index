@@ -17,6 +17,11 @@
       --faint:  #75685a;
       --ember:  #e8834a;
       --ember-dim: #a05a33;
+      --loss:   #c9584a;
+      /* cool signal color for the median line — it has to read as the one
+         real measurement cutting through the warm ember smoke, not blend
+         into it; same value the old PNG plate remap used for this line */
+      --signal: #7af096;
       --font-mono: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', Consolas, monospace;
       --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
     }
@@ -93,15 +98,6 @@
     #filter::placeholder { color: var(--faint); }
     #filter:focus { outline: none; border-color: var(--ember-dim); }
     .toolbar .spacer { flex: 1; }
-    .toggle {
-      font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em;
-      color: var(--dim); background: transparent;
-      border: 1px solid var(--line); border-radius: 4px;
-      padding: 0.28rem 0.65rem; cursor: pointer;
-      transition: color .15s, border-color .15s;
-    }
-    .toggle:hover { color: var(--ink); border-color: var(--line-lit); }
-    .toggle .sw { color: var(--ember); font-weight: 700; }
     #refreshed { font-size: 0.6rem; color: var(--faint); letter-spacing: 0.06em; }
 
     button:focus-visible, a:focus-visible, input:focus-visible, .tile:focus-visible {
@@ -173,7 +169,7 @@
       gap: 0.9rem;
     }
 
-    /* ── Graph tiles: plate negatives ── */
+    /* ── Graph tiles ── */
     .tile {
       background: var(--panel);
       border: 1px solid var(--line); border-radius: 8px;
@@ -194,27 +190,19 @@
     .tile-id   { font-size: 0.56rem; color: var(--faint); letter-spacing: 0.05em;
                  margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .shot { display: block; width: 100%; aspect-ratio: 697 / 310; background: #14100c; position: relative; }
-    .shot canvas, .shot img {
-      position: absolute; inset: 0; width: 100%; height: 100%;
-    }
-    .shot img { object-fit: contain; opacity: 0; pointer-events: none; }
-    /* img stays in layout (opacity 0) so loading="lazy" still fires in ember mode.
-       negative: plain CSS-inverted plate; original: raw smokeping */
-    body.mode-negative .shot canvas, body.mode-original .shot canvas { visibility: hidden; }
-    body.mode-negative .shot img {
-      opacity: 1;
-      filter: invert(0.93) hue-rotate(180deg) saturate(1.3);
-    }
-    body.mode-negative .shot { background: #101010; }
-    body.mode-original .shot img { opacity: 1; }
-    body.mode-original .shot { background: #f5f5f5; }
-    .shot img[data-broken] { visibility: hidden; }
-    .shot.broken { position: relative; }
+    .shot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
     .shot.broken::after {
-      content: 'graph unavailable'; position: absolute; inset: 0;
+      content: 'no data yet'; position: absolute; inset: 0;
       display: flex; align-items: center; justify-content: center;
       font-size: 0.62rem; color: var(--faint); letter-spacing: 0.12em;
     }
+    .shot.broken canvas { display: none; }
+    .tile-stats {
+      display: flex; gap: 0.9rem; padding: 0.4rem 0.75rem 0.55rem;
+      font-size: 0.6rem; color: var(--dim); letter-spacing: 0.03em;
+    }
+    .tile-stats b { color: var(--ink); font-weight: 400; }
+    .tile-stats .loss.warn { color: var(--loss); }
 
     .hidden { display: none !important; }
 
@@ -254,18 +242,14 @@
     }
     .box-close:hover { color: var(--ink); border-color: var(--line-lit); }
     .box-shot { background: #14100c; position: relative; aspect-ratio: 697 / 310; }
-    .box-shot canvas, .box-shot img {
-      position: absolute; inset: 0; width: 100%; height: 100%;
+    .box-shot canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .box-stats {
+      display: flex; gap: 1.4rem; padding: 0.6rem 1rem;
+      border-top: 1px solid rgba(58,47,36,0.6);
+      font-size: 0.64rem; color: var(--dim); letter-spacing: 0.03em;
     }
-    .box-shot img { object-fit: contain; opacity: 0; pointer-events: none; }
-    body.mode-negative .box-shot canvas, body.mode-original .box-shot canvas { visibility: hidden; }
-    body.mode-negative .box-shot img {
-      opacity: 1;
-      filter: invert(0.93) hue-rotate(180deg) saturate(1.3);
-    }
-    body.mode-negative .box-shot { background: #101010; }
-    body.mode-original .box-shot img { opacity: 1; }
-    body.mode-original .box-shot { background: #f5f5f5; }
+    .box-stats b { color: var(--ink); font-weight: 400; }
+    .box-stats .loss.warn { color: var(--loss); }
     .box-foot {
       display: flex; align-items: center; gap: 0.75rem;
       padding: 0.6rem 1rem;
@@ -309,7 +293,6 @@
     </div>
     <input id="filter" type="search" placeholder="filter targets…" aria-label="Filter targets">
     <span class="spacer"></span>
-    <button class="toggle" id="mode-toggle" aria-pressed="true">plates: <span class="sw" id="mode-word">negative</span></button>
     <span id="refreshed"></span>
   </div>
 </div>
@@ -337,7 +320,8 @@
       <a id="box-raw" href="#" target="_blank" rel="noopener">open in smokeping &nearr;</a>
       <button class="box-close" id="box-close" aria-label="Close">&times;</button>
     </div>
-    <div class="box-shot"><canvas id="box-canvas"></canvas><img id="box-img" alt=""></div>
+    <div class="box-shot"><canvas id="box-canvas"></canvas></div>
+    <div class="box-stats" id="box-stats"></div>
     <div class="box-foot">
       <button class="box-nav" id="box-prev">&larr; prev</button>
       <button class="box-nav" id="box-next">next &rarr;</button>
@@ -352,8 +336,9 @@
   </div>
 </div>
 
-<footer>SMOKEPING 2.9 · PLEX BOX 192.168.1.212:8888 · GRAPHS PROXIED &amp; RE-PLATED BY HOME-MENU</footer>
+<footer>SMOKEPING 2.9 ON NOOB · GRAPHS DRAWN HERE FROM THE MIRRORED RRD DATA (SEE /API/SMOKEPING/SERIES)</footer>
 
+<script src="/chart.min.js"></script>
 <script>
   const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
@@ -365,73 +350,153 @@
   let flat = [];        // flat [{id, name, section}] for lightbox prev/next
   let boxIdx = -1;
 
-  // Bucketed cache-buster: all tiles in a 5-min window share URLs, matching
-  // the probe step (300 s) and the server's 240 s proxy cache.
-  const bucket = () => Math.floor(Date.now() / 300000);
-  const graphUrl = (id, r) => `/api/smokeping/graph?target=${encodeURIComponent(id)}&range=${r}&t=${bucket()}`;
+  // Per-layer alpha for one nested smoke band — low on purpose: 10 of these
+  // stack via ordinary canvas alpha compositing to build the density
+  // gradient, so this only sets how faint the outermost edge is.
+  const BAND_ALPHA = 'rgba(232,131,74,0.08)';
+  // Cool mint against the warm smoke, so the real measurement doesn't
+  // disappear into the haze it's drawn through.
+  const SIGNAL = '#7af096';
+  const LOSS = '#c9584a';
+  const DIM = '#a8998a';
+  const GRID = 'rgba(58,47,36,0.6)';
 
-  /* ── plate re-processing: smokeping's white PNG → ember plate ──
-     Per-pixel remap of the rrdtool render: white bg → transparent, the smoke
-     (grays) onto an ember heat ramp, the median line kept mint, red grid
-     receded — then a blurred additive pass underneath for phosphor bloom.
-     Same pixels, same data; only the plate chemistry changes. */
-  function emberPlate(img, canvas) {
-    const w = img.naturalWidth, h = img.naturalHeight;
-    if (!w) return;
-    const src = document.createElement('canvas');
-    src.width = w; src.height = h;
-    const sctx = src.getContext('2d', { willReadFrequently: true });
-    sctx.drawImage(img, 0, 0);
-    const d = sctx.getImageData(0, 0, w, h);
-    const px = d.data;
-    for (let i = 0; i < px.length; i += 4) {
-      const r = px[i], g = px[i + 1], b = px[i + 2];
-      if (r > 245 && g > 245 && b > 245) {            // paper → gone
-        px[i + 3] = 0;
-      } else if (g - Math.max(r, b) > 28) {           // median line → mint
-        px[i] = 122; px[i + 1] = 240; px[i + 2] = 150;
-      } else if (r - Math.max(g, b) > 28) {           // red grid/arrows → faint rust
-        px[i] = 200; px[i + 1] = 84; px[i + 2] = 56; px[i + 3] = 80;
-      } else if (b - Math.max(r, g) > 28 || (r > 150 && b > 150 && g < 120)) {
-        px[i] = 150; px[i + 1] = 168; px[i + 2] = 255; // blue/violet loss swatches
-      } else {                                        // smoke + text: heat ramp by density
-        const t = 1 - (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-        px[i]     = 90  + 165 * t;                    // 90→255
-        px[i + 1] = 42  + 148 * t;                    // 42→190
-        px[i + 2] = 18  + 104 * t;                    // 18→122
-        px[i + 3] = Math.min(255, 300 * t);
+  const seriesUrl = (id, r) => `/api/smokeping/series?target=${encodeURIComponent(id)}&range=${r}`;
+
+  function fmtTs(t, r) {
+    const dt = new Date(t * 1000);
+    if (r === '3h' || r === '30h') {
+      return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0');
+    }
+    if (r === '10d') {
+      return dt.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + dt.getHours().toString().padStart(2, '0') + ':00';
+    }
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  }
+
+  /* A single freak ping (real, but a one-off) can blow band[0] — the
+     literal min/max of 20 samples — out to 100x the normal spread, which
+     would otherwise force Chart.js's auto Y-axis to squash the actual
+     ~1-3ms jitter into an unreadable sliver. Bounding the axis off band[1]
+     (drop just the single most extreme pair) fixes that in the common
+     case where it's one flake, while leaving band[0] itself in the data
+     so the spike still shows, just clipped rather than dominating. */
+  function yBounds(series) {
+    let lo = Infinity, hi = -Infinity;
+    for (const p of series.points) {
+      if (p.median_ms != null) { lo = Math.min(lo, p.median_ms); hi = Math.max(hi, p.median_ms); }
+      if (p.bands) {
+        const idx = Math.min(1, p.bands.length - 1);
+        lo = Math.min(lo, p.bands[idx][0]);
+        hi = Math.max(hi, p.bands[idx][1]);
       }
     }
-    sctx.putImageData(d, 0, 0);
-    canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    ctx.filter = 'blur(5px)';
-    ctx.globalAlpha = 0.55;
-    ctx.globalCompositeOperation = 'lighter';
-    ctx.drawImage(src, 0, 0);
-    ctx.restore();
-    ctx.drawImage(src, 0, 0);
+    if (!isFinite(lo)) return null;
+    const pad = (hi - lo) * 0.12 || Math.max(hi * 0.5, 0.5);
+    return { min: Math.max(0, lo - pad), max: hi + pad };
   }
 
-  /* ── plates: ember / negative / original ── */
-  const MODES = ['ember', 'negative', 'original'];
-  // 'sp-plate', not the old 'sp-mode' key — the first version wrote
-  // 'negative' there on every visit, which would pin old visitors to it
-  let mode = localStorage.getItem('sp-plate');
-  if (!MODES.includes(mode)) mode = 'ember';
-  const modeBtn = document.getElementById('mode-toggle');
-  function setMode(m) {
-    mode = m;
-    document.body.classList.remove('mode-negative', 'mode-original');
-    if (m !== 'ember') document.body.classList.add('mode-' + m);
-    document.getElementById('mode-word').textContent = m;
-    localStorage.setItem('sp-plate', m);
+  /* ── shared chart-config builder: min/max jitter band + median line,
+     loss picked out as red points. `small` drops axes/legend for tiles. */
+  function chartConfig(series, small) {
+    const labels = series.points.map(p => fmtTs(p.t, series.range));
+    const loss = series.points.map(p => p.loss_pct);
+    const pointColor = ctx => (loss[ctx.dataIndex] > 0 ? LOSS : SIGNAL);
+    const pointRadius = ctx => (loss[ctx.dataIndex] > 0 ? (small ? 2 : 3) : 0);
+    // The "smoke": 10 nested bands per point (outer = full spread of the 20
+    // pings that interval, inner = tightest pair around the median), each
+    // drawn as an equal-alpha fill. Stacked outer-to-inner, plain canvas
+    // alpha compositing does the rest — the middle gets painted over by
+    // every band so it reads darker/denser, exactly like the real thing.
+    const bandDatasets = [];
+    const bandCount = series.points.find(p => p.bands)?.bands.length || 0;
+    for (let b = 0; b < bandCount; b++) {
+      bandDatasets.push({
+        label: `band${b}lo`, data: series.points.map(p => p.bands ? p.bands[b][0] : null),
+        borderWidth: 0, pointRadius: 0, fill: false, spanGaps: false,
+      });
+      bandDatasets.push({
+        label: `band${b}hi`, data: series.points.map(p => p.bands ? p.bands[b][1] : null),
+        borderWidth: 0, pointRadius: 0, fill: '-1', spanGaps: false,
+        backgroundColor: BAND_ALPHA,
+      });
+    }
+    return {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          ...bandDatasets,
+          {
+            label: 'median', data: series.points.map(p => p.median_ms),
+            borderColor: SIGNAL, borderWidth: small ? 1.25 : 1.75, fill: false, spanGaps: false,
+            tension: 0.2, pointRadius, pointHoverRadius: 4, pointHitRadius: 8,
+            pointBackgroundColor: pointColor, pointBorderColor: pointColor,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: small ? { enabled: false } : {
+            backgroundColor: '#14100c', borderColor: '#3a2f24', borderWidth: 1,
+            titleColor: '#ede4d3', bodyColor: DIM, padding: 9,
+            filter: item => item.dataset.label === 'median',
+            callbacks: {
+              label: ctx => {
+                const l = loss[ctx.dataIndex];
+                const ms = ctx.parsed.y;
+                return ms == null ? ' no reading'
+                  : ` ${ms.toFixed(2)} ms` + (l > 0 ? ` · ${l.toFixed(0)}% loss` : '');
+              },
+            },
+          },
+        },
+        scales: small ? {
+          x: { display: false }, y: { display: false, ...yBounds(series) },
+        } : {
+          x: { grid: { color: GRID }, ticks: { color: DIM, maxTicksLimit: 10, maxRotation: 0 } },
+          y: { grid: { color: GRID }, ticks: { color: DIM, callback: v => v + ' ms' }, ...yBounds(series) },
+        },
+      },
+    };
   }
-  modeBtn.addEventListener('click', () =>
-    setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]));
-  setMode(mode);
+
+  function statsLine(series) {
+    const meds = series.points.map(p => p.median_ms).filter(v => v != null);
+    const losses = series.points.map(p => p.loss_pct).filter(v => v != null);
+    if (!meds.length) return 'no readings in range';
+    const avg = meds.reduce((a, b) => a + b, 0) / meds.length;
+    const max = Math.max(...meds);
+    const lossMax = losses.length ? Math.max(...losses) : 0;
+    const lossCls = lossMax > 0 ? 'loss warn' : 'loss';
+    return `avg <b>${avg.toFixed(2)} ms</b> · peak <b>${max.toFixed(2)} ms</b> · ` +
+      `worst loss <span class="${lossCls}">${lossMax.toFixed(0)}%</span>`;
+  }
+
+  /* ── tile charts ── */
+  const tileCharts = new Map(); // id -> Chart
+
+  async function loadTile(id, canvas, wrap, statsEl) {
+    try {
+      const r = await fetch(seriesUrl(id, range));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const series = await r.json();
+      wrap.classList.remove('broken');
+      const cfg = chartConfig(series, true);
+      const existing = tileCharts.get(id);
+      if (existing) { existing.data = cfg.data; existing.update('none'); }
+      else tileCharts.set(id, new Chart(canvas, cfg));
+      if (statsEl) statsEl.innerHTML = statsLine(series);
+    } catch (e) {
+      wrap.classList.add('broken');
+      const existing = tileCharts.get(id);
+      if (existing) { existing.destroy(); tileCharts.delete(id); }
+      if (statsEl) statsEl.textContent = '';
+    }
+  }
 
   /* ── range pills ── */
   function paintRanges() {
@@ -442,13 +507,11 @@
     range = r;
     localStorage.setItem('sp-range', r);
     paintRanges();
-    document.querySelectorAll('.shot img').forEach(img => {
-      const wrap = img.closest('.shot');
-      wrap.classList.remove('broken');
-      img.removeAttribute('data-broken');
-      img.src = graphUrl(img.dataset.target, range);
+    document.querySelectorAll('.tile').forEach(tile => {
+      const id = flat[tile.dataset.idx].id;
+      loadTile(id, tile.querySelector('canvas'), tile.querySelector('.shot'), tile.querySelector('.tile-stats'));
     });
-    if (boxIdx >= 0) boxImg.src = graphUrl(flat[boxIdx].id, range);
+    if (boxIdx >= 0) loadBox(boxIdx);
   }
   document.querySelectorAll('#ranges .range-btn, #box-ranges .range-btn').forEach(b =>
     b.addEventListener('click', () => setRange(b.dataset.r)));
@@ -457,6 +520,8 @@
   function build() {
     const host = document.getElementById('sections');
     host.innerHTML = '';
+    tileCharts.forEach(c => c.destroy());
+    tileCharts.clear();
     flat = [];
     for (const sec of data.sections || []) {
       const secEl = document.createElement('section');
@@ -479,25 +544,14 @@
         tile.innerHTML =
           `<div class="tile-cap"><span class="tile-name">${esc(t.name)}</span>` +
           `<span class="tile-id">${esc(t.id)}</span></div>` +
-          `<div class="shot"><canvas></canvas><img loading="lazy" alt="Latency graph for ${esc(t.name)}" data-target="${esc(t.id)}"></div>`;
-        const img = tile.querySelector('img');
-        const cv = tile.querySelector('canvas');
-        img.addEventListener('error', () => {
-          img.setAttribute('data-broken', '');
-          img.closest('.shot').classList.add('broken');
-          cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
-        });
-        img.addEventListener('load', () => {
-          img.removeAttribute('data-broken');
-          img.closest('.shot').classList.remove('broken');
-          emberPlate(img, cv);
-        });
-        img.src = graphUrl(t.id, range);
+          `<div class="shot"><canvas></canvas></div>` +
+          `<div class="tile-stats">loading…</div>`;
         tile.addEventListener('click', () => openBox(idx));
         tile.addEventListener('keydown', e => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBox(idx); }
         });
         grid.appendChild(tile);
+        loadTile(t.id, tile.querySelector('canvas'), tile.querySelector('.shot'), tile.querySelector('.tile-stats'));
       }
       host.appendChild(secEl);
     }
@@ -522,19 +576,34 @@
 
   /* ── lightbox ── */
   const box = document.getElementById('box');
-  const boxImg = document.getElementById('box-img');
   const boxCanvas = document.getElementById('box-canvas');
-  boxImg.addEventListener('load', () => emberPlate(boxImg, boxCanvas));
-  boxImg.addEventListener('error', () =>
-    boxCanvas.getContext('2d').clearRect(0, 0, boxCanvas.width, boxCanvas.height));
+  const boxShot = document.querySelector('.box-shot');
+  const boxStats = document.getElementById('box-stats');
+  let boxChart = null;
+  async function loadBox(idx) {
+    const t = flat[idx];
+    try {
+      const r = await fetch(seriesUrl(t.id, range));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const series = await r.json();
+      boxShot.classList.remove('broken');
+      const cfg = chartConfig(series, false);
+      if (boxChart) { boxChart.data = cfg.data; boxChart.options = cfg.options; boxChart.update(); }
+      else boxChart = new Chart(boxCanvas, cfg);
+      boxStats.innerHTML = statsLine(series);
+    } catch (e) {
+      boxShot.classList.add('broken');
+      if (boxChart) { boxChart.destroy(); boxChart = null; }
+      boxStats.textContent = '';
+    }
+  }
   function openBox(idx) {
     boxIdx = (idx + flat.length) % flat.length;
     const t = flat[boxIdx];
     document.getElementById('box-title').textContent = t.name;
     document.getElementById('box-id').textContent = `${t.section} · ${t.id}`;
     document.getElementById('box-raw').href = `${data.base}?target=${encodeURIComponent(t.id)}`;
-    boxImg.alt = `Latency graph for ${t.name}`;
-    boxImg.src = graphUrl(t.id, range);
+    loadBox(boxIdx);
     box.classList.add('open');
     document.getElementById('box-close').focus();
   }
@@ -551,6 +620,7 @@
   });
 
   /* ── status line ── */
+  let rrdStatus = null;
   function paintStatus() {
     const dot = document.getElementById('dot');
     const stat = document.getElementById('stat-text');
@@ -560,16 +630,24 @@
     stat.textContent = `${data.ok ? 'live' : 'unreachable'} · ${data.target_count} targets · polled ${age < 1 ? 'just now' : age + ' m ago'}`;
     document.getElementById('raw-link').href = data.base;
     document.getElementById('sub-line').innerHTML =
-      `<b>${data.target_count}</b> targets · probed every <b>300 s</b> from the plex box · ` +
+      `<b>${data.target_count}</b> targets · probed every <b>300 s</b> on noob · ` +
       `${(data.sections || []).map(s => esc(s.name)).join(' · ').toLowerCase()}`;
     const notice = document.getElementById('notice');
+    const rrdAge = rrdStatus ? Math.round((Date.now() / 1000 - rrdStatus.ts) / 60) : null;
     if (!data.ok) {
-      notice.innerHTML = `<b>SmokePing is not answering</b> (${esc(data.error)}). ` +
-        `Showing the last known target list — graphs will come up blank until it is back.`;
+      notice.innerHTML = `<b>SmokePing's target list is not answering</b> (${esc(data.error)}). ` +
+        `Showing the last known target list — graphs still come from the RRD mirror below.`;
+      notice.classList.remove('hidden');
+    } else if (rrdStatus && !rrdStatus.ok) {
+      notice.innerHTML = `<b>RRD mirror sync failed</b> (${esc(rrdStatus.error)}). ` +
+        `Graphs may be stale or blank until pollers/smokeping_rrd.py recovers.`;
+      notice.classList.remove('hidden');
+    } else if (rrdAge != null && rrdAge > 15) {
+      notice.innerHTML = `<b>RRD mirror is ${rrdAge} minutes old</b> — the sync poller may have stopped.`;
       notice.classList.remove('hidden');
     } else if (stale) {
-      notice.innerHTML = `<b>Target list is ${age} minutes old</b> — the poller may have stopped. ` +
-        `Graphs are still fetched live.`;
+      notice.innerHTML = `<b>Target list is ${age} minutes old</b> — the menu poller may have stopped. ` +
+        `Graphs are still current.`;
       notice.classList.remove('hidden');
     } else {
       notice.classList.add('hidden');
@@ -579,9 +657,13 @@
   /* ── load ── */
   async function load(rebuild) {
     try {
-      const r = await fetch('/api/smokeping');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      data = await r.json();
+      const [dr, rr] = await Promise.all([
+        fetch('/api/smokeping'),
+        fetch('/api/smokeping/rrd').catch(() => null),
+      ]);
+      if (!dr.ok) throw new Error('HTTP ' + dr.status);
+      data = await dr.json();
+      rrdStatus = (rr && rr.ok) ? await rr.json() : rrdStatus;
     } catch (e) {
       document.getElementById('empty').textContent =
         'No smokeping data yet — run pollers/smokeping.py once, or check that steve can reach 192.168.1.212.';
@@ -594,22 +676,25 @@
     if (rebuild) build();
   }
 
-  /* Re-point tile images at the current bucket (browser refetches only when
-     the 5-min bucket rolls over). */
+  /* Charts redraw only when the 5-min probe bucket rolls over — matches the
+     sync poller's cadence, no point refetching more often than that. */
+  const bucket = () => Math.floor(Date.now() / 300000);
   let lastBucket = bucket();
-  function refreshShots() {
+  function refreshCharts() {
     if (bucket() === lastBucket) return;
     lastBucket = bucket();
-    document.querySelectorAll('.shot img').forEach(img => {
-      img.src = graphUrl(img.dataset.target, range);
+    document.querySelectorAll('.tile').forEach(tile => {
+      const id = flat[tile.dataset.idx].id;
+      loadTile(id, tile.querySelector('canvas'), tile.querySelector('.shot'), tile.querySelector('.tile-stats'));
     });
+    if (boxIdx >= 0) loadBox(boxIdx);
     document.getElementById('refreshed').textContent =
-      'plates refreshed ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+      'graphs refreshed ' + new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   }
 
   paintRanges();
   load(true);
-  setInterval(() => { load(false); refreshShots(); }, 60000);
+  setInterval(() => { load(false); refreshCharts(); }, 60000);
 </script>
 </body>
 </html>
