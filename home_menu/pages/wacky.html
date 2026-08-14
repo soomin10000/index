@@ -165,10 +165,6 @@
     font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink);
     white-space: nowrap; display: inline-flex; align-items: center; gap: 0.5rem;
   }
-  .ticker-item .ban-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--down); flex-shrink: 0;
-    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--down) 60%, transparent);
-  }
   .ticker-empty { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
   .ticker-count { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); flex-shrink: 0; padding-right: 1.6rem; }
 
@@ -395,7 +391,7 @@
       card.innerHTML = `<span class="ticker-label">SSHD</span><span class="ticker-empty">No active bans</span>`;
       return;
     }
-    const items = ips.map(e => `<span class="ticker-item"><span class="ban-dot"></span>${e.flag ? e.flag + ' ' : ''}${esc(e.ip)}</span>`).join('');
+    const items = ips.map(e => `<span class="ticker-item">${e.flag ? e.flag + ' ' : ''}${esc(e.ip)}</span>`).join('');
     // duplicated once so the -50% translateX loop is seamless
     card.innerHTML = `
       <span class="ticker-count">${ips.length} banned</span>
