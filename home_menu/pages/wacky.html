@@ -392,10 +392,12 @@
       return;
     }
     const items = ips.map(e => `<span class="ticker-item">${e.flag ? e.flag + ' ' : ''}${esc(e.ip)}</span>`).join('');
-    // duplicated once so the -50% translateX loop is seamless
+    // Short lists render once and don't scroll — the duplicate-for-seamless-loop
+    // trick only makes sense once there's enough content to actually scroll past.
+    const scrolls = ips.length >= 4;
     card.innerHTML = `
       <span class="ticker-count">${ips.length} banned</span>
-      <div class="ticker-viewport"><div class="ticker-track${ips.length < 4 ? ' paused' : ''}">${items}${items}</div></div>
+      <div class="ticker-viewport"><div class="ticker-track${scrolls ? '' : ' paused'}">${items}${scrolls ? items : ''}</div></div>
     `;
   }
 
