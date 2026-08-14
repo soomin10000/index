@@ -202,6 +202,12 @@
   .rows .row:last-child { border-bottom: none; }
   .rows .row span:first-child { color: var(--ink-faint); }
   .rows .row .proc-name { color: var(--ink); }
+  .rows .row.offender-row {
+    grid-template-columns: 1fr 4rem 8rem;
+  }
+  .offender-row .offender-ip { color: var(--ink); }
+  .offender-row .offender-count { color: var(--warn); text-align: right; }
+  .offender-row .offender-last { color: var(--ink-faint); text-align: right; }
 
   footer.updated {
     max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
@@ -244,6 +250,13 @@
   <section>
     <div class="eyebrow">FAIL2BAN — SSHD JAIL</div>
     <div class="ticker-card" id="ticker-card"></div>
+  </section>
+
+  <section id="offenders-section" style="display:none">
+    <div class="eyebrow">REPEAT OFFENDERS</div>
+    <div class="manifest-card">
+      <div class="rows" id="offenders"></div>
+    </div>
   </section>
 
   <section>
@@ -401,6 +414,26 @@
     `;
   }
 
+  function fmtAgo(ts) {
+    const mins = Math.max(0, Math.round((Date.now() / 1000 - ts) / 60));
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+    return `${Math.round(mins / 1440)}d ago`;
+  }
+
+  function renderOffenders(offenders) {
+    const section = document.getElementById('offenders-section');
+    if (!offenders || !offenders.length) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    document.getElementById('offenders').innerHTML = offenders.map(o => `
+      <div class="row offender-row">
+        <span class="offender-ip">${o.flag ? o.flag + ' ' : ''}${esc(o.ip)}</span>
+        <span class="offender-count">${o.count}×</span>
+        <span class="offender-last">last ${fmtAgo(o.last_ts)}</span>
+      </div>`).join('');
+  }
+
   function procRow(p) {
     return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
   }
@@ -485,6 +518,7 @@
       setGauge('disk', d.disk.percent, diskCls, d.disk.percent + '%', 'DISK /', `${d.disk.used_gb} / ${d.disk.total_gb} GB`);
 
       renderTicker(d.fail2ban);
+      renderOffenders(d.fail2ban?.repeat_offenders);
 
       const otherFailed = document.getElementById('other-failed');
       otherFailed.textContent = d.other_failed && d.other_failed.length

@@ -20,9 +20,12 @@ STATE_FILE  = DATA / "wacky_state.json"
 DB_FILE     = DATA / "wacky_history.db"
 GEOIP_CACHE = DATA / "wacky_geoip_cache.json"
 HISTORY_RETENTION_SECONDS = 48 * 3600
+BAN_HISTORY_RETENTION_SECONDS = 180 * 86400
 
 SSH_TIMEOUT = 15
 GEOIP_TIMEOUT = 4
+REPEAT_OFFENDER_MIN = 2
+REPEAT_OFFENDER_TOP_N = 10
 
 # ── Alert thresholds (same values as steve.py) ──
 DISK_WARN_PCT = 80
@@ -167,6 +170,44 @@ def _annotate_banned_ips(ips):
     return out
 
 
+def _log_ban_events(ts, current, prev_ips):
+    """One row per ban *episode* — logged only when an IP transitions from
+    not-banned to banned, not on every poll it stays banned. Repeat offenders
+    are IPs with multiple episodes (banned, bantime expired, banned again),
+    not just ones that happen to still be banned right now."""
+    new_ips = [e for e in current if e["ip"] not in prev_ips]
+    if not new_ips:
+        return
+    conn = sqlite3.connect(DB_FILE)
+    conn.execute("CREATE TABLE IF NOT EXISTS ban_history (ip TEXT, cc TEXT, ts INTEGER)")
+    conn.executemany(
+        "INSERT INTO ban_history (ip, cc, ts) VALUES (?, ?, ?)",
+        [(e["ip"], e["cc"], ts) for e in new_ips],
+    )
+    cutoff = ts - BAN_HISTORY_RETENTION_SECONDS
+    conn.execute("DELETE FROM ban_history WHERE ts < ?", (cutoff,))
+    conn.commit()
+    conn.close()
+
+
+def _repeat_offenders():
+    if not DB_FILE.exists():
+        return []
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute("CREATE TABLE IF NOT EXISTS ban_history (ip TEXT, cc TEXT, ts INTEGER)")
+        rows = conn.execute(
+            "SELECT ip, cc, COUNT(*), MIN(ts), MAX(ts) FROM ban_history "
+            "GROUP BY ip HAVING COUNT(*) >= ? ORDER BY COUNT(*) DESC, MAX(ts) DESC LIMIT ?",
+            (REPEAT_OFFENDER_MIN, REPEAT_OFFENDER_TOP_N),
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return []
+    return [{"ip": ip, "cc": cc, "flag": _country_flag(cc), "count": count,
+             "first_ts": first, "last_ts": last} for ip, cc, count, first, last in rows]
+
+
 def _log_history(ts, load1, mem_pct, disk_pct):
     conn = sqlite3.connect(DB_FILE)
     conn.execute(
@@ -192,8 +233,8 @@ def _load_state():
         return None
 
 
-def _save_state(active_alerts):
-    STATE_FILE.write_text(json.dumps({"active_alerts": active_alerts}))
+def _save_state(active_alerts, banned_ips):
+    STATE_FILE.write_text(json.dumps({"active_alerts": active_alerts, "banned_ips": banned_ips}))
 
 
 def _disk_pct_hour_ago(now):
@@ -286,9 +327,13 @@ def fetch_and_write():
     alerts, active_alerts = _build_alerts(data, ts, prev)
     data["alerts"] = alerts
 
+    prev_banned_ips = set((prev or {}).get("banned_ips", []))
+    _log_ban_events(ts, fail2ban["banned_ips"], prev_banned_ips)
+    fail2ban["repeat_offenders"] = _repeat_offenders()
+
     OUT.write_text(json.dumps(data, indent=2))
     _log_history(ts, load["1m"], mem["percent"], disk["percent"])
-    _save_state(active_alerts)
+    _save_state(active_alerts, [e["ip"] for e in fail2ban["banned_ips"]])
 
     print(f"Saved {OUT} — {len(alerts)} alerts, load {load['1m']}, mem {mem['percent']}%, disk {disk['percent']}%")
 
