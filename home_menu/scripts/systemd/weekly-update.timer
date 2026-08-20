@@ -1,0 +1,11 @@
+[Unit]
+Description=Run weekly-update.service every Monday morning
+
+[Timer]
+# 05:30 UTC Monday — after the 04:30 kismet restart cron job finishes.
+OnCalendar=Mon *-*-* 05:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
