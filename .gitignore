@@ -47,6 +47,7 @@ homelab_mcp/
 
 # local-only, not part of this repo
 task_tracker/
+flows/
 
 # MCP client config — bakes in a machine-specific absolute path
 .mcp.json
