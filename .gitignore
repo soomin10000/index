@@ -43,3 +43,13 @@ now_playing/
 watched_pot/
 weather/
 whats_darren_doing/
+homelab_mcp/
+
+# local-only, not part of this repo
+task_tracker/
+
+# MCP client config — bakes in a machine-specific absolute path
+.mcp.json
+
+# packet captures — may contain plaintext LAN traffic, never publish
+gateway-pcap-*.tar.gz
