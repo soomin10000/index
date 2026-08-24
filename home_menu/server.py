@@ -182,6 +182,57 @@ def _unifi_status():
         return {'error': str(e)}
 
 
+STALE_SECONDS = 900  # poller data older than this reads as "can't tell / probably down"
+
+
+def _freshness(path):
+    """Returns (data_dict_or_None, is_fresh_bool) for a poller JSON file, keyed off its own 'ts'."""
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return None, False
+    ts = data.get('ts')
+    fresh = isinstance(ts, (int, float)) and (time.time() - ts) < STALE_SECONDS
+    return data, fresh
+
+
+def _is_it_broken_status():
+    checks = {}
+
+    up, up_fresh = _freshness(DATA / 'uplink.json')
+    if not up_fresh or not (up or {}).get('probe', {}).get('connected'):
+        checks['internet'] = {'state': 'down', 'detail': "Can't reach the internet right now."}
+    elif (up.get('bgp') or {}).get('status') != 'ok':
+        checks['internet'] = {'state': 'warn', 'detail': "Online, but something's off with the connection."}
+    else:
+        checks['internet'] = {'state': 'ok', 'detail': 'Internet is up.'}
+
+    wifi, wifi_fresh = _freshness(DEVICES_JSON)
+    devices = (wifi or {}).get('devices') or []
+    if not wifi_fresh:
+        checks['wifi'] = {'state': 'down', 'detail': "Router/WiFi isn't answering."}
+    elif not devices:
+        checks['wifi'] = {'state': 'warn', 'detail': 'WiFi is up, but no devices are showing as connected.'}
+    else:
+        n = len(devices)
+        checks['wifi'] = {'state': 'ok', 'detail': f"{n} device{'s' if n != 1 else ''} connected."}
+
+    st = _unifi_status().get('speedtest')
+    if not st:
+        checks['speed'] = {'state': 'warn', 'detail': 'No speed test yet.'}
+    else:
+        age_min = int((time.time() - st['ts']) / 60)
+        age = f'{age_min} min ago' if age_min < 60 else f'{age_min // 60}h ago'
+        checks['speed'] = {
+            'state': 'ok',
+            'detail': f"{st['download_mbps']:.0f}↓ / {st['upload_mbps']:.0f}↑ Mbps · {age}",
+        }
+
+    order = {'ok': 0, 'warn': 1, 'down': 2}
+    overall = max((c['state'] for c in checks.values()), key=order.get)
+    return {'overall': overall, 'checks': checks, 'ts': int(time.time())}
+
+
 PIHOLE_JSON  = DATA / 'pihole.json'
 KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
@@ -1161,6 +1212,7 @@ ROUTES_GET = {
     '/wacky':                _page('wacky.html'),
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
+    '/is-it-broken':         _page('is-it-broken.html'),
     '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
     # Static assets
@@ -1184,6 +1236,7 @@ ROUTES_GET = {
 
     # JSON computed on demand
     '/api/unifi':            _jsonfn(_unifi_status),
+    '/api/is-it-broken':     _jsonfn(_is_it_broken_status),
     '/api/unifi/events':     _jsonfn(_unifi_events),
     '/api/speedtest':        _jsonfn(_speedtest_history),
     '/api/steve/history':    _jsonfn(_steve_history),

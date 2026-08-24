@@ -67,8 +67,9 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: auto auto auto auto 1fr 1fr 1fr auto auto;
+      grid-template-rows: auto auto auto auto auto 1fr 1fr 1fr auto auto;
       grid-template-areas:
+        "isitbroken isitbroken isitbroken"
         "unifi   unifi    wireless"
         "pihole  pihole   atlas"
         "uplink  uplink   smoke"
@@ -92,6 +93,7 @@
     #c-train   { grid-area: train; }
     #c-bbc     { grid-area: bbc; }
     #c-darren  { grid-area: darren; }
+    #c-isitbroken { grid-area: isitbroken; }
     #c-unifi    { grid-area: unifi; }
     #c-wireless { grid-area: wireless; }
     #c-pihole  { grid-area: pihole; }
@@ -246,6 +248,7 @@
         grid-template-columns: 1fr 1fr;
         grid-template-rows: auto;
         grid-template-areas:
+          "isitbroken isitbroken"
           "unifi    wireless"
           "pihole   atlas"
           "uplink   smoke"
@@ -265,7 +268,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "wacky" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
+          "isitbroken" "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "wacky" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
       }
     }
   </style>
@@ -279,6 +282,14 @@
 </header>
 
 <main>
+
+  <a class="card is-loading" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
+    <div class="tape">Family</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">🚦</span><span class="c-name">Is It Broken?</span></div>
+    <div class="c-metric"><span class="c-val" id="iib-val">—</span></div>
+    <div class="c-sub" id="iib-sub"></div>
+    <div class="c-foot">Kid-friendly status page for "nothing is working"</div>
+  </a>
 
   <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
     <div class="tape">Network</div>
@@ -715,6 +726,17 @@
     });
   }, 'No data');
 
+  const isItBroken = () => poll('isitbroken', '/api/is-it-broken', d => {
+    const STATE = { ok: ['All good', 'on'], warn: ['Meh', 'warn'], down: ['Down', 'down'] };
+    const [val, lamp] = STATE[d.overall] || ['?', 'warn'];
+    const bad = Object.entries(d.checks || {}).filter(([, c]) => c.state !== 'ok');
+    const sub = bad.length
+      ? bad.map(([, c]) => `${dot(c.state === 'down' ? 'dot-red' : 'dot-amber')}${esc(c.detail)}`).join('<br>')
+      : 'Internet · WiFi · Speed all fine';
+    const accent = lamp === 'down' ? 'var(--down)' : lamp === 'warn' ? 'var(--warn)' : '#f2c94c';
+    setCard('isitbroken', { val, sub, lamp, accent });
+  }, 'No data');
+
   const arr = () => poll('arr', '/api/arr', d => {
     if (d.error) { setCard('arr', { val: '?', unit: '' }, true); return; }
     const services = d.services || {};
@@ -731,7 +753,7 @@
     });
   }, 'No data');
 
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); arr(); }
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); arr(); isItBroken(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
