@@ -48,6 +48,7 @@
     #banner .emoji { font-size: 3.6rem; line-height: 1; margin-bottom: 0.5rem; }
     #banner .headline { font-size: 1.5rem; font-weight: 700; line-height: 1.25; }
     #banner .subline { margin-top: 0.5rem; font-size: 0.95rem; color: var(--ink-dim); }
+    #banner .client-line { margin-top: 0.6rem; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.03em; color: var(--ink-faint); }
 
     #banner.ok   { background: color-mix(in srgb, var(--ok) 16%, var(--card));   border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); }
     #banner.warn { background: color-mix(in srgb, var(--warn) 16%, var(--card)); border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
@@ -104,6 +105,7 @@
       <div class="emoji" id="banner-emoji">🤔</div>
       <div class="headline" id="banner-headline">Checking…</div>
       <div class="subline" id="banner-subline"></div>
+      <div class="client-line" id="banner-client"></div>
     </div>
 
     <div id="grownup">👋 Go tell a grown-up something's not working.</div>
@@ -160,6 +162,8 @@
       document.getElementById('banner-emoji').textContent = b.emoji;
       document.getElementById('banner-headline').textContent = b.headline;
       document.getElementById('banner-subline').textContent = b.subline;
+      document.getElementById('banner-client').textContent =
+        data.client_ip ? `Checking from ${data.client_ip}${data.client_device ? ' · ' + data.client_device : ''}` : '';
       document.getElementById('grownup').classList.toggle('show', data.overall !== 'ok');
 
       for (const [key, meta] of Object.entries(CHECK_META)) {

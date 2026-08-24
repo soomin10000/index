@@ -233,6 +233,16 @@ def _is_it_broken_status():
     return {'overall': overall, 'checks': checks, 'ts': int(time.time())}
 
 
+def _device_from_ua(ua):
+    ua = ua or ''
+    if 'iPad' in ua: return 'iPad'
+    if 'iPhone' in ua: return 'iPhone'
+    if 'Android' in ua: return 'Android'
+    if 'Macintosh' in ua: return 'Mac'
+    if 'Windows' in ua: return 'Windows'
+    return 'a device'
+
+
 PIHOLE_JSON  = DATA / 'pihole.json'
 KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
@@ -1058,6 +1068,12 @@ class Handler(BaseHTTPRequestHandler):
             days = 3
         self._json(_unifi_radio_history(days))
 
+    def _res_is_it_broken(self):
+        status = _is_it_broken_status()
+        status['client_ip'] = self.client_address[0]
+        status['client_device'] = _device_from_ua(self.headers.get('User-Agent'))
+        self._json(status)
+
     def _res_moisture(self):
         from urllib.parse import urlparse, parse_qs
         qs = parse_qs(urlparse(self.path).query)
@@ -1236,7 +1252,7 @@ ROUTES_GET = {
 
     # JSON computed on demand
     '/api/unifi':            _jsonfn(_unifi_status),
-    '/api/is-it-broken':     _jsonfn(_is_it_broken_status),
+    '/api/is-it-broken':     Route(Handler._res_is_it_broken),
     '/api/unifi/events':     _jsonfn(_unifi_events),
     '/api/speedtest':        _jsonfn(_speedtest_history),
     '/api/steve/history':    _jsonfn(_steve_history),
