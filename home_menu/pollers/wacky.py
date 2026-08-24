@@ -44,6 +44,7 @@ echo '===TOPCPU==='; ps -eo pid,comm,%cpu,%mem --sort=-%cpu --no-headers | head 
 echo '===TOPMEM==='; ps -eo pid,comm,%cpu,%mem --sort=-%mem --no-headers | head -5
 echo '===FAILED==='; systemctl list-units --type=service --state=failed --no-legend --plain
 echo '===FAIL2BAN==='; sudo -n /usr/bin/fail2ban-client status sshd
+echo '===LANPIHOLE==='; curl -s -o /dev/null -w '%{http_code} %{time_total}' --max-time 5 http://192.168.1.246/admin/ || echo '000 0'
 """
 
 
@@ -103,6 +104,13 @@ def _parse_procs(block, n=5):
         pid, comm, cpu, mem = parts
         procs.append({"pid": pid, "name": comm, "cpu": float(cpu), "mem": float(mem)})
     return procs
+
+
+def _parse_lan_check(block):
+    parts = block.strip().split()
+    code = int(parts[0]) if parts else 0
+    latency_ms = round(float(parts[1]) * 1000, 1) if len(parts) > 1 else None
+    return {"reachable": code in (200, 301, 302, 401, 403), "http_code": code, "latency_ms": latency_ms}
 
 
 def _parse_failed(block):
@@ -282,6 +290,10 @@ def _build_alerts(data, now, prev):
     for unit in data["other_failed"]:
         candidates[f"failed_{unit}"] = ("warn", "Unit failed", f"{unit} is in a failed state")
 
+    if not data["lan"]["pihole"]["reachable"]:
+        candidates["lan_pihole"] = ("warn", "Pi-hole unreachable from wacky",
+            f"http {data['lan']['pihole']['http_code']} via the tailnet subnet route")
+
     active_alerts = {}
     alerts = []
     for key, (level, header, text) in candidates.items():
@@ -305,6 +317,7 @@ def fetch_and_write():
         top_mem = _parse_procs(sections["TOPMEM"])
         other_failed = _parse_failed(sections["FAILED"])
         fail2ban = _parse_fail2ban(sections["FAIL2BAN"])
+        lan = {"pihole": _parse_lan_check(sections["LANPIHOLE"])}
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"wacky poll failed: {e}")
@@ -319,6 +332,7 @@ def fetch_and_write():
         "uptime_seconds": uptime_seconds,
         "other_failed": other_failed,
         "fail2ban": fail2ban,
+        "lan": lan,
         "top_cpu": top_cpu,
         "top_mem": top_mem,
     }

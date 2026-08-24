@@ -209,6 +209,14 @@
   .offender-row .offender-count { color: var(--warn); text-align: right; }
   .offender-row .offender-last { color: var(--ink-faint); text-align: right; }
 
+  /* ── LAN reachability ── */
+  .rows .row.lan-row {
+    grid-template-columns: 1fr 4rem 6rem; align-items: center;
+  }
+  .lan-row .lan-name { color: var(--ink); display: flex; align-items: center; gap: 0.5rem; }
+  .lan-row .lan-code { text-align: right; }
+  .lan-row .lan-latency { color: var(--ink-faint); text-align: right; }
+
   footer.updated {
     max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
     font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
@@ -261,6 +269,13 @@
 
   <section>
     <div class="advisory" id="other-failed"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">LAN REACHABILITY — VIA TAILSCALE SUBNET ROUTE</div>
+    <div class="manifest-card">
+      <div class="rows" id="lan-reach"></div>
+    </div>
   </section>
 
   <section class="manifests">
@@ -434,6 +449,18 @@
       </div>`).join('');
   }
 
+  function renderLan(lan) {
+    const box = document.getElementById('lan-reach');
+    if (!lan) { box.innerHTML = '<div class="row lan-row"><span>—</span></div>'; return; }
+    const entries = Object.entries(lan);
+    box.innerHTML = entries.map(([name, s]) => `
+      <div class="row lan-row">
+        <span class="lan-name"><span class="lamp ${s.reachable ? 'on' : 'down'}"></span>${esc(name)}</span>
+        <span class="lan-code">${s.http_code}</span>
+        <span class="lan-latency">${s.latency_ms != null ? s.latency_ms.toFixed(0) + ' ms' : '—'}</span>
+      </div>`).join('');
+  }
+
   function procRow(p) {
     return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
   }
@@ -519,6 +546,7 @@
 
       renderTicker(d.fail2ban);
       renderOffenders(d.fail2ban?.repeat_offenders);
+      renderLan(d.lan);
 
       const otherFailed = document.getElementById('other-failed');
       otherFailed.textContent = d.other_failed && d.other_failed.length
