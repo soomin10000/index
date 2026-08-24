@@ -75,6 +75,7 @@
         "steve   steve    steve"
         "wacky   wacky    wacky"
         "eufy    eufy     eufy"
+        "arr     arr      arr"
         "harold  weather  weather"
         "harold  train    train"
         "bbc     bbc      darren"
@@ -102,6 +103,7 @@
     #c-plants  { grid-area: plants; }
     #c-smoke   { grid-area: smoke; }
     #c-timers  { grid-area: timers; }
+    #c-arr     { grid-area: arr; }
 
     /* Card base — breaker module on the panel */
     .card {
@@ -348,6 +350,14 @@
     <div class="c-metric"><span class="c-val" id="ef-val">—</span><span class="c-unit" id="ef-unit"></span></div>
     <div class="c-sub" id="ef-sub"></div>
     <div class="c-foot">eufy-security-ws · doorbell &amp; cameras</div>
+  </a>
+
+  <a class="card is-loading" id="c-arr" style="--a:#c15fc0" href="/arr">
+    <div class="tape">Media</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">📥</span><span class="c-name">arr stack</span></div>
+    <div class="c-metric"><span class="c-val" id="arr-val">—</span><span class="c-unit" id="arr-unit"></span></div>
+    <div class="c-sub" id="arr-sub"></div>
+    <div class="c-foot">noob · sonarr/radarr/lidarr/readarr + downloaders</div>
   </a>
 
   <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
@@ -705,7 +715,23 @@
     });
   }, 'No data');
 
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); }
+  const arr = () => poll('arr', '/api/arr', d => {
+    if (d.error) { setCard('arr', { val: '?', unit: '' }, true); return; }
+    const services = d.services || {};
+    const down = Object.entries(services).filter(([, s]) => !s.ok);
+    const accent = down.length ? 'var(--down)' : '#c15fc0';
+    const lamp = down.length ? 'down' : 'on';
+    const parts = [];
+    if (down.length) parts.push(`${dot('dot-red')}${down.map(([n]) => esc(n)).join(', ')} down`);
+    const dl = d.latest_download;
+    parts.push(dl ? `${dot('dot-on')}${esc(dl.title)}` : `${dot('dot-off')}No imports yet`);
+    setCard('arr', {
+      val: down.length ? down.length : 'OK', unit: down.length ? ' down' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+  }, 'No data');
+
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); arr(); }
   refresh();
   setInterval(refresh, 30000);
 </script>

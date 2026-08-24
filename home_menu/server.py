@@ -191,6 +191,7 @@ EUFY_SNAPSHOTS = DATA / 'eufy_snapshots'
 _EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
 STEVE_DB     = DATA / 'steve_history.db'
 WACKY_JSON   = DATA / 'wacky.json'
+ARR_JSON     = DATA / 'arr.json'
 WACKY_DB     = DATA / 'wacky_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
@@ -1159,6 +1160,7 @@ ROUTES_GET = {
     '/steve':                _page('steve.html'),
     '/wacky':                _page('wacky.html'),
     '/eufy':                 _page('eufy.html'),
+    '/arr':                  _page('arr.html'),
     '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
     # Static assets
@@ -1176,6 +1178,7 @@ ROUTES_GET = {
     '/api/smokeping/rrd':    _absfile(DATA / 'smokeping_rrd.json', 'application/json'),
     '/api/steve':            _absfile(STEVE_JSON, 'application/json'),
     '/api/wacky':            _absfile(WACKY_JSON, 'application/json'),
+    '/api/arr':              _absfile(ARR_JSON, 'application/json'),
     '/api/eufy':             _absfile(EUFY_JSON, 'application/json'),
     '/api/eufy/vacuum':      _absfile(EUFY_VACUUM_JSON, 'application/json'),
 
