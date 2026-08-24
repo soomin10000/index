@@ -25,14 +25,23 @@ echo "[1/6] Stopping kismet (frees the capture adapter)..."
 systemctl stop kismet
 
 echo "[2/6] Backing up and installing new module..."
-cp -a "$KO_DST" "${KO_DST}.bak.$(date +%s)"
+# A kernel upgrade can put us on a kernel that never had 88XXau installed
+# yet (weekly_update.sh's srcversion check only sees what's *currently
+# loaded*, from the pre-reboot kernel — it can't detect this case), so
+# there may be nothing to back up.
+if [[ -f "$KO_DST" ]]; then
+    cp -a "$KO_DST" "${KO_DST}.bak.$(date +%s)"
+fi
+mkdir -p "$(dirname "$KO_DST")"
 cp "$KO_SRC" "$KO_DST"
 
 echo "[3/6] depmod..."
 depmod -a "$KREL"
 
 echo "[4/6] Reloading driver..."
-modprobe -r 88XXau || { echo "rmmod failed — is the adapter still in use? Aborting before it's half-installed."; systemctl start kismet; exit 1; }
+if lsmod | grep -q '^88XXau'; then
+    modprobe -r 88XXau || { echo "rmmod failed — is the adapter still in use? Aborting before it's half-installed."; systemctl start kismet; exit 1; }
+fi
 modprobe 88XXau
 
 echo "[5/6] Restarting kismet (poller re-adds the datasource on its next run)..."
