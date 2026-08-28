@@ -67,7 +67,7 @@
       flex: 1;
       min-height: 0;
       grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: auto auto auto auto auto 1fr 1fr 1fr auto auto;
+      grid-template-rows: auto auto auto auto auto auto 1fr 1fr 1fr auto auto;
       grid-template-areas:
         "isitbroken isitbroken isitbroken"
         "unifi   unifi    wireless"
@@ -75,6 +75,7 @@
         "uplink  uplink   smoke"
         "steve   steve    steve"
         "wacky   wacky    wacky"
+        "jeff    jeff     jeff"
         "eufy    eufy     eufy"
         "arr     arr      arr"
         "harold  weather  weather"
@@ -101,6 +102,7 @@
     #c-uplink  { grid-area: uplink; }
     #c-steve   { grid-area: steve; }
     #c-wacky   { grid-area: wacky; }
+    #c-jeff    { grid-area: jeff; }
     #c-eufy    { grid-area: eufy; }
     #c-plants  { grid-area: plants; }
     #c-smoke   { grid-area: smoke; }
@@ -215,7 +217,7 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-pihole .c-sub, #c-steve .c-sub, #c-wacky .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
+    #c-pihole .c-sub, #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
 
     /* Status dots used inside .c-sub lines */
     .dot {
@@ -254,6 +256,7 @@
           "uplink   smoke"
           "steve    steve"
           "wacky    wacky"
+          "jeff     jeff"
           "eufy     eufy"
           "weather  weather"
           "harold   train"
@@ -268,7 +271,7 @@
       main {
         grid-template-columns: 1fr;
         grid-template-areas:
-          "isitbroken" "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "wacky" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
+          "isitbroken" "unifi" "wireless" "pihole" "atlas" "uplink" "smoke" "steve" "wacky" "jeff" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
       }
     }
   </style>
@@ -353,6 +356,14 @@
     <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
     <div class="c-sub" id="wacky-sub"></div>
     <div class="c-foot">CPU · MEM · DISK · tailscale</div>
+  </a>
+
+  <a class="card is-loading" id="c-jeff" style="--a:#b57edc" href="/jeff">
+    <div class="tape">SDR Pi</div>
+    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">jeff</span></div>
+    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+    <div class="c-sub" id="jeff-sub"></div>
+    <div class="c-foot">CPU · MEM · TEMP · SDR</div>
   </a>
 
   <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
@@ -636,6 +647,26 @@
     });
   });
 
+  const jeff = () => poll('jeff', '/api/jeff', d => {
+    if (d.error) { setCard('jeff', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    const critical = alerts.filter(a => a.level === 'critical').length;
+    const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#b57edc';
+    const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const parts = [];
+    if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
+    const temp = d.cpu_temp != null ? ` · ${Math.round(d.cpu_temp)}°C` : '';
+    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${temp}`);
+    const sdr = d.sdr || {};
+    parts.push(sdr.dongle_present
+      ? `${dot('dot-on')}RTL-SDR detected${sdr.services && sdr.services.length ? ` · ${sdr.services.length} svc` : ''}`
+      : `${dot('dot-amber')}no RTL-SDR on USB`);
+    setCard('jeff', {
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+  });
+
   const atlas = () => poll('atlas', '/api/atlas', d => {
     if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
     const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
@@ -753,7 +784,7 @@
     });
   }, 'No data');
 
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); atlas(); uplink(); plants(); smoke(); eufy(); arr(); isItBroken(); }
+  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); jeff(); atlas(); uplink(); plants(); smoke(); eufy(); arr(); isItBroken(); }
   refresh();
   setInterval(refresh, 30000);
 </script>
