@@ -156,7 +156,7 @@
       border-radius: 4px; overflow: hidden;
     }
     .panel-head {
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       padding: 11px 15px; border-bottom: 1px solid var(--border);
       background: var(--panel-2);
     }
@@ -214,6 +214,43 @@
 
     .empty-row td { text-align: center; color: var(--mute); padding: 26px; font-family: var(--mono); font-size: 12px; }
 
+    /* sortable headers */
+    table.clients thead th.sortable { cursor: pointer; user-select: none; }
+    table.clients thead th.sortable:hover { color: var(--dim); }
+    table.clients thead th .caret { color: var(--accent); margin-left: 3px; font-size: 9px; }
+
+    /* clients panel-head controls */
+    .filter-input {
+      font-family: var(--mono); font-size: 11px; color: var(--ink);
+      background: var(--inset); border: 1px solid var(--border-2); border-radius: 3px;
+      padding: 3px 8px; width: 150px; outline: none;
+    }
+    .filter-input:focus { border-color: var(--accent-dim); }
+    .filter-input::placeholder { color: var(--mute); }
+    .toggle {
+      display: flex; align-items: center; gap: 5px; cursor: pointer;
+      font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.04em; color: var(--dim);
+    }
+    .toggle input { accent-color: var(--accent); }
+
+    /* ── Radios now strip ──────────────────────────────────────────────── */
+    .radios-now { display: flex; flex-direction: column; }
+    .radio-row {
+      display: grid; grid-template-columns: 1fr 58px 46px 1fr 74px;
+      align-items: center; gap: 12px; padding: 9px 15px;
+      border-bottom: 1px solid rgba(28,39,50,0.55); font-size: 12px;
+    }
+    .radio-row:last-child { border-bottom: none; }
+    .radio-ap { font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .radio-band { font-family: var(--mono); font-size: 10.5px; color: var(--dim); }
+    .radio-ch { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+    .radio-bar { height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; }
+    .radio-bar i { display: block; height: 100%; }
+    .radio-end { text-align: right; font-family: var(--mono); }
+    .radio-end .cu { font-size: 11.5px; }
+    .radio-end .sta { font-size: 10px; color: var(--mute); margin-left: 5px; }
+    .radios-now .empty { padding: 18px 15px; font-family: var(--mono); font-size: 11px; color: var(--mute); }
+
     /* ── Throughput sparkline ──────────────────────────────────────── */
     .spark-wrap { padding: 14px 15px 12px; position: relative; }
     .spark-top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
@@ -246,7 +283,7 @@
     .log-time { font-family: var(--mono); font-size: 10px; color: var(--mute); margin-top: 3px; letter-spacing: 0.04em; }
 
     /* ── Snapshot images ───────────────────────────────────────────── */
-    .snap-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .snap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
     .snap img { width: 100%; display: block; background: var(--inset); }
     .snap .cap {
       padding: 8px 14px; font-family: var(--mono); font-size: 10.5px;
@@ -402,7 +439,7 @@
   <!-- KPI readouts -->
   <div class="kpi-row">
     <div class="kpi" style="--k:var(--accent)">
-      <div class="label"><span class="eyebrow">Clients</span></div>
+      <div class="label"><span class="eyebrow">Associated</span></div>
       <div class="val" id="k-clients">—</div>
       <div class="foot" id="k-clients-foot">&nbsp;</div>
     </div>
@@ -433,18 +470,20 @@
       <!-- Clients table -->
       <div class="panel">
         <div class="panel-head">
-          <span class="eyebrow">Connected clients</span>
+          <span class="eyebrow">Clients</span>
+          <input id="clients-filter" class="filter-input" type="text" placeholder="filter name / ip / vendor" aria-label="Filter clients">
+          <label class="toggle"><input type="checkbox" id="connected-only" checked> connected only</label>
           <span class="count" id="clients-count"></span>
         </div>
         <div class="tbl-scroll">
           <table class="clients">
             <thead>
               <tr>
-                <th>Device</th>
+                <th class="sortable" data-sort="name">Device</th>
                 <th>Address</th>
                 <th>Link</th>
-                <th class="r">DNS queries</th>
-                <th class="r">Signal</th>
+                <th class="r sortable" data-sort="dns">DNS queries</th>
+                <th class="r sortable" data-sort="signal">Signal</th>
               </tr>
             </thead>
             <tbody id="clients-body">
@@ -485,6 +524,17 @@
     </div>
   </div>
 
+  <!-- Radios now -->
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-head">
+      <span class="eyebrow">Radios now</span>
+      <span class="count" id="radios-now-count"></span>
+    </div>
+    <div class="radios-now" id="radios-now">
+      <div class="empty">reading radios…</div>
+    </div>
+  </div>
+
   <!-- Channel utilisation -->
   <div class="panel" style="margin-top:14px">
     <div class="panel-head">
@@ -518,18 +568,23 @@
       <img id="img-topology" alt="Network topology">
       <div class="cap" id="topo-ts">—</div>
     </div>
+    <div class="panel snap">
+      <div class="panel-head"><span class="eyebrow">Gateway dashboard</span></div>
+      <img id="img-dashboard" alt="Gateway dashboard">
+      <div class="cap" id="dash-ts">—</div>
+    </div>
   </div>
 
 </div>
 
 <div id="detail-backdrop" onclick="closeDetail()"></div>
-<div id="detail">
+<div id="detail" role="dialog" aria-modal="true" aria-labelledby="detail-name" aria-hidden="true">
   <div id="detail-header">
     <div>
       <div id="detail-type"></div>
       <div id="detail-name"></div>
     </div>
-    <span id="detail-close" onclick="closeDetail()">✕</span>
+    <span id="detail-close" role="button" tabindex="0" aria-label="Close client detail" onclick="closeDetail()">✕</span>
   </div>
   <div id="detail-meta"></div>
   <div id="detail-body">
@@ -593,56 +648,100 @@
   }
 
   // ── clients table (source: /api/cross_ref — UniFi + Pi-hole merged) ──
-  let renderedClients = [];
+  // A client is "connected" when UniFi reports a link type for it (is_wired is
+  // true or false); is_wired == null means Pi-hole has seen it but we have no
+  // live link data — usually because it's offline right now.
+  let clientData = [];             // full payload devices, unsorted
+  let unifiStaleMin = 0;           // minutes since the UniFi poll last wrote devices.json
+  const isConnected = x => x.is_wired === true || x.is_wired === false;
+
+  const SORTS = {
+    dns:    (a, b) => (b.dns_total || 0) - (a.dns_total || 0),
+    // weakest (most negative) signal first; wired / unknown sink to the bottom
+    signal: (a, b) => (a.signal ?? 999) - (b.signal ?? 999),
+    name:   (a, b) => String(a.display_name || a.hostname || a.ip || '')
+                        .localeCompare(String(b.display_name || b.hostname || b.ip || '')),
+  };
+  let sortKey = 'dns';
+
+  function renderClientTable() {
+    const connectedOnly = $('connected-only').checked;
+    const q = ($('clients-filter').value || '').trim().toLowerCase();
+
+    let view = clientData.filter(x => !connectedOnly || isConnected(x));
+    if (q) {
+      view = view.filter(x => [x.display_name, x.hostname, x.ip, x.vendor, x.ssid, x.ap]
+        .some(f => String(f || '').toLowerCase().includes(q)));
+    }
+    // flagged always pinned to the top, then the chosen sort
+    view.sort((a, b) => {
+      const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
+      if (fa !== fb) return fb - fa;
+      return (SORTS[sortKey] || SORTS.dns)(a, b);
+    });
+    renderedClients = view;
+
+    const rows = view.map((x, i) => {
+      const name = esc(x.display_name || x.hostname || x.ip || x.mac || 'unknown');
+      const vendor = x.vendor ? `<span class="c-vendor">${esc(x.vendor)}</span>` : '';
+      const flagged = !!x.flagged;
+      const wireless = !x.is_wired && x.signal != null;
+      const weak = wireless && x.signal < -74;
+      const offline = !isConnected(x);
+      const stColor = flagged ? 'var(--crit)' : weak ? 'var(--warn)' : offline ? 'var(--mute)' : 'var(--good)';
+      const stTitle = flagged ? 'flagged' : weak ? 'weak signal' : offline ? 'not connected' : 'online';
+
+      const link = x.is_wired
+        ? '<span class="lan-chip">WIRED</span>'
+        : (x.ssid || x.ap)
+          ? `<span class="ssid">${esc(x.ssid || '—')}</span> · ${esc(x.ap || '—')}`
+          : '<span style="color:var(--mute)">—</span>';
+
+      let dns = '<span style="color:var(--faint)">—</span>';
+      if (x.dns_total != null) {
+        const pct = x.dns_pct || 0;
+        const pc = pct >= 25 ? 'var(--crit)' : pct >= 8 ? 'var(--warn)' : 'var(--good)';
+        const bg = pct >= 25 ? 'rgba(248,81,73,0.12)' : pct >= 8 ? 'rgba(214,164,25,0.12)' : 'rgba(63,185,80,0.1)';
+        dns = `<span class="c-dns">${fmt(x.dns_total)}</span>` +
+              `<span class="blk" style="color:${pc};background:${bg}">${pct}%<span style="color:var(--mute)"> blk</span></span>`;
+      }
+
+      return `<tr data-idx="${i}">
+        <td><div class="c-name"><span class="st" style="background:${stColor}" title="${stTitle}"></span>${name}</div>${vendor}</td>
+        <td class="c-ip">${esc(x.ip || '—')}</td>
+        <td class="c-conn">${link}</td>
+        <td class="r">${dns}</td>
+        <td class="r">${signalCell(x.is_wired ? null : x.signal)}</td>
+      </tr>`;
+    }).join('');
+
+    $('clients-body').innerHTML = rows ||
+      `<tr class="empty-row"><td colspan="5">${clientData.length ? 'nothing matches' : 'no clients reported'}</td></tr>`;
+    $('clients-count').textContent = `${view.length} shown · ${clientData.length} known`;
+
+    document.querySelectorAll('table.clients th.sortable').forEach(th => {
+      const on = th.dataset.sort === sortKey;
+      th.querySelector('.caret')?.remove();
+      if (on) th.insertAdjacentHTML('beforeend', '<span class="caret">▼</span>');
+    });
+  }
 
   async function loadClients() {
     try {
       const d = await (await fetch('/api/cross_ref')).json();
-      const devs = (d.devices || []).slice();
+      clientData = (d.devices || []).slice();
 
-      // busiest talkers first; flagged pinned to the very top
-      devs.sort((a, b) => {
-        const fa = a.flagged ? 1 : 0, fb = b.flagged ? 1 : 0;
-        if (fa !== fb) return fb - fa;
-        return (b.dns_total || 0) - (a.dns_total || 0);
-      });
-      renderedClients = devs;
+      unifiStaleMin = d.unifi_ts ? Math.max(0, Math.floor((Date.now() / 1000 - d.unifi_ts) / 60)) : 0;
 
-      const rows = devs.map((x, i) => {
-        const name = esc(x.display_name || x.hostname || x.ip || x.mac || 'unknown');
-        const vendor = x.vendor ? `<span class="c-vendor">${esc(x.vendor)}</span>` : '';
-        const flagged = !!x.flagged;
-        const wireless = !x.is_wired && x.signal != null;
-        const weak = wireless && x.signal < -74;
-        const stColor = flagged ? 'var(--crit)' : weak ? 'var(--warn)' : 'var(--good)';
-        const stTitle = flagged ? 'flagged' : weak ? 'weak signal' : 'online';
+      const conn = clientData.filter(isConnected);
+      const wifi = conn.filter(x => x.is_wired === false).length;
+      const wired = conn.length - wifi;
+      const seen = clientData.length - conn.length;
+      $('k-clients').textContent = conn.length;
+      $('k-clients-foot').innerHTML =
+        `<b>${wifi}</b> wireless · <b>${wired}</b> wired · ${seen} seen recently`;
 
-        const link = x.is_wired
-          ? '<span class="lan-chip">WIRED</span>'
-          : (x.ssid || x.ap)
-            ? `<span class="ssid">${esc(x.ssid || '—')}</span> · ${esc(x.ap || '—')}`
-            : '<span style="color:var(--mute)">—</span>';
-
-        let dns = '<span style="color:var(--faint)">—</span>';
-        if (x.dns_total != null) {
-          const pct = x.dns_pct || 0;
-          const pc = pct >= 25 ? 'var(--crit)' : pct >= 8 ? 'var(--warn)' : 'var(--good)';
-          const bg = pct >= 25 ? 'rgba(248,81,73,0.12)' : pct >= 8 ? 'rgba(214,164,25,0.12)' : 'rgba(63,185,80,0.1)';
-          dns = `<span class="c-dns">${fmt(x.dns_total)}</span>` +
-                `<span class="blk" style="color:${pc};background:${bg}">${pct}%<span style="color:var(--mute)"> blk</span></span>`;
-        }
-
-        return `<tr data-idx="${i}">
-          <td><div class="c-name"><span class="st" style="background:${stColor}" title="${stTitle}"></span>${name}</div>${vendor}</td>
-          <td class="c-ip">${esc(x.ip || '—')}</td>
-          <td class="c-conn">${link}</td>
-          <td class="r">${dns}</td>
-          <td class="r">${signalCell(x.is_wired ? null : x.signal)}</td>
-        </tr>`;
-      }).join('');
-
-      $('clients-body').innerHTML = rows || '<tr class="empty-row"><td colspan="5">no clients reported</td></tr>';
-      $('clients-count').textContent = `${devs.length} online`;
+      renderClientTable();
 
       // DNS KPI from the same payload
       const s = d.summary || {};
@@ -653,6 +752,16 @@
     }
   }
 
+  $('connected-only').addEventListener('change', renderClientTable);
+  let filterTimer = null;
+  $('clients-filter').addEventListener('input', () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(renderClientTable, 160);
+  });
+  document.querySelectorAll('table.clients th.sortable').forEach(th => {
+    th.addEventListener('click', () => { sortKey = th.dataset.sort; renderClientTable(); });
+  });
+
   // ── status + KPI counts (source: /api/unifi) ────────────────────────
   async function loadStatus() {
     try {
@@ -661,16 +770,24 @@
       const cg = d.flagged_congestion || [];
       const alerts = fc.length + cg.length;
 
-      // overall status
+      // overall status — a silent UniFi poller (>15 min) outranks an "all clear",
+      // since with no fresh data we can't actually vouch for the clients.
       const ok = alerts === 0;
-      $('status-word').textContent = ok ? 'Operational' : 'Degraded';
-      const color = ok ? 'var(--good)' : (cg.length && !fc.length ? 'var(--warn)' : 'var(--crit)');
+      const stale = unifiStaleMin > 15;
       const beacon = $('beacon');
-      beacon.style.background = color; beacon.style.color = color;
+      if (ok && stale) {
+        $('status-word').textContent = 'Stale';
+        beacon.style.background = 'var(--warn)'; beacon.style.color = 'var(--warn)';
+        $('status-meta').textContent = `UniFi poll silent · devices ${unifiStaleMin} min old`;
+      } else {
+        $('status-word').textContent = ok ? 'Operational' : 'Degraded';
+        const color = ok ? 'var(--good)' : (cg.length && !fc.length ? 'var(--warn)' : 'var(--crit)');
+        beacon.style.background = color; beacon.style.color = color;
+        $('status-meta').textContent = ok
+          ? `all clients healthy · updated ${new Date().toLocaleTimeString('en-GB')}`
+          : `${fc.length} weak client${fc.length!==1?'s':''} · ${cg.length} congested radio${cg.length!==1?'s':''}`;
+      }
       $('status-word').style.color = 'var(--ink)';
-      $('status-meta').textContent = ok
-        ? `all clients healthy · updated ${new Date().toLocaleTimeString('en-GB')}`
-        : `${fc.length} weak client${fc.length!==1?'s':''} · ${cg.length} congested radio${cg.length!==1?'s':''}`;
 
       // alerts KPI
       $('k-alerts').textContent = alerts;
@@ -678,12 +795,21 @@
       $('k-alerts-foot').innerHTML = ok ? 'nothing to report'
         : `<b>${fc.length}</b> signal · <b>${cg.length}</b> congestion`;
 
-      // speedtest KPIs
+      // speedtest KPIs — border colour tracks the value; grey + flagged when the
+      // last gateway test is over a day old (nothing current to judge).
       const sp = d.speedtest;
       if (sp) {
-        $('k-down').innerHTML = fmt(Math.round(sp.download_mbps)) + '<small>Mbps</small>';
-        $('k-up').innerHTML   = fmt(Math.round(sp.upload_mbps))   + '<small>Mbps</small>';
-        $('k-down-foot').innerHTML = `<b>${Number(sp.ping_ms ?? 0).toFixed(0)}ms</b> ping · gateway`;
+        const dn = Math.round(sp.download_mbps), up = Math.round(sp.upload_mbps);
+        const old = (Date.now() / 1000 - sp.ts) > 26 * 3600;
+        const band = (v, warn, crit) => old ? 'var(--mute)' : v < crit ? 'var(--crit)' : v < warn ? 'var(--warn)' : 'var(--good)';
+        $('k-down').innerHTML = fmt(dn) + '<small>Mbps</small>';
+        $('k-up').innerHTML   = fmt(up) + '<small>Mbps</small>';
+        $('k-down').closest('.kpi').style.setProperty('--k', band(dn, 100, 30));
+        $('k-up').closest('.kpi').style.setProperty('--k', band(up, 20, 8));
+        const ping = Number(sp.ping_ms ?? 0);
+        $('k-down-foot').innerHTML = old
+          ? `<b>tested ${ago(sp.ts)}</b> · stale`
+          : `<b style="color:${ping > 40 ? 'var(--warn)' : 'var(--dim)'}">${ping.toFixed(0)}ms</b> ping · gateway`;
         $('k-up-foot').innerHTML = `tested ${ago(sp.ts)}`;
       } else {
         $('k-down-foot').textContent = 'first test pending';
@@ -693,18 +819,6 @@
       $('beacon').style.background = 'var(--crit)'; $('beacon').style.color = 'var(--crit)';
       $('status-meta').textContent = 'poller unreachable';
     }
-  }
-
-  // ── device counts for the Clients KPI (source: /api/unifi/devices) ──
-  async function loadDeviceCounts() {
-    try {
-      const d = await (await fetch('/api/unifi/devices')).json();
-      const devs = d.devices || [];
-      const wifi = devs.filter(x => !x.is_wired).length;
-      const wired = devs.length - wifi;
-      $('k-clients').textContent = devs.length;
-      $('k-clients-foot').innerHTML = `<b>${wifi}</b> wireless · <b>${wired}</b> wired`;
-    } catch (e) {}
   }
 
   // ── event log (source: /api/unifi/events) ───────────────────────────
@@ -820,23 +934,36 @@
 
   // ── snapshot images ─────────────────────────────────────────────────
   function loadImages() {
-    const ts = new Date().toLocaleTimeString('en-GB');
+    const ts = 'refreshed ' + new Date().toLocaleTimeString('en-GB');
     $('img-topology').src  = '/unifi/topology.png'  + bust();
-    $('topo-ts').textContent = 'refreshed ' + ts;
+    $('img-dashboard').src = '/unifi/dashboard.png' + bust();
+    $('topo-ts').textContent = ts;
+    $('dash-ts').textContent = ts;
   }
 
   // ── client detail drawer ─────────────────────────────────────────────
+  let drawerReturnFocus = null;
+
   $('clients-body').addEventListener('click', (ev) => {
     const tr = ev.target.closest('tr[data-idx]');
     if (!tr) return;
     const x = renderedClients[Number(tr.dataset.idx)];
-    if (x) openDetail(x);
+    if (x) { drawerReturnFocus = tr; openDetail(x); }
   });
 
   function closeDetail() {
     $('detail').classList.remove('open');
     $('detail-backdrop').classList.remove('open');
+    $('detail').setAttribute('aria-hidden', 'true');
+    if (drawerReturnFocus) { drawerReturnFocus.focus?.(); drawerReturnFocus = null; }
   }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && $('detail').classList.contains('open')) closeDetail();
+  });
+  $('detail-close').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); closeDetail(); }
+  });
 
   function drawDetailSpark(canvas, values, color, min, max, threshold) {
     const dpr = window.devicePixelRatio || 1;
@@ -880,18 +1007,25 @@
   async function openDetail(x) {
     $('detail').classList.add('open');
     $('detail-backdrop').classList.add('open');
+    $('detail').setAttribute('aria-hidden', 'false');
+    $('detail-close').focus();
 
-    $('detail-type').textContent = x.is_wired ? 'WIRED CLIENT' : 'WIRELESS CLIENT';
+    $('detail-type').textContent = x.is_wired ? 'WIRED CLIENT'
+      : (x.is_wired === false ? 'WIRELESS CLIENT' : 'CLIENT · NOT CONNECTED');
     const nameEl = $('detail-name');
     nameEl.textContent = x.display_name || x.hostname || x.mac || 'unknown';
     nameEl.className = x.flagged ? 'flagged' : '';
 
+    const rfAge = x.rf_last_seen ? ago(x.rf_last_seen) : null;
     const meta = [
       ['IP', x.ip || '—'],
       ['MAC', x.mac || '—'],
       ['VENDOR', x.vendor || '—'],
       ['SSID', x.ssid || '—'],
       ['AP', x.ap || '—'],
+      ['SIGNAL', x.signal != null ? `${x.signal} dBm` : '—'],
+      ['TX RETRY', x.retry_pct != null ? `${Number(x.retry_pct).toFixed(1)}%` : '—'],
+      ['RF (kismet)', x.rf_signal != null ? `${x.rf_signal} dBm${rfAge ? ` · ${rfAge}` : ''}` : '—'],
       ['FIRST SEEN', x.first_seen ? new Date(x.first_seen*1000).toLocaleDateString('en-GB') : '—'],
       ['DNS QUERIES', x.dns_total != null ? fmt(x.dns_total) : '—'],
       ['DNS BLOCKED', x.dns_blocked != null ? `${fmt(x.dns_blocked)} (${x.dns_pct}%)` : '—'],
@@ -1178,18 +1312,60 @@
     });
   }
 
+  // ── "Radios now" strip — the tail of each per-radio series ──────────────
+  function bandLabel(radioName, channel) {
+    const ch = parseInt(channel, 10);
+    if (!Number.isNaN(ch)) {
+      if (ch <= 14) return '2.4 GHz';
+      if (ch <= 196) return '5 GHz';
+      return '6 GHz';
+    }
+    const r = (radioName || '').toLowerCase();
+    if (r.includes('6') || r.includes('6e')) return '6 GHz';
+    if (r.includes('ng')) return '2.4 GHz';
+    return '5 GHz';
+  }
+
+  function renderRadiosNow(radios) {
+    const box = $('radios-now');
+    const rows = radios
+      .map(r => ({ name: r.name, last: r.points && r.points[r.points.length - 1] }))
+      .filter(r => r.last)
+      .sort((a, b) => (b.last.cu ?? 0) - (a.last.cu ?? 0));
+
+    if (!rows.length) { box.innerHTML = '<div class="empty">no radio data yet</div>'; return; }
+    $('radios-now-count').textContent = `${rows.length} radios`;
+
+    box.innerHTML = rows.map(({ name, last }) => {
+      const [ap, radio] = name.split(' · ');
+      const cu = last.cu ?? 0;
+      const col = cu >= 70 ? 'var(--crit)' : cu >= 50 ? 'var(--warn)' : 'var(--good)';
+      return `<div class="radio-row">
+        <span class="radio-ap" title="${esc(ap)}">${esc(ap)}</span>
+        <span class="radio-band">${bandLabel(radio, last.channel)}</span>
+        <span class="radio-ch">ch ${esc(last.channel ?? '—')}</span>
+        <span class="radio-bar"><i style="width:${Math.max(0, Math.min(100, cu))}%;background:${col}"></i></span>
+        <span class="radio-end"><span class="cu" style="color:${col}">${cu}%</span><span class="sta">${last.num_sta ?? 0}c</span></span>
+      </div>`;
+    }).join('');
+  }
+
   async function loadCharts() {
     try {
       const d = await (await fetch('/api/unifi/history?days=3')).json();
+      renderRadiosNow(d.radios || []);
       renderUtilChart(d.radios || [], d.events || []);
       renderHourlyChart(d.hourly || []);
     } catch (e) {
       $('util-legend').innerHTML = '<span style="font-family:var(--mono);font-size:11px;color:var(--crit)">chart feed unavailable</span>';
+      $('radios-now').innerHTML = '<div class="empty" style="color:var(--crit)">radio feed unavailable</div>';
     }
   }
 
   // ── boot + polling ──────────────────────────────────────────────────
-  function refresh() { loadStatus(); loadClients(); loadDeviceCounts(); loadEvents(); }
+  // loadClients() first — it sets unifiStaleMin, which loadStatus() reads to
+  // decide whether an "all clear" is actually trustworthy.
+  async function refresh() { await loadClients(); loadStatus(); loadEvents(); }
   refresh(); loadSpark(); loadImages(); loadCharts();
   setInterval(refresh, 30000);
   setInterval(loadSpark, 120000);
