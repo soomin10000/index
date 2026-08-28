@@ -793,10 +793,11 @@ def _compute_cross_ref():
     result.sort(key=lambda d: -(d['dns_total'] or 0))
     intel = _network_anomalies(unifi_devices, result, ks)
     return {
-        'ts':      ph.get('ts'),
-        'summary': ph.get('summary', {}),
-        'history': ph.get('history', []),
-        'devices': result,
+        'ts':       ph.get('ts'),
+        'unifi_ts': ud.get('ts'),  # UniFi poll can go cold while Pi-hole's ts stays fresh
+        'summary':  ph.get('summary', {}),
+        'history':  ph.get('history', []),
+        'devices':  result,
         **intel,
     }
 
@@ -985,12 +986,13 @@ def _unifi_radio_history(days=3):
         cutoff = int(time.time()) - days * 86400
 
         rows = conn.execute(
-            'SELECT ts, ap, radio, cu_total, num_sta FROM radio_util_log WHERE ts>=? ORDER BY ts',
+            'SELECT ts, ap, radio, cu_total, num_sta, channel FROM radio_util_log WHERE ts>=? ORDER BY ts',
             (cutoff,)
         ).fetchall()
         radios = {}
-        for ts, ap, radio, cu, n in rows:
-            radios.setdefault(f'{ap} · {radio}', []).append({'ts': ts, 'cu': cu, 'num_sta': n})
+        for ts, ap, radio, cu, n, ch in rows:
+            radios.setdefault(f'{ap} · {radio}', []).append(
+                {'ts': ts, 'cu': cu, 'num_sta': n, 'channel': ch})
 
         hourly_cutoff = int(time.time()) - 14 * 86400
         hrows = conn.execute(
