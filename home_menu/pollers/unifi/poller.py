@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 
 from unifi_client import UnifiClient, UnifiAuthError
-from checks import check_congestion
+from checks import check_congestion, check_weak_clients
 import topology
 import dashboard
 from db import (open_db, log_poll, last_flagged_congestion,
@@ -189,10 +189,9 @@ def trigger_speedtest(client):
 
 # ── Devices JSON ──────────────────────────────────────────────────────────────
 
-def write_devices_json(devices, stations, db=None):
+def write_devices_json(devices, stations, db=None, weak_flags=None):
     try:
-        weak_macs = set()
-        weak_hosts = set()
+        weak_macs = {f["mac"] for f in (weak_flags or []) if f.get("mac")}
 
         dev_by_mac  = {d["mac"]: d for d in devices}
         ap_by_mac   = {d["mac"]: d.get("name", d["mac"]) for d in devices if d.get("type") == "uap"}
@@ -203,7 +202,7 @@ def write_devices_json(devices, stations, db=None):
             mac      = sta.get("mac", "")
             hostname = sta.get("hostname", "")
             vendor   = _vendor(mac)
-            flagged  = mac in weak_macs or (hostname and hostname in weak_hosts)
+            flagged  = mac in weak_macs
             ap_mac   = sta.get("ap_mac", "")
 
             if hostname:
@@ -324,6 +323,7 @@ def run(interval, client):
             continue
 
         congestion      = check_congestion(devices)
+        weak_clients    = check_weak_clients(stations)
         curr_congestion = {_congestion_key(f): f for f in congestion}
 
         # Congestion alerts
@@ -396,8 +396,8 @@ def run(interval, client):
         except Exception as e:
             log.warning("Channel-change tracking failed: %s", e)
 
-        log_poll(db, congestion, [])
-        write_devices_json(devices, stations, db=db)
+        log_poll(db, congestion, weak_clients)
+        write_devices_json(devices, stations, db=db, weak_flags=weak_clients)
 
         poll_count += 1
         if poll_count % speedtest_every == 0:

@@ -42,6 +42,33 @@ def check_congestion(devices, cu_threshold=70):
     return flags
 
 
+def check_weak_clients(stations, signal_floor=-74, retry_ceiling=15):
+    """
+    Flags wireless clients with a weak signal or a high TX-retry rate.
+
+    Returns a list of dicts: {mac, hostname, signal, retry_pct, essid}. Wired
+    clients and any station without a signal reading are skipped. The defaults
+    match the page's own bands (see signalCell() in pages/unifi.html) so the
+    "flagged" dots and the drawer's signal history agree with the live table.
+    """
+    flags = []
+    for sta in stations:
+        if sta.get("is_wired"):
+            continue
+        signal = sta.get("signal")
+        if signal is None:
+            continue
+        retry = sta.get("wifi_tx_retries_percentage")
+        if signal <= signal_floor or (retry is not None and retry >= retry_ceiling):
+            flags.append({
+                "mac":       sta.get("mac", ""),
+                "hostname":  sta.get("hostname") or sta.get("mac", ""),
+                "signal":    signal,
+                "retry_pct": retry,
+                "essid":     sta.get("essid", ""),
+            })
+    return flags
+
 
 if __name__ == "__main__":
     # Manual smoke test against the real console.
@@ -66,6 +93,10 @@ if __name__ == "__main__":
     print("--- Congestion check (cu_threshold=70) ---")
     congestion = check_congestion(client.get_devices())
     print(json.dumps(congestion, indent=2) if congestion else "No congestion flags.")
+
+    print("\n--- Weak-client check (signal_floor=-74, retry_ceiling=15) ---")
+    weak = check_weak_clients(client.get_clients())
+    print(json.dumps(weak, indent=2) if weak else "No weak clients.")
 
     devices  = client.get_devices()
     stations = client.get_clients()
