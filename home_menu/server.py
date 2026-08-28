@@ -369,7 +369,7 @@ _SECRET_FILE = DATA / '.session_secret'
 PUBLIC_PATHS = {
     '/login', '/logout', '/is-it-broken', '/api/is-it-broken',
     '/chart.min.js', '/vis-network.min.js', '/static/world_land.js', '/auth.js',
-    '/hostcard.js',
+    '/hostcard.js', '/hostcard.css',
 }
 
 
@@ -1402,6 +1402,7 @@ ROUTES_GET = {
     '/chart.min.js':         _absfile(STATIC / 'chart.min.js', 'application/javascript'),
     '/auth.js':              _absfile(STATIC / 'auth.js', 'application/javascript'),
     '/hostcard.js':          _absfile(STATIC / 'hostcard.js', 'application/javascript'),
+    '/hostcard.css':         _absfile(STATIC / 'hostcard.css', 'text/css'),
 
     # JSON served straight from a file on disk (written by the pollers)
     '/api/unifi/graph':      _absfile(UNIFI_DATA / 'topology.json', 'application/json'),
