@@ -34,17 +34,19 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      padding: max(1.1rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.1rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
-      gap: 0.8rem;
+      padding: max(1.1rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.6rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+      gap: 1.1rem;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
     }
 
-    header, main, footer { position: relative; z-index: 1; }
+    header, main, footer { position: relative; z-index: 1; width: 100%; }
 
-    /* Header */
-    header { text-align: center; }
+    /* ── Header ── */
+    header {
+      max-width: 1120px; margin: 0 auto; text-align: center;
+      display: flex; flex-direction: column; align-items: center; gap: 0.32rem;
+    }
     .brand {
       font-size: 1.25rem; font-weight: 700; letter-spacing: 0.02em;
       color: var(--ink);
@@ -53,67 +55,67 @@
     }
     .eyebrow-top {
       font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.24em; text-transform: uppercase;
-      color: var(--ink-faint); margin-top: 0.35rem;
+      color: var(--ink-faint);
     }
     #clock {
       font-family: var(--font-mono);
-      font-size: 0.72rem; color: var(--ink-faint); margin-top: 0.3rem;
+      font-size: 0.72rem; color: var(--ink-faint);
       font-variant-numeric: tabular-nums; letter-spacing: 0.08em; text-transform: uppercase;
     }
 
-    /* ── Bento grid ── */
-    main {
-      display: grid;
-      flex: 1;
-      min-height: 0;
-      grid-template-columns: 1fr 1fr 1fr;
-      grid-template-rows: auto auto auto auto auto auto 1fr 1fr 1fr auto auto;
-      grid-template-areas:
-        "isitbroken isitbroken isitbroken"
-        "unifi   unifi    wireless"
-        "pihole  pihole   atlas"
-        "uplink  uplink   smoke"
-        "vpn     vpn      vpn"
-        "steve   steve    steve"
-        "wacky   wacky    wacky"
-        "jeff    jeff     jeff"
-        "bazza   bazza    bazza"
-        "eufy    eufy     eufy"
-        "arr     arr      arr"
-        "harold  weather  weather"
-        "harold  train    train"
-        "bbc     bbc      darren"
-        "timers  timers   timers"
-        "plants  plants   plants";
-      gap: 0.85rem;
-      width: 100%;
-      max-width: 980px;
-      align-items: stretch;
+    /* Live rollup pill — overall status of every card */
+    #rollup {
+      margin-top: 0.35rem;
+      display: inline-flex; align-items: center; gap: 0.55rem;
+      font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.04em;
+      color: var(--ink-dim);
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 999px; padding: 0.32rem 0.9rem;
+      max-width: 100%;
+      transition: border-color 0.3s, color 0.3s;
     }
+    #rollup .rl-lamp {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: var(--ink-faint); box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+    }
+    #rollup.ok   { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); color: var(--ink); }
+    #rollup.ok   .rl-lamp { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 60%, transparent); }
+    #rollup.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); color: var(--ink); }
+    #rollup.warn .rl-lamp { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 60%, transparent); }
+    #rollup.down { border-color: color-mix(in srgb, var(--down) 60%, var(--border)); color: var(--ink); }
+    #rollup.down .rl-lamp { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 70%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+    #rollup .rl-names { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #rollup a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+    #rollup a:hover { color: #fff; }
+    #rollup .rl-names a { color: var(--ink-faint); }
+    #rollup .rl-names a:hover { color: var(--ink); }
+    #rollup:not(.warn):not(.down) .rl-text { text-decoration: none; }
 
-    #c-harold  { grid-area: harold; }
-    #c-weather { grid-area: weather; }
-    #c-train   { grid-area: train; }
-    #c-bbc     { grid-area: bbc; }
-    #c-darren  { grid-area: darren; }
-    #c-isitbroken { grid-area: isitbroken; }
-    #c-unifi    { grid-area: unifi; }
-    #c-wireless { grid-area: wireless; }
-    #c-pihole  { grid-area: pihole; }
-    #c-atlas   { grid-area: atlas; }
-    #c-uplink  { grid-area: uplink; }
-    #c-vpn     { grid-area: vpn; }
-    #c-steve   { grid-area: steve; }
-    #c-wacky   { grid-area: wacky; }
-    #c-jeff    { grid-area: jeff; }
-    #c-bazza   { grid-area: bazza; }
-    #c-eufy    { grid-area: eufy; }
-    #c-plants  { grid-area: plants; }
-    #c-smoke   { grid-area: smoke; }
-    #c-timers  { grid-area: timers; }
-    #c-arr     { grid-area: arr; }
+    /* ── Bands ── */
+    main {
+      max-width: 1120px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 1.6rem;
+    }
+    .band { display: flex; flex-direction: column; gap: 0.75rem; }
+    .band-label {
+      display: flex; align-items: center; gap: 0.85rem;
+      font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700;
+      letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-faint);
+    }
+    .band-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+    .band-label .bl-count { letter-spacing: 0.08em; color: var(--ink-faint); opacity: 0.7; }
 
-    /* Card base — breaker module on the panel */
+    .band-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+      gap: 0.85rem;
+      align-items: start;
+    }
+    .band-grid.hosts { grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); }
+    .span-2 { grid-column: span 2; }
+    @media (max-width: 560px) { .span-2 { grid-column: span 1; } }
+
+    /* ── Card base — breaker module on the panel ── */
     .card {
       position: relative;
       display: flex; flex-direction: column;
@@ -129,20 +131,9 @@
       touch-action: manipulation;
     }
 
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(14px); }
-      to   { opacity: 1; transform: translateY(0); }
+    @media (min-width: 640px) {
+      #c-unifi .c-sub { column-count: 2; column-gap: 2rem; }
     }
-    .card { animation: rise 0.45s ease both; }
-    .card:nth-child(1) { animation-delay: 0.04s; }
-    .card:nth-child(2) { animation-delay: 0.09s; }
-    .card:nth-child(3) { animation-delay: 0.14s; }
-    .card:nth-child(4) { animation-delay: 0.19s; }
-    .card:nth-child(5) { animation-delay: 0.24s; }
-    .card:nth-child(6) { animation-delay: 0.29s; }
-    .card:nth-child(7) { animation-delay: 0.34s; }
-
-    #c-unifi .c-sub { column-count: 2; column-gap: 2rem; }
 
     .card::after {
       content: ''; position: absolute;
@@ -223,6 +214,50 @@
 
     #c-pihole .c-sub, #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-vpn .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
 
+    /* ── Host strip-chart recorder ── */
+    .band-grid.hosts .card { min-height: 206px; }
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub {
+      margin-bottom: 0.1rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty { display: none; }
+
+    .hs-trace { position: relative; margin: 0.55rem 0 0.4rem; }
+    .hs-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 3px; padding-right: 2px; }
+    .hs-k {
+      font-family: var(--font-mono); font-size: 0.5rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    .hs-now {
+      font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
+      color: var(--ink); font-variant-numeric: tabular-nums; flex-shrink: 0;
+    }
+    .hs-now i { font-style: normal; font-size: 0.58rem; color: var(--ink-faint); margin-left: 1px; }
+    .hs-svg { display: block; width: 100%; height: 34px; }
+    .hs-mid { stroke: var(--border-lit); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.55; }
+    .hb { fill: var(--a, var(--ink-dim)); transition: fill-opacity 0.35s ease; }
+    .hb.warn { fill: var(--warn); }
+    .hb.crit { fill: var(--down); }
+    .card:hover .hb { fill-opacity: 1; }
+    .hs-pen { stroke: var(--a, var(--ink)); stroke-width: 1.6; animation: pen-pulse 2.6s ease-in-out infinite; }
+    @keyframes pen-pulse { 0%,100% { opacity: 0.45; } 50% { opacity: 1; } }
+    .hs-skel {
+      height: 34px; border-radius: 2px; margin-top: 1rem;
+      background: repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,0.045) 3px, rgba(255,255,255,0.045) 5px);
+      animation: flicker 1.4s ease infinite;
+    }
+    .hs-read {
+      margin-top: auto; padding-top: 0.55rem;
+      font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.02em; line-height: 1.65;
+      color: var(--ink-faint); text-transform: uppercase;
+    }
+    .hs-read b { color: var(--ink-dim); font-weight: 400; }
+    @media (prefers-reduced-motion: reduce) {
+      .hs-pen { animation: none; opacity: 0.8; }
+      .hs-skel { animation: none; }
+    }
+
     /* Status dots used inside .c-sub lines */
     .dot {
       display: inline-block; width: 6px; height: 6px; border-radius: 50%;
@@ -241,44 +276,9 @@
     .is-loading .c-val { animation: flicker 1.4s ease infinite; color: var(--ink-faint); }
 
     footer {
-      position: relative; z-index: 1; color: var(--ink-faint);
+      color: var(--ink-faint); text-align: center;
       font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
       flex-shrink: 0;
-    }
-
-    /* ── Responsive ── */
-    @media (max-width: 860px) {
-      body { height: auto; min-height: 100svh; overflow: auto; }
-      main {
-        flex: none;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto;
-        grid-template-areas:
-          "isitbroken isitbroken"
-          "unifi    wireless"
-          "pihole   atlas"
-          "uplink   smoke"
-          "vpn      vpn"
-          "steve    steve"
-          "wacky    wacky"
-          "jeff     jeff"
-          "bazza    bazza"
-          "eufy     eufy"
-          "weather  weather"
-          "harold   train"
-          "darren   darren"
-          "timers   timers"
-          "bbc      bbc"
-          "plants   plants";
-      }
-      #c-harold .c-val { font-size: 3.2rem; }
-    }
-    @media (max-width: 520px) {
-      main {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          "isitbroken" "unifi" "wireless" "pihole" "atlas" "uplink" "vpn" "smoke" "steve" "wacky" "jeff" "bazza" "eufy" "weather" "harold" "train" "darren" "timers" "bbc" "plants";
-      }
     }
   </style>
 </head>
@@ -288,178 +288,208 @@
   <div class="brand">Totally Pointless Website</div>
   <div class="eyebrow-top">Home Control Panel</div>
   <div id="clock"></div>
+  <div id="rollup"><span class="rl-lamp"></span><a class="rl-text">checking systems…</a><span class="rl-names"></span></div>
 </header>
 
 <main>
 
-  <a class="card is-loading" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
-    <div class="tape">Family</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🚦</span><span class="c-name">Is It Broken?</span></div>
-    <div class="c-metric"><span class="c-val" id="iib-val">—</span></div>
-    <div class="c-sub" id="iib-sub"></div>
-    <div class="c-foot">Kid-friendly status page for "nothing is working"</div>
-  </a>
+  <section class="band">
+    <div class="band-label">Hosts <span class="bl-count" id="bl-hosts"></span></div>
+    <div class="band-grid hosts">
 
-  <a class="card is-loading" id="c-unifi" style="--a:#66bb6a" href="/unifi">
-    <div class="tape">Network</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
-    <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
-    <div class="c-sub" id="u-sub"></div>
-    <div class="c-foot">unifi_poller</div>
-  </a>
+      <a class="card is-loading" id="c-steve" style="--a:#b8875a" href="/steve">
+        <div class="tape">Chassis</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">steve</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="steve-sub"></div>
+        <div class="hs-trace" id="steve-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="steve-read">—</div>
+        <div class="c-foot">48h memory · load · disk · services</div>
+      </a>
 
-  <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
-    <div class="tape">RF Recon</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
-    <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
-    <div class="c-sub" id="wl-sub"></div>
-    <div class="c-foot">kismet · wlx00c0cabaea2c</div>
-  </a>
+      <a class="card is-loading" id="c-wacky" style="--a:#4db6ac" href="/wacky">
+        <div class="tape">Chassis</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">wacky</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="wacky-sub"></div>
+        <div class="hs-trace" id="wacky-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="wacky-read">—</div>
+        <div class="c-foot">48h memory · load · disk · tailscale</div>
+      </a>
 
-  <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
-    <div class="tape">DNS</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🕳️</span><span class="c-name">Pi-hole</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
-    <div class="c-sub" id="pihole-sub"></div>
-    <div class="c-foot">bazza · 192.168.1.246</div>
-  </a>
+      <a class="card is-loading" id="c-jeff" style="--a:#b57edc" href="/jeff">
+        <div class="tape">SDR Pi</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">jeff</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="jeff-sub"></div>
+        <div class="hs-trace" id="jeff-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="jeff-read">—</div>
+        <div class="c-foot">48h memory · load · temp · SDR</div>
+      </a>
 
-  <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
-    <div class="tape">DNS integrity</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌍</span><span class="c-name">Atlas Cross-check</span></div>
-    <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
-    <div class="c-sub" id="at-sub"></div>
-    <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
-  </a>
+      <a class="card is-loading" id="c-bazza" style="--a:#6aab5b" href="/bazza">
+        <div class="tape">DNS Pi</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">bazza</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="bazza-sub"></div>
+        <div class="hs-trace" id="bazza-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="bazza-read">—</div>
+        <div class="c-foot">48h memory · load · temp · pi-hole</div>
+      </a>
 
-  <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
-    <div class="tape">WAN</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
-    <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
-    <div class="c-sub" id="up-sub"></div>
-    <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
-  </a>
+    </div>
+  </section>
 
-  <a class="card is-loading" id="c-vpn" style="--a:#e0709a" href="/vpn">
-    <div class="tape">Tunnel</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🔗</span><span class="c-name">Site VPN</span></div>
-    <div class="c-metric"><span class="c-val" id="vpn-val">—</span><span class="c-unit" id="vpn-unit"> ms</span></div>
-    <div class="c-sub" id="vpn-sub"></div>
-    <div class="c-foot">home ⟷ remote base · site magic</div>
-  </a>
+  <section class="band">
+    <div class="band-label">Network <span class="bl-count" id="bl-network"></span></div>
+    <div class="band-grid">
 
-  <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
-    <div class="tape">Latency</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">💨</span><span class="c-name">SmokePing</span></div>
-    <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
-    <div class="c-sub" id="sp-sub"></div>
-    <div class="c-foot">plex box · :8888 · 300 s step</div>
-  </a>
+      <a class="card is-loading span-2" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
+        <div class="tape">Family</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🚦</span><span class="c-name">Is It Broken?</span></div>
+        <div class="c-metric"><span class="c-val" id="iib-val">—</span></div>
+        <div class="c-sub" id="iib-sub"></div>
+        <div class="c-foot">Kid-friendly status page for "nothing is working"</div>
+      </a>
 
-  <a class="card is-loading" id="c-steve" style="--a:#b8875a" href="/steve">
-    <div class="tape">Chassis</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">steve</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
-    <div class="c-sub" id="steve-sub"></div>
-    <div class="c-foot">CPU · MEM · DISK · services</div>
-  </a>
+      <a class="card is-loading span-2" id="c-unifi" style="--a:#66bb6a" href="/unifi">
+        <div class="tape">Network</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
+        <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
+        <div class="c-sub" id="u-sub"></div>
+        <div class="c-foot">unifi_poller</div>
+      </a>
 
-  <a class="card is-loading" id="c-wacky" style="--a:#4db6ac" href="/wacky">
-    <div class="tape">Chassis</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">wacky</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
-    <div class="c-sub" id="wacky-sub"></div>
-    <div class="c-foot">CPU · MEM · DISK · tailscale</div>
-  </a>
+      <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
+        <div class="tape">RF Recon</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
+        <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
+        <div class="c-sub" id="wl-sub"></div>
+        <div class="c-foot">kismet · wlx00c0cabaea2c</div>
+      </a>
 
-  <a class="card is-loading" id="c-jeff" style="--a:#b57edc" href="/jeff">
-    <div class="tape">SDR Pi</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">jeff</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
-    <div class="c-sub" id="jeff-sub"></div>
-    <div class="c-foot">CPU · MEM · TEMP · SDR</div>
-  </a>
+      <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
+        <div class="tape">DNS</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🕳️</span><span class="c-name">Pi-hole</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
+        <div class="c-sub" id="pihole-sub"></div>
+        <div class="c-foot">bazza · 192.168.1.246</div>
+      </a>
 
-  <a class="card is-loading" id="c-bazza" style="--a:#6aab5b" href="/bazza">
-    <div class="tape">DNS Pi</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🖥️</span><span class="c-name">bazza</span></div>
-    <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
-    <div class="c-sub" id="bazza-sub"></div>
-    <div class="c-foot">CPU · MEM · TEMP · pi-hole</div>
-  </a>
+      <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
+        <div class="tape">DNS integrity</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🌍</span><span class="c-name">Atlas Cross-check</span></div>
+        <div class="c-metric"><span class="c-val" id="at-val">—</span><span class="c-unit" id="at-unit"> flagged</span></div>
+        <div class="c-sub" id="at-sub"></div>
+        <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
+      </a>
 
-  <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
-    <div class="tape">Security</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🔔</span><span class="c-name">Eufy</span></div>
-    <div class="c-metric"><span class="c-val" id="ef-val">—</span><span class="c-unit" id="ef-unit"></span></div>
-    <div class="c-sub" id="ef-sub"></div>
-    <div class="c-foot">eufy-security-ws · doorbell &amp; cameras</div>
-  </a>
+      <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
+        <div class="tape">WAN</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
+        <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
+        <div class="c-sub" id="up-sub"></div>
+        <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
+      </a>
 
-  <a class="card is-loading" id="c-arr" style="--a:#c15fc0" href="/arr">
-    <div class="tape">Media</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">📥</span><span class="c-name">arr stack</span></div>
-    <div class="c-metric"><span class="c-val" id="arr-val">—</span><span class="c-unit" id="arr-unit"></span></div>
-    <div class="c-sub" id="arr-sub"></div>
-    <div class="c-foot">noob · sonarr/radarr/lidarr/readarr + downloaders</div>
-  </a>
+      <a class="card is-loading" id="c-vpn" style="--a:#e0709a" href="/vpn">
+        <div class="tape">Tunnel</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🔗</span><span class="c-name">Site VPN</span></div>
+        <div class="c-metric"><span class="c-val" id="vpn-val">—</span><span class="c-unit" id="vpn-unit"> ms</span></div>
+        <div class="c-sub" id="vpn-sub"></div>
+        <div class="c-foot">home ⟷ remote base · site magic</div>
+      </a>
 
-  <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
-    <div class="tape">Harold</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌡️</span><span class="c-name">How Hot is Harold?</span></div>
-    <div class="c-metric"><span class="c-val" id="h-val">—</span><span class="c-unit">°C</span></div>
-    <div class="c-sub" id="h-sub"></div>
-    <div class="c-foot">:5000</div>
-  </a>
+      <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
+        <div class="tape">Latency</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">💨</span><span class="c-name">SmokePing</span></div>
+        <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
+        <div class="c-sub" id="sp-sub"></div>
+        <div class="c-foot">plex box · :8888 · 300 s step</div>
+      </a>
 
-  <a class="card is-loading" id="c-weather" style="--a:#29b6f6" href="http://192.168.1.183:8186">
-    <div class="tape">Weather</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🌤️</span><span class="c-name">Weather</span></div>
-    <div class="c-metric"><span class="c-val" id="w-val">—</span><span class="c-unit">°C</span></div>
-    <div class="c-sub" id="w-sub"></div>
-    <div class="c-bg-emoji" id="w-emoji" aria-hidden="true"></div>
-    <div class="c-foot">:8186</div>
-  </a>
+    </div>
+  </section>
 
-  <a class="card is-loading" id="c-train" style="--a:#42a5f5" href="http://192.168.1.183:8192">
-    <div class="tape">Departures</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🚆</span><span class="c-name">Next Train</span></div>
-    <div class="c-metric"><span class="c-val" id="t-val">—</span></div>
-    <div class="c-sub" id="t-sub"></div>
-    <div class="c-foot">:8192</div>
-  </a>
+  <section class="band">
+    <div class="band-label">House <span class="bl-count" id="bl-house"></span></div>
+    <div class="band-grid">
 
-  <a class="card" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
-    <div class="tape">Novelty</div>
-    <div class="c-head"><span class="lamp on"></span><span class="c-icon">📰</span><span class="c-name">BBC News Spoofer</span></div>
-    <div class="c-metric"><span class="c-val" style="font-size:1.9rem;letter-spacing:-0.3px">Ready</span></div>
-    <div class="c-sub">Upload a photo, write a headline — get a convincing BBC News page.</div>
-    <div class="c-foot">:8194</div>
-  </a>
+      <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
+        <div class="tape">Security</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🔔</span><span class="c-name">Eufy</span></div>
+        <div class="c-metric"><span class="c-val" id="ef-val">—</span><span class="c-unit" id="ef-unit"></span></div>
+        <div class="c-sub" id="ef-sub"></div>
+        <div class="c-foot">eufy-security-ws · doorbell &amp; cameras</div>
+      </a>
 
-  <a class="card is-loading" id="c-darren" style="--a:#26c6da" href="http://192.168.1.183:8193">
-    <div class="tape">Kitchen</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🍽️</span><span class="c-name">What's Darren Doing?</span></div>
-    <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
-    <div class="c-sub" id="d-sub"></div>
-    <div class="c-foot">:8193</div>
-  </a>
+      <a class="card is-loading" id="c-arr" style="--a:#c15fc0" href="/arr">
+        <div class="tape">Media</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📥</span><span class="c-name">arr stack</span></div>
+        <div class="c-metric"><span class="c-val" id="arr-val">—</span><span class="c-unit" id="arr-unit"></span></div>
+        <div class="c-sub" id="arr-sub"></div>
+        <div class="c-foot">noob · sonarr/radarr/lidarr/readarr + downloaders</div>
+      </a>
 
-  <a class="card is-loading" id="c-timers" style="--a:#f2a03d" href="http://192.168.1.183:8196">
-    <div class="tape">Kitchen</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">⏲️</span><span class="c-name">Watched Pot</span></div>
-    <div class="c-metric"><span class="c-val" id="tm-val">—</span><span class="c-unit" id="tm-unit"></span></div>
-    <div class="c-sub" id="tm-sub"></div>
-    <div class="c-foot">:8196</div>
-  </a>
+      <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
+        <div class="tape">Harold</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🌡️</span><span class="c-name">How Hot is Harold?</span></div>
+        <div class="c-metric"><span class="c-val" id="h-val">—</span><span class="c-unit">°C</span></div>
+        <div class="c-sub" id="h-sub"></div>
+        <div class="c-foot">:5000</div>
+      </a>
 
-  <a class="card is-loading" id="c-plants" style="--a:#8bc34a" href="/moisture">
-    <div class="tape">Greenhouse</div>
-    <div class="c-head"><span class="lamp"></span><span class="c-icon">🪴</span><span class="c-name">Plants</span></div>
-    <div class="c-metric"><span class="c-val" id="pl-val">—</span><span class="c-unit" id="pl-unit">%</span></div>
-    <div class="c-sub" id="pl-sub"></div>
-    <div class="c-foot">soil moisture · esp32c6 · :8082</div>
-  </a>
+      <a class="card is-loading" id="c-weather" style="--a:#29b6f6" href="http://192.168.1.183:8186">
+        <div class="tape">Weather</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🌤️</span><span class="c-name">Weather</span></div>
+        <div class="c-metric"><span class="c-val" id="w-val">—</span><span class="c-unit">°C</span></div>
+        <div class="c-sub" id="w-sub"></div>
+        <div class="c-bg-emoji" id="w-emoji" aria-hidden="true"></div>
+        <div class="c-foot">:8186</div>
+      </a>
+
+      <a class="card is-loading" id="c-train" style="--a:#42a5f5" href="http://192.168.1.183:8192">
+        <div class="tape">Departures</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🚆</span><span class="c-name">Next Train</span></div>
+        <div class="c-metric"><span class="c-val" id="t-val">—</span></div>
+        <div class="c-sub" id="t-sub"></div>
+        <div class="c-foot">:8192</div>
+      </a>
+
+      <a class="card is-loading" id="c-timers" style="--a:#f2a03d" href="http://192.168.1.183:8196">
+        <div class="tape">Kitchen</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">⏲️</span><span class="c-name">Watched Pot</span></div>
+        <div class="c-metric"><span class="c-val" id="tm-val">—</span><span class="c-unit" id="tm-unit"></span></div>
+        <div class="c-sub" id="tm-sub"></div>
+        <div class="c-foot">:8196</div>
+      </a>
+
+      <a class="card is-loading" id="c-plants" style="--a:#8bc34a" href="/moisture">
+        <div class="tape">Greenhouse</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🪴</span><span class="c-name">Plants</span></div>
+        <div class="c-metric"><span class="c-val" id="pl-val">—</span><span class="c-unit" id="pl-unit">%</span></div>
+        <div class="c-sub" id="pl-sub"></div>
+        <div class="c-foot">soil moisture · esp32c6 · :8082</div>
+      </a>
+
+      <a class="card is-loading" id="c-darren" style="--a:#26c6da" href="http://192.168.1.183:8193">
+        <div class="tape">Kitchen</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🍽️</span><span class="c-name">What's Darren Doing?</span></div>
+        <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
+        <div class="c-sub" id="d-sub"></div>
+        <div class="c-foot">:8193</div>
+      </a>
+
+      <a class="card" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
+        <div class="tape">Novelty</div>
+        <div class="c-head"><span class="lamp on"></span><span class="c-icon">📰</span><span class="c-name">BBC News Spoofer</span></div>
+        <div class="c-metric"><span class="c-val" style="font-size:1.9rem;letter-spacing:-0.3px">Ready</span></div>
+        <div class="c-sub">Upload a photo, write a headline — get a convincing BBC News page.</div>
+        <div class="c-foot">:8194</div>
+      </a>
+
+    </div>
+  </section>
 
 </main>
 
@@ -532,6 +562,61 @@
     if (c<=82)  return '🌧️';
     if (c<=86)  return '🌨️';
     return '⛈️';
+  }
+
+  // ── Host strip-chart recorder: a 48h memory trace drawn as a bank of ticks
+  //    in the host's own accent hue, with amber/red for threshold breaches ──
+  function renderTrace(id, points) {
+    const box = document.getElementById(id + '-trace');
+    if (!box) return;
+    const pts = points || [];
+    if (!pts.length) { box.innerHTML = '<div class="hs-skel"></div>'; return; }
+
+    const N = 46;
+    const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
+    const span = Math.max(1, t1 - t0);
+    const buck = Array(N).fill(null);
+    for (const p of pts) {
+      const i = Math.min(N - 1, Math.floor((p.ts - t0) / span * N));
+      if (buck[i] == null || p.mem_pct > buck[i]) buck[i] = p.mem_pct;  // worst-in-hour
+    }
+    let carry = buck.find(v => v != null) ?? 0;
+    const vals = buck.map(v => (v == null ? carry : (carry = v)));     // forward-fill gaps
+
+    const W = 100, H = 34, step = W / N, bw = step - 0.9;
+    const bars = vals.map((v, i) => {
+      const h = Math.max(1.2, v / 100 * H);
+      const cls = v > 90 ? 'crit' : v > 78 ? 'warn' : '';
+      const op = (0.32 + 0.68 * i / (N - 1)).toFixed(3);              // older = fainter
+      return `<rect class="hb ${cls}" x="${(i * step).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" fill-opacity="${op}"/>`;
+    }).join('');
+
+    const now = Math.round(vals[vals.length - 1]);
+    const peak = Math.round(Math.max(...vals));
+    const hrs = span / 3600;
+    const spanLbl = hrs >= 47 ? '48h' : hrs >= 1.5 ? Math.round(hrs) + 'h' : Math.max(1, Math.round(span / 60)) + 'm';
+
+    box.innerHTML =
+      `<div class="hs-cap"><span class="hs-k">Mem · ${spanLbl} · peak ${peak}%</span><span class="hs-now">${now}<i>%</i></span></div>` +
+      `<svg class="hs-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Memory over ${spanLbl}, now ${now}%, peak ${peak}%">` +
+        `<line class="hs-mid" x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" vector-effect="non-scaling-stroke"/>` +
+        bars +
+        `<line class="hs-pen" x1="${W - 0.3}" y1="0" x2="${W - 0.3}" y2="${H}" vector-effect="non-scaling-stroke"/>` +
+      `</svg>`;
+  }
+
+  function setReadout(id, d, extra) {
+    const el = document.getElementById(id + '-read');
+    if (!el) return;
+    const parts = [];
+    const l1 = d.load && d.load['1m'];
+    if (l1 != null) parts.push(`load <b>${l1.toFixed(2)}</b>`);
+    // Pi cards trade disk (flat, low-stakes) for temp + a host-specific readout;
+    // steve/wacky keep disk since they've the room and no temp sensor.
+    if (d.cpu_temp != null) parts.push(`temp <b>${Math.round(d.cpu_temp)}°</b>`);
+    else if (d.disk && d.disk.percent != null) parts.push(`disk <b>${d.disk.percent}%</b>`);
+    if (extra) parts.push(extra);
+    el.innerHTML = parts.join(' · ') || '—';
   }
 
   const harold = () => poll('harold', '/api/harold', d => {
@@ -646,11 +731,11 @@
     const parts = [];
     if (down.length) parts.push(`${dot('dot-red')}${down.map(s => s.name).join(', ')} down`);
     if (restarted.length) parts.push(`${dot('dot-amber')}${restarted.length} restarted`);
-    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%`);
     setCard('steve', {
       val: down.length ? down.length : 'OK', unit: down.length ? ' down' : '',
       sub: parts.join('<br>'), accent, lamp,
     });
+    setReadout('steve', d);
   });
 
   const wacky = () => poll('wacky', '/api/wacky', d => {
@@ -662,11 +747,11 @@
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     const banned = d.fail2ban?.currently_banned || 0;
-    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${banned ? ` · ${banned} banned` : ''}`);
     setCard('wacky', {
       val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
       sub: parts.join('<br>'), accent, lamp,
     });
+    setReadout('wacky', d, banned ? `${banned} banned` : '');
   });
 
   const jeff = () => poll('jeff', '/api/jeff', d => {
@@ -676,20 +761,15 @@
     const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#b57edc';
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
     const adsb = d.adsb;
+    const sdr = d.sdr || {};
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
-    const temp = d.cpu_temp != null ? ` · ${Math.round(d.cpu_temp)}°C` : '';
-    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${temp}`);
-    const sdr = d.sdr || {};
-    if (adsb) parts.push(`${dot('dot-on')}${adsb.aircraft} aircraft · ${adsb.positions} positioned · ${adsb.msgs_per_sec.toLocaleString()} msg/s`);
-    else parts.push(sdr.dongle_present
-      ? `${dot('dot-on')}RTL-SDR detected`
-      : `${dot('dot-amber')}no RTL-SDR on USB`);
     setCard('jeff', {
       val: alerts.length ? alerts.length : (adsb ? adsb.aircraft : 'OK'),
       unit: alerts.length ? ' alerts' : (adsb ? ' aircraft' : ''),
       sub: parts.join('<br>'), accent, lamp,
     });
+    setReadout('jeff', d, adsb ? `${adsb.aircraft} ✈` : (sdr.dongle_present ? 'SDR up' : 'no SDR'));
   });
 
   const bazza = () => poll('bazza', '/api/bazza', d => {
@@ -701,16 +781,14 @@
     const dns = d.dns || {};
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
-    const temp = d.cpu_temp != null ? ` · ${Math.round(d.cpu_temp)}°C` : '';
-    parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${temp}`);
     if (!dns.ftl_active) parts.push(`${dot('dot-red')}Pi-hole FTL down`);
-    else if (dns.percent_blocked != null) parts.push(`${dot('dot-on')}${dns.percent_blocked}% blocked · ${Number(dns.total).toLocaleString()} queries`);
-    else parts.push(`${dot('dot-on')}Pi-hole FTL active`);
     setCard('bazza', {
       val: alerts.length ? alerts.length : (dns.percent_blocked != null ? dns.percent_blocked + '%' : 'OK'),
       unit: alerts.length ? ' alerts' : (dns.percent_blocked != null ? ' blocked' : ''),
       sub: parts.join('<br>'), accent, lamp,
     });
+    setReadout('bazza', d, dns.ftl_active === false ? 'FTL DOWN'
+      : dns.percent_blocked != null ? `${dns.percent_blocked}% blk` : 'FTL up');
   });
 
   const atlas = () => poll('atlas', '/api/atlas', d => {
@@ -852,7 +930,78 @@
     });
   }, 'No data');
 
-  function refresh() { harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless(); steve(); wacky(); jeff(); bazza(); atlas(); uplink(); vpn(); plants(); smoke(); eufy(); arr(); isItBroken(); }
+  // ── Overall rollup — reads every card's lamp/offline state after a refresh ──
+  function updateRollup() {
+    const cards = [...document.querySelectorAll('main .card')];
+    const entry = c => ({
+      name: (c.querySelector('.c-name')?.textContent || c.id.replace('c-', '')).trim(),
+      href: c.getAttribute('href') || '#',
+    });
+    const down = [], warn = [];
+    let loading = 0;
+    for (const c of cards) {
+      if (c.classList.contains('is-loading')) { loading++; continue; }
+      const l = c.querySelector('.lamp');
+      if (c.classList.contains('is-offline') || l?.classList.contains('down')) down.push(entry(c));
+      else if (l?.classList.contains('warn')) warn.push(entry(c));
+    }
+    const rollup = document.getElementById('rollup');
+    const txt = rollup.querySelector('.rl-text');
+    const names = rollup.querySelector('.rl-names');
+    rollup.classList.remove('ok', 'warn', 'down');
+
+    if (loading && !down.length && !warn.length) {
+      txt.textContent = 'checking systems…'; names.innerHTML = ''; txt.removeAttribute('href');
+      return;
+    }
+    const attention = [...down, ...warn];
+    if (!attention.length) {
+      rollup.classList.add('ok');
+      txt.textContent = `all clear · ${cards.length - loading} systems up`;
+      txt.removeAttribute('href');
+      names.innerHTML = '';
+    } else {
+      rollup.classList.add(down.length ? 'down' : 'warn');
+      txt.textContent = `${attention.length} need${attention.length === 1 ? 's' : ''} attention`;
+      txt.href = attention[0].href;            // pill text jumps to the first offender
+      const shown = attention.slice(0, 6);
+      names.innerHTML = '· ' + shown.map(e =>
+        `<a href="${esc(e.href)}">${esc(e.name)}</a>`).join(', ')
+        + (attention.length > 6 ? ` +${attention.length - 6}` : '');
+    }
+  }
+
+  // per-band counts in the section labels
+  function updateBandCounts() {
+    const tally = grid => {
+      const cs = [...grid.querySelectorAll('.card')];
+      const bad = cs.filter(c => c.classList.contains('is-offline') || c.querySelector('.lamp')?.classList.contains('down')).length;
+      const w = cs.filter(c => c.querySelector('.lamp')?.classList.contains('warn')).length;
+      return bad ? `${bad} down` : w ? `${w} warn` : `${cs.length} ok`;
+    };
+    const grids = document.querySelectorAll('.band-grid');
+    ['bl-hosts', 'bl-network', 'bl-house'].forEach((id, i) => {
+      const el = document.getElementById(id);
+      if (el && grids[i]) el.textContent = tally(grids[i]);
+    });
+  }
+
+  function hostTraces() {
+    ['steve', 'wacky', 'jeff', 'bazza'].forEach(h =>
+      fetch(`/api/${h}/history`)
+        .then(r => r.json())
+        .then(j => renderTrace(h, j.points))
+        .catch(() => {}));
+  }
+
+  function refresh() {
+    harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
+    steve(); wacky(); jeff(); bazza(); atlas(); uplink(); vpn(); plants(); smoke();
+    eufy(); arr(); isItBroken(); hostTraces();
+    // give the polls a beat to land, then summarise
+    setTimeout(() => { updateRollup(); updateBandCounts(); }, 1200);
+    setTimeout(() => { updateRollup(); updateBandCounts(); }, 4200);
+  }
   refresh();
   setInterval(refresh, 30000);
 </script>
