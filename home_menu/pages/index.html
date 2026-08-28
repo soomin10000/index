@@ -10,6 +10,7 @@
     :root {
       --chassis: #1c1e20;
       --card: #26282b;
+      --inset: #202224;
       --border: #38393c;
       --border-lit: #4a4c4f;
       --ink: #eae7df;
@@ -124,12 +125,13 @@
 
     .band-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
       gap: 0.85rem;
       align-items: start;
     }
-    .band-grid.hosts { grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); }
+    .band-grid.hosts { grid-template-columns: repeat(auto-fit, minmax(224px, 1fr)); align-items: stretch; }
     .span-2 { grid-column: span 2; }
+    .span-row { grid-column: 1 / -1; }
     @media (max-width: 560px) { .span-2 { grid-column: span 1; } }
 
     /* ── Card base — breaker module on the panel ── */
@@ -148,9 +150,6 @@
       touch-action: manipulation;
     }
 
-    @media (min-width: 640px) {
-      #c-unifi .c-sub { column-count: 2; column-gap: 2rem; }
-    }
 
     .card::after {
       content: ''; position: absolute;
@@ -229,7 +228,79 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-pihole .c-sub, #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-vpn .c-sub, #c-eufy .c-sub { flex: 0 1 auto; }
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-vpn .c-sub, #c-eufy .c-sub, #c-unifi .c-sub { flex: 0 1 auto; }
+    .card { align-self: start; }
+    .band-grid.hosts .card { align-self: stretch; }
+
+    /* ── Wide "strip" cards: a verdict beside a row of recessed sub-panels ── */
+    .strip-row {
+      display: flex; align-items: stretch; gap: 1.4rem; flex-wrap: wrap;
+      margin: 0.4rem 0 0.2rem;
+    }
+    .strip-verdict { flex-shrink: 0; align-self: center; margin-bottom: 0; }
+    .subpanels { display: grid; gap: 0.6rem; flex: 1; min-width: 0; }
+    .subpanel {
+      display: flex; flex-direction: column; min-width: 0;
+      background: #191b1d;                    /* deeper than the card + --inset */
+      border: 1px solid #141517;             /* dark rim = shadowed edge of a cutout */
+      border-radius: 4px;
+      box-shadow:
+        inset 0 3px 8px -1px rgba(0,0,0,0.72),   /* deep top shadow */
+        inset 0 -1px 0 rgba(255,255,255,0.04);   /* faint far-lip highlight */
+    }
+    .subpanel .nm {
+      display: flex; align-items: center; gap: 0.45rem;
+      font-family: var(--font-mono); font-size: 0.55rem; font-weight: 700;
+      letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint);
+    }
+    .subpanel .nm .lamp { width: 6px; height: 6px; }
+    .subpanel .st { font-size: 0.92rem; font-weight: 600; color: var(--ink); margin-top: 0.55rem; }
+    .subpanel .dt {
+      font-size: 0.7rem; color: var(--ink-faint); margin-top: 0.3rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    #c-isitbroken .subpanels { grid-template-columns: repeat(3, 1fr); }
+    #c-isitbroken .subpanel { padding: 0.8rem 0.9rem 0.85rem; }
+    @media (max-width: 620px) { #c-isitbroken .subpanels { grid-template-columns: 1fr; } }
+
+    #c-arr .subpanels { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+    #c-arr .subpanel { padding: 0.55rem 0.7rem 0.62rem; }
+    #c-arr .subpanel .st { font-size: 0.8rem; margin-top: 0.4rem; }
+    #c-arr .c-foot { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .pv-sub { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); margin-top: 0.2rem; }
+    #c-pihole .strip-row, #c-unifi .strip-row { align-items: flex-start; }
+    #c-pihole .strip-verdict, #c-unifi .strip-verdict { align-self: flex-start; padding-top: 0.15rem; }
+    #c-pihole .c-foot, #c-unifi .c-foot { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Key/value readout — a quiet spec sheet, no boxes */
+    .kv {
+      flex: 1; min-width: 0; display: grid;
+      grid-template-columns: max-content minmax(0, 1fr);
+      column-gap: 1.3rem; row-gap: 0.36rem; align-content: start;
+    }
+    .kv dt {
+      font-family: var(--font-mono); font-size: 0.55rem; font-weight: 700;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint);
+      padding-top: 0.16rem;
+    }
+    .kv dd {
+      font-size: 0.82rem; color: var(--ink-dim); font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+    }
+    .kv dd b { color: var(--ink); font-weight: 600; }
+    .kv dd.warn { color: var(--warn); }
+    .kv dd.down { color: var(--down); }
+    .kv dd a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+    .kv dd a:hover { color: var(--ink); }
+
+    #c-wireless .subpanels { grid-template-columns: repeat(3, 1fr); }
+    #c-wireless .subpanel { padding: 0.62rem 0.8rem 0.68rem; }
+
+    @media (max-width: 620px) {
+      #c-pihole .subpanels, #c-wireless .subpanels { grid-template-columns: 1fr; }
+    }
 
     /* ── Host strip-chart recorder ── */
     .band-grid.hosts .card { min-height: 206px; }
@@ -239,7 +310,7 @@
     }
     #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty { display: none; }
 
-    .hs-trace { position: relative; margin: 0.55rem 0 0.4rem; }
+    .hs-trace { position: relative; margin: auto 0 0.4rem; }  /* bottom-anchor the trace block so all four line up */
     .hs-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 3px; padding-right: 2px; }
     .hs-k {
       font-family: var(--font-mono); font-size: 0.5rem; font-weight: 700;
@@ -276,7 +347,7 @@
       animation: flicker 1.4s ease infinite;
     }
     .hs-read {
-      margin-top: auto; padding-top: 0.55rem;
+      padding-top: 0.55rem;
       font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.02em; line-height: 1.65;
       color: var(--ink-faint); text-transform: uppercase;
     }
@@ -379,36 +450,50 @@
     <div class="band-label">Network <span class="bl-count" id="bl-network"></span></div>
     <div class="band-grid">
 
-      <a class="card is-loading span-2" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
+      <a class="card is-loading span-row" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
         <div class="tape">Family</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">🚦</span><span class="c-name">Is It Broken?</span></div>
-        <div class="c-metric"><span class="c-val" id="iib-val">—</span></div>
-        <div class="c-sub" id="iib-sub"></div>
+        <div class="strip-row">
+          <div class="c-metric strip-verdict"><span class="c-val" id="iib-val">—</span></div>
+          <div class="subpanels" id="iib-checks"></div>
+        </div>
         <div class="c-foot">Kid-friendly status page for "nothing is working"</div>
+      </a>
+
+      <a class="card is-loading span-row" id="c-arr" style="--a:#c15fc0" href="/arr">
+        <div class="tape">Media</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📥</span><span class="c-name">arr stack</span></div>
+        <div class="strip-row">
+          <div class="c-metric strip-verdict"><span class="c-val" id="arr-val">—</span><span class="c-unit" id="arr-unit"></span></div>
+          <div class="subpanels" id="arr-panels"></div>
+        </div>
+        <div class="c-foot" id="arr-foot">noob · media automation</div>
       </a>
 
       <a class="card is-loading span-2" id="c-unifi" style="--a:#66bb6a" href="/unifi">
         <div class="tape">Network</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">UniFi Network</span></div>
-        <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
-        <div class="c-sub" id="u-sub"></div>
-        <div class="c-foot">unifi_poller</div>
+        <div class="strip-row">
+          <div class="strip-verdict">
+            <div class="c-metric"><span class="c-val" id="u-val">—</span><span class="c-unit" id="u-unit"> flagged</span></div>
+            <div class="pv-sub" id="u-note">—</div>
+          </div>
+          <dl class="kv" id="u-kv"></dl>
+        </div>
+        <div class="c-foot">unifi_poller · gateway speedtest · site-to-site vpn</div>
       </a>
 
-      <a class="card is-loading" id="c-wireless" style="--a:#a78bfa" href="/kismet">
-        <div class="tape">RF Recon</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
-        <div class="c-metric"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
-        <div class="c-sub" id="wl-sub"></div>
-        <div class="c-foot">kismet · wlx00c0cabaea2c</div>
-      </a>
-
-      <a class="card is-loading" id="c-pihole" style="--a:#f0a030" href="/pihole">
+      <a class="card is-loading span-2" id="c-pihole" style="--a:#f0a030" href="/pihole">
         <div class="tape">DNS</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">🕳️</span><span class="c-name">Pi-hole</span></div>
-        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
-        <div class="c-sub" id="pihole-sub"></div>
-        <div class="c-foot">bazza · 192.168.1.246</div>
+        <div class="strip-row">
+          <div class="strip-verdict">
+            <div class="c-metric"><span class="c-val">—</span><span class="c-unit">blocked</span></div>
+            <div class="pv-sub" id="pihole-qs">— queries today</div>
+          </div>
+          <dl class="kv" id="pihole-kv"></dl>
+        </div>
+        <div class="c-foot">bazza · 192.168.1.246 · pi-hole v6</div>
       </a>
 
       <a class="card is-loading" id="c-atlas" style="--a:#4dd0e1" href="/atlas">
@@ -419,20 +504,12 @@
         <div class="c-foot">RIPE Atlas · world vs pi-hole</div>
       </a>
 
-      <a class="card is-loading" id="c-uplink" style="--a:#00cc88" href="/uplink">
+      <a class="card is-loading span-2" id="c-uplink" style="--a:#00cc88" href="/uplink">
         <div class="tape">WAN</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">🛰️</span><span class="c-name">Uplink</span></div>
         <div class="c-metric"><span class="c-val" id="up-val">—</span><span class="c-unit" id="up-unit"> ms</span></div>
         <div class="c-sub" id="up-sub"></div>
         <div class="c-foot">RIPE Atlas probe · dns roots · <span id="up-path-link"></span></div>
-      </a>
-
-      <a class="card is-loading" id="c-vpn" style="--a:#e0709a" href="/vpn">
-        <div class="tape">Tunnel</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">🔗</span><span class="c-name">Site VPN</span></div>
-        <div class="c-metric"><span class="c-val" id="vpn-val">—</span><span class="c-unit" id="vpn-unit"> ms</span></div>
-        <div class="c-sub" id="vpn-sub"></div>
-        <div class="c-foot">home ⟷ remote base · site magic</div>
       </a>
 
       <a class="card is-loading" id="c-smoke" style="--a:#e8834a" href="/smokeping">
@@ -441,6 +518,16 @@
         <div class="c-metric"><span class="c-val" id="sp-val">—</span><span class="c-unit" id="sp-unit"> targets</span></div>
         <div class="c-sub" id="sp-sub"></div>
         <div class="c-foot">plex box · :8888 · 300 s step</div>
+      </a>
+
+      <a class="card is-loading span-row" id="c-wireless" style="--a:#a78bfa" href="/kismet">
+        <div class="tape">RF Recon</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
+        <div class="strip-row">
+          <div class="c-metric strip-verdict"><span class="c-val" id="wl-val">—</span><span class="c-unit" id="wl-unit"> devices</span></div>
+          <div class="subpanels" id="wl-panels"></div>
+        </div>
+        <div class="c-foot">kismet · wlx00c0cabaea2c</div>
       </a>
 
     </div>
@@ -456,14 +543,6 @@
         <div class="c-metric"><span class="c-val" id="ef-val">—</span><span class="c-unit" id="ef-unit"></span></div>
         <div class="c-sub" id="ef-sub"></div>
         <div class="c-foot">eufy-security-ws · doorbell &amp; cameras</div>
-      </a>
-
-      <a class="card is-loading" id="c-arr" style="--a:#c15fc0" href="/arr">
-        <div class="tape">Media</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">📥</span><span class="c-name">arr stack</span></div>
-        <div class="c-metric"><span class="c-val" id="arr-val">—</span><span class="c-unit" id="arr-unit"></span></div>
-        <div class="c-sub" id="arr-sub"></div>
-        <div class="c-foot">noob · sonarr/radarr/lidarr/readarr + downloaders</div>
       </a>
 
       <a class="card is-loading" id="c-harold" style="--a:#ff6d3a" href="http://192.168.1.183:5000">
@@ -515,7 +594,7 @@
         <div class="c-foot">:8193</div>
       </a>
 
-      <a class="card" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
+      <a class="card span-row" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
         <div class="tape">Novelty</div>
         <div class="c-head"><span class="lamp on"></span><span class="c-icon">📰</span><span class="c-name">BBC News Spoofer</span></div>
         <div class="c-metric"><span class="c-val" style="font-size:1.9rem;letter-spacing:-0.3px">Ready</span></div>
@@ -584,6 +663,13 @@
   const compassDir = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d/45)%8];
   const mins = s => !s||s<=0 ? null : Math.round(s/60)===1 ? '1 min' : `${Math.round(s/60)} mins`;
   const dot  = cls => `<span class="dot ${cls}"></span>`;
+  const relTime = s => s < 90 ? 'just now' : s < 5400 ? Math.round(s/60)+'m ago'
+    : s < 172800 ? Math.round(s/3600)+'h ago' : Math.round(s/86400)+'d ago';
+  const subPanel = (nm, st, dt, lampCls) =>
+    `<div class="subpanel"><div class="nm">${lampCls ? `<span class="lamp ${lampCls}"></span>` : ''}${nm}</div>` +
+    `<div class="st">${st}</div>${dt ? `<div class="dt">${dt}</div>` : ''}</div>`;
+  const kvList = rows => rows.map(([k, v, cls]) =>
+    `<dt>${k}</dt><dd${cls ? ` class="${cls}"` : ''}>${v}</dd>`).join('');
   const MODE = { low:'Low heat', high:'High heat', af:'Anti-frost' };
 
   function wmoEmoji(c, day) {
@@ -752,23 +838,89 @@
     setCard('weather', { val: temp ?? '—', unit: '°C', sub: parts.join(' · '), lamp: 'on' });
   });
 
-  const unifi = () => poll('unifi', '/api/unifi', d => {
+  // UniFi + the site-to-site VPN, folded into one "Network" card.
+  const VPN_STATE = { up: ['', ''], degraded: ['warn', 'warn'], down: ['down', 'down'] };
+  const unifi = async () => {
+    let d, v = null;
+    try { d = await get('/api/unifi'); } catch { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
     if (d.error) { setCard('unifi', { val: 'No data', unit: '' }, true); return; }
+    try { const r = await get('/api/vpn'); if (!r.error) v = r; } catch {}
+
     const fc = d.flagged_clients || [];
     const cg = d.flagged_congestion || [];
-    const n  = fc.length;
-    const accent = n > 0 ? 'var(--down)' : 'var(--ok)';
-    const clientLines = fc.map(c => `${dot('dot-red')}${esc(c.hostname)} ${c.signal} dBm · ${c.retry_pct}% retries`).join('<br>');
-    const congLines   = cg.map(c => `${dot('dot-red')}${esc(c.ap)} ${esc(c.radio)} ${c.cu_total}% util`).join('<br>');
-    const sub = [clientLines, congLines].filter(Boolean).join('<br>') || `${dot('dot-on')}All clear`;
-    setCard('unifi', { val: n, unit: n === 1 ? ' flagged' : ' flagged', sub, accent, lamp: n > 0 ? 'down' : 'on' });
-  });
+    const n = fc.length + cg.length;
+    const [vLamp, vCls] = VPN_STATE[v && v.status] || ['', ''];
+    const lamp = (n > 0 || vLamp === 'down') ? 'down' : vLamp === 'warn' ? 'warn' : 'on';
+    setCard('unifi', {
+      val: n, unit: ' flagged',
+      accent: lamp === 'down' ? 'var(--down)' : lamp === 'warn' ? 'var(--warn)' : 'var(--ok)',
+      lamp,
+    });
+
+    const note = document.getElementById('u-note');
+    if (note) note.textContent = (n || vLamp === 'down') ? 'needs a look' : vLamp === 'warn' ? 'vpn degraded' : 'all clear';
+
+    const st = d.speedtest || {};
+    const dl = st.download_mbps != null ? Math.round(st.download_mbps) : '—';
+    const ul = st.upload_mbps != null ? Math.round(st.upload_mbps) : '—';
+
+    const rows = [
+      ['Flagged clients',
+        fc.length ? `<b>${fc.length}</b> · ${esc(fc.map(c => c.hostname).slice(0, 2).join(', '))}` : 'none',
+        fc.length ? 'down' : ''],
+      ['Congested APs',
+        cg.length ? `<b>${cg.length}</b> · ${esc(cg.map(c => `${c.ap} ${c.cu_total}%`).slice(0, 2).join(', '))}` : 'none',
+        cg.length ? 'warn' : ''],
+      ['WAN speedtest', `<b>${dl}↓ / ${ul}↑</b> Mbps${st.ping_ms != null ? ` · ${st.ping_ms} ms` : ''}`],
+    ];
+    if (v) {
+      const rtt = v.ping?.rtt_avg;
+      rows.push(
+        ['Site VPN',
+          `<a href="/vpn" onclick="event.stopPropagation()"><b>${esc(v.status || '—')}</b>${rtt != null ? ` · ${rtt.toFixed(0)} ms` : ''}</a>`,
+          vCls],
+        ['VPN loss', `${(v.ping?.loss_pct ?? 0).toFixed(0)}%`, (v.ping?.loss_pct > 0) ? 'warn' : ''],
+        ['Remote site', esc(v.far?.gw_name || '—')],
+        ['Remote WAN',
+          `${esc(v.far?.isp || '—')}${v.far?.wan_status && v.far.wan_status !== 'ok' ? ` · ${esc(v.far.wan_status)}` : ''}`,
+          (v.far?.wan_status && v.far.wan_status !== 'ok') ? 'warn' : ''],
+      );
+    } else {
+      rows.push(['Site VPN', '<a href="/vpn" onclick="event.stopPropagation()">no data</a>', 'warn']);
+    }
+    const kv = document.getElementById('u-kv');
+    if (kv) kv.innerHTML = kvList(rows);
+  };
 
   const pihole = () => poll('pihole', '/api/pihole', d => {
     if (d.error) { setCard('pihole', { val: '?', unit: '' }, true); return; }
-    const s = d.summary;
-    const sub = `${s.total.toLocaleString()} queries · ${s.cached.toLocaleString()} cached`;
-    setCard('pihole', { val: s.percent_blocked + '%', unit: 'blocked', sub, lamp: 'on' });
+    const s = d.summary || {};
+    setCard('pihole', { val: (s.percent_blocked ?? '—') + '%', unit: 'blocked', lamp: 'on', accent: '#f0a030' });
+
+    const qs = document.getElementById('pihole-qs');
+    if (qs) qs.textContent = `${(s.total || 0).toLocaleString()} queries today`;
+
+    const gd = s.gravity?.domains || 0;
+    const gravTxt = gd >= 1e6 ? (gd / 1e6).toFixed(2) + 'M' : gd.toLocaleString();
+    const gAge = s.gravity?.last_update ? relTime(Date.now() / 1000 - s.gravity.last_update) : '—';
+    const tb = (d.top_blocked || [])[0];
+    const cachePct = s.total ? Math.round(s.cached / s.total * 100) : 0;
+    const up = (d.upstreams || [])[0];
+    const upName = !up ? '—'
+      : (up.ip === '127.0.0.1' ? 'unbound' : (up.name && !up.name.endsWith('.lan') ? up.name : up.ip));
+    const sec = d.secondary;
+
+    const kv = document.getElementById('pihole-kv');
+    const rows = [
+      ['Blocked', `<b>${(s.blocked || 0).toLocaleString()}</b> today`],
+      ['Cached', `<b>${cachePct}%</b> · ${(s.cached || 0).toLocaleString()}`],
+      ['Forwarded', `<b>${(s.forwarded || 0).toLocaleString()}</b>`],
+      ['Gravity', `<b>${gravTxt}</b> · ${gAge}`],
+      ['Top blocked', tb ? `${esc(tb.domain)} · <b>${tb.count.toLocaleString()}</b>` : '—'],
+      ['Upstream', `${esc(upName)}${up?.port ? ` :${up.port}` : ''}`],
+    ];
+    if (sec) rows.push(['Secondary', `${esc(sec.label)} · ${sec.reachable ? 'up' : 'DOWN'}`, sec.reachable ? '' : 'down']);
+    if (kv) kv.innerHTML = kvList(rows);
   });
 
   const wireless = () => poll('wireless', '/api/kismet', d => {
@@ -776,12 +928,17 @@
     const unknown = (d.unknown_clients || []).length;
     const alerts  = (d.alerts || []).length;
     const accent  = alerts > 0 ? 'var(--down)' : unknown > 0 ? 'var(--warn)' : '#a78bfa';
-    const parts   = [];
-    if (unknown > 0) parts.push(`${dot('dot-red')}${unknown} unknown clients`);
-    if (alerts > 0)  parts.push(`${dot('dot-red')}${alerts} alerts`);
-    if (!parts.length) parts.push(`${dot('dot-on')}All clear`);
     const lamp = alerts > 0 ? 'down' : unknown > 0 ? 'warn' : 'on';
-    setCard('wireless', { val: d.device_count, unit: ' devices', sub: parts.join('<br>'), accent, lamp });
+    setCard('wireless', { val: d.device_count, unit: ' devices', accent, lamp });
+
+    const box = document.getElementById('wl-panels');
+    if (box) box.innerHTML =
+      subPanel('Unknown clients', unknown || 'None',
+        unknown ? 'not in the known list' : 'all recognised', unknown ? 'warn' : 'on') +
+      subPanel('Alerts', alerts || 'None',
+        alerts ? 'kismet flagged activity' : 'nothing flagged', alerts ? 'down' : 'on') +
+      subPanel('Capture', d.uptime_sec ? Math.round(d.uptime_sec / 3600) + 'h' : '—',
+        'kismet uptime', 'on');
   });
 
   const steve = () => poll('steve', '/api/steve', d => {
@@ -845,12 +1002,11 @@
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     if (!dns.ftl_active) parts.push(`${dot('dot-red')}Pi-hole FTL down`);
     setCard('bazza', {
-      val: alerts.length ? alerts.length : (dns.percent_blocked != null ? dns.percent_blocked + '%' : 'OK'),
-      unit: alerts.length ? ' alerts' : (dns.percent_blocked != null ? ' blocked' : ''),
+      val: alerts.length ? alerts.length : 'OK',
+      unit: alerts.length ? ' alerts' : '',
       sub: parts.join('<br>'), accent, lamp,
     });
-    setReadout('bazza', d, dns.ftl_active === false ? 'FTL DOWN'
-      : dns.percent_blocked != null ? `${dns.percent_blocked}% blk` : 'FTL up');
+    setReadout('bazza', d, dns.ftl_active === false ? 'FTL DOWN' : 'FTL up');
   });
 
   const atlas = () => poll('atlas', '/api/atlas', d => {
@@ -915,28 +1071,6 @@
     }
   }, 'No data');
 
-  const vpn = () => poll('vpn', '/api/vpn', d => {
-    if (d.error) { setCard('vpn', { val: '?', unit: '' }, true); return; }
-    const STATE = {
-      up:       ['on',   '#e0709a'],
-      degraded: ['warn', 'var(--warn)'],
-      down:     ['down', 'var(--down)'],
-    };
-    const [lamp, accent] = STATE[d.status] || ['warn', 'var(--warn)'];
-    const rtt = d.ping?.rtt_avg;
-    const parts = [];
-    if ((d.alerts || []).length) parts.push(`${dot('dot-red')}${d.alerts.map(a => esc(a.header)).join(', ')}`);
-    parts.push(d.status === 'down'
-      ? `${dot('dot-red')}no path to ${esc(d.far?.ip || 'remote')}`
-      : `${dot(d.ping.loss_pct > 0 ? 'dot-amber' : 'dot-on')}${d.ping.loss_pct.toFixed(0)}% loss · ${d.far?.gw_name || 'remote'}`);
-    if (d.far?.isp) parts.push(`remote WAN: ${esc(d.far.isp)}`);
-    setCard('vpn', {
-      val: d.status === 'down' ? 'DOWN' : (rtt != null ? rtt.toFixed(0) : '—'),
-      unit: d.status === 'down' ? '' : ' ms',
-      sub: parts.join('<br>'), accent, lamp,
-    });
-  }, 'No data');
-
   const smoke = () => poll('smoke', '/api/smokeping', d => {
     const age = (Date.now() / 1000 - d.ts) / 60;
     const stale = age > 30;
@@ -965,36 +1099,64 @@
     });
   }, 'No data');
 
+  const IIB_LAMP = { ok: 'on', warn: 'warn', down: 'down' };
+  const IIB_META = {
+    internet: { name: 'Internet', ok: 'Working great!', warn: 'Working, but odd', down: "It's down" },
+    wifi:     { name: 'WiFi',     ok: 'Working great!', warn: 'Kinda working',    down: "It's down" },
+    speed:    { name: 'Speed',    ok: 'Nice and fast!', warn: 'No test yet',      down: "It's down" },
+  };
   const isItBroken = () => poll('isitbroken', '/api/is-it-broken', d => {
     const STATE = { ok: ['All good', 'on'], warn: ['Meh', 'warn'], down: ['Down', 'down'] };
     const [val, lamp] = STATE[d.overall] || ['?', 'warn'];
-    const bad = Object.entries(d.checks || {}).filter(([, c]) => c.state !== 'ok');
-    const sub = bad.length
-      ? bad.map(([, c]) => `${dot(c.state === 'down' ? 'dot-red' : 'dot-amber')}${esc(c.detail)}`).join('<br>')
-      : 'Internet · WiFi · Speed all fine';
     const accent = lamp === 'down' ? 'var(--down)' : lamp === 'warn' ? 'var(--warn)' : '#f2c94c';
-    setCard('isitbroken', { val, sub, lamp, accent });
+
+    const box = document.getElementById('iib-checks');
+    if (box) box.innerHTML = Object.entries(IIB_META).map(([k, meta]) => {
+      const c = (d.checks || {})[k] || { state: 'warn', detail: '—' };
+      return `<div class="subpanel">` +
+        `<div class="nm"><span class="lamp ${IIB_LAMP[c.state] || 'warn'}"></span>${meta.name}</div>` +
+        `<div class="st">${esc(meta[c.state] || meta.warn)}</div>` +
+        `<div class="dt">${esc(c.detail)}</div></div>`;
+    }).join('');
+
+    setCard('isitbroken', { val, lamp, accent });
   }, 'No data');
 
+  const ARR_NAMES = {
+    sonarr: 'Sonarr', radarr: 'Radarr', lidarr: 'Lidarr', readarr: 'Readarr',
+    prowlarr: 'Prowlarr', sabnzbd: 'SABnzbd', qbittorrent: 'qBittorrent',
+  };
   const arr = () => poll('arr', '/api/arr', d => {
     if (d.error) { setCard('arr', { val: '?', unit: '' }, true); return; }
     const services = d.services || {};
     const down = Object.entries(services).filter(([, s]) => !s.ok);
     const accent = down.length ? 'var(--down)' : '#c15fc0';
     const lamp = down.length ? 'down' : 'on';
-    const parts = [];
-    if (down.length) parts.push(`${dot('dot-red')}${down.map(([n]) => esc(n)).join(', ')} down`);
+
+    const box = document.getElementById('arr-panels');
+    if (box) box.innerHTML = Object.entries(services).map(([k, s]) =>
+      `<div class="subpanel">` +
+        `<div class="nm"><span class="lamp ${s.ok ? 'on' : 'down'}"></span>${esc(ARR_NAMES[k] || k)}</div>` +
+        `<div class="st">${s.ok ? 'Online' : esc(s.message || 'Down')}</div>` +
+      `</div>`).join('');
+
     const dl = d.latest_download;
-    parts.push(dl ? `${dot('dot-on')}${esc(dl.title)}` : `${dot('dot-off')}No imports yet`);
+    const foot = document.getElementById('arr-foot');
+    if (foot) foot.textContent = dl ? `latest · ${dl.title}` : 'noob · no imports yet';
+
     setCard('arr', {
       val: down.length ? down.length : 'OK', unit: down.length ? ' down' : '',
-      sub: parts.join('<br>'), accent, lamp,
+      accent, lamp,
     });
   }, 'No data');
 
+  // Cards whose lamp is informational only — never escalate them to the bus-bar
+  // or the band tallies (kismet noise, a quiet plant sensor).
+  const ROLLUP_MUTE = new Set(['c-wireless', 'c-plants']);
+
   // ── Overall rollup — reads every card's lamp/offline state after a refresh ──
   function updateRollup() {
-    const cards = [...document.querySelectorAll('main .card')];
+    const cards = [...document.querySelectorAll('main .card')].filter(c => !ROLLUP_MUTE.has(c.id));
     const entry = c => ({
       name: (c.querySelector('.c-name')?.textContent || c.id.replace('c-', '')).trim(),
       href: c.getAttribute('href') || '#',
@@ -1041,7 +1203,7 @@
   // per-band counts in the section labels
   function updateBandCounts() {
     const tally = grid => {
-      const cs = [...grid.querySelectorAll('.card')];
+      const cs = [...grid.querySelectorAll('.card')].filter(c => !ROLLUP_MUTE.has(c.id));
       const bad = cs.filter(c => c.classList.contains('is-offline') || c.querySelector('.lamp')?.classList.contains('down')).length;
       const w = cs.filter(c => c.querySelector('.lamp')?.classList.contains('warn')).length;
       return bad ? `${bad} down` : w ? `${w} warn` : `${cs.length} ok`;
@@ -1063,7 +1225,7 @@
 
   function refresh() {
     harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
-    steve(); wacky(); jeff(); bazza(); atlas(); uplink(); vpn(); plants(); smoke();
+    steve(); wacky(); jeff(); bazza(); atlas(); uplink(); plants(); smoke();
     eufy(); arr(); isItBroken(); hostTraces();
     // give the polls a beat to land, then summarise
     setTimeout(() => { updateRollup(); updateBandCounts(); }, 1200);
