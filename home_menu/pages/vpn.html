@@ -167,6 +167,9 @@
   .chip.down { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--bezel)); }
   .chip.none { color: var(--ink-faint); border-style: dashed; }
 
+  body.stale header.topbar { box-shadow: inset 0 -2px 0 var(--warn); }
+  body.stale footer.updated { color: var(--warn); }
+
   footer.updated {
     max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
     font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
@@ -236,6 +239,19 @@
 <script>
   const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  // Server tags vpn.json with _stale / _age_s when its ts is past the freshness
+  // window (see _jsonfile in server.py). Amber underline + footer age when stale.
+  function markStale(d) {
+    const stale = !!(d && (d._stale || d.error));
+    document.body.classList.toggle('stale', stale);
+    const el = document.getElementById('updated');
+    if (el && d && d.ts) {
+      const age = d._age_s != null ? d._age_s : Math.round(Date.now() / 1000 - d.ts);
+      el.textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB')
+        + (stale ? ` · ${Math.round(age / 60)} min old — STALE` : '');
+    }
+  }
 
   function fmtUptime(s) {
     if (s == null) return '—';
@@ -430,7 +446,7 @@
       renderFar(d.far, d.api);
       renderConsole(d.console_reported);
 
-      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+      markStale(d);
       loadHistory();
     } catch (e) {
       document.getElementById('status-text').textContent = 'OFFLINE';

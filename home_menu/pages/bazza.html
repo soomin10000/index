@@ -212,6 +212,9 @@
   .rows .row span:first-child { color: var(--ink-faint); }
   .rows .row .proc-name { color: var(--ink); }
 
+  body.stale header.topbar { box-shadow: inset 0 -2px 0 var(--warn); }
+  body.stale footer.updated { color: var(--warn); }
+
   footer.updated {
     max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
     font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
@@ -417,7 +420,7 @@
       document.getElementById('top-cpu').innerHTML = (d.top_cpu || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
       document.getElementById('top-mem').innerHTML = (d.top_mem || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
 
-      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+      markStale(d);
       loadHistory(d.load.cpus);
     } catch (e) {
       document.getElementById('status-text').textContent = 'OFFLINE';

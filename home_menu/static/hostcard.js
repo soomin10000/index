@@ -125,6 +125,20 @@ function procRow(p) {
   return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
 }
 
+// Server tags the poller JSON with _stale / _age_s (see _jsonfile in server.py)
+// when its `ts` is older than the freshness window. Surface that: amber
+// underline on the topbar (body.stale, styled per page) + an age in the footer.
+function markStale(d) {
+  const stale = !!(d && (d._stale || d.error));
+  document.body.classList.toggle('stale', stale);
+  const el = document.getElementById('updated');
+  if (el && d && d.ts) {
+    const age = d._age_s != null ? d._age_s : Math.round(Date.now() / 1000 - d.ts);
+    el.textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB')
+      + (stale ? ` · ${Math.round(age / 60)} min old — STALE` : '');
+  }
+}
+
 // ── Alerts (each acknowledged individually — an ack is "id -> onset ts",
 // so a re-triggered episode with a fresh onset ts un-acks itself) ──
 function loadAcks(ackKey) {
