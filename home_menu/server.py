@@ -55,6 +55,10 @@ _SP_PING_DS_RE = re.compile(r'ds\[ping(\d+)\]')
 _sp_cache = {}
 _sp_ping_count_cache = {}  # rrd path -> pings/interval (schema is static, cached indefinitely)
 _sp_lock = threading.Lock()
+# The /smokeping page fires ~34 /api/smokeping/series requests at once, each its
+# own handler thread spawning rrdtool. Cap how many run concurrently so a cold
+# page load (or several viewers at once) can't fork-bomb the box.
+_rrd_sem = threading.BoundedSemaphore(6)
 
 
 def _smokeping_status():
@@ -105,11 +109,22 @@ def _smokeping_series(target, rng):
     with equal, low alpha client-side lets ordinary alpha compositing do the
     density gradient — no min/max box, no percentile math needed here."""
     key = (target, rng)
-    now = time.time()
     with _sp_lock:
         hit = _sp_cache.get(key)
-        if hit and now - hit[0] < 60:
+        if hit and time.time() - hit[0] < 60:
             return hit[1]
+    with _rrd_sem:
+        # Re-check under the semaphore — while we queued, another thread handling
+        # a sibling tile may have already computed and cached this exact key.
+        with _sp_lock:
+            hit = _sp_cache.get(key)
+            if hit and time.time() - hit[0] < 60:
+                return hit[1]
+        return _smokeping_series_uncached(target, rng, key)
+
+
+def _smokeping_series_uncached(target, rng, key):
+    now = time.time()
     section, _, name = target.partition('.')
     rrd = SMOKEPING_RRD_DIR / section / f'{name}.rrd'
     if not rrd.is_file():
@@ -1441,7 +1456,25 @@ ROUTES_POST = {
 }
 
 
+class _CappedServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer spawns one unbounded thread per connection. Cap the
+    number in flight so a burst (or a slow client holding connections open)
+    can't run the box out of threads — new connections just wait in the kernel
+    backlog until a slot frees."""
+    _slots = threading.BoundedSemaphore(64)
+
+    def process_request(self, request, client_address):
+        self._slots.acquire()
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 if __name__ == '__main__':
-    srv = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
+    srv = _CappedServer(('0.0.0.0', PORT), Handler)
     print(f'Home menu running on http://0.0.0.0:{PORT}')
     srv.serve_forever()
