@@ -1,19 +1,21 @@
-"""Writes steve.json for the web dashboard — CPU/mem/disk/uptime + home-stack service health.
+"""Writes steve.json for the web dashboard — CPU/mem/disk/uptime + home-stack
+service health. Unlike the other host pollers this runs ON steve, so it reads
+/proc directly instead of over SSH, and it drives notify_sender pushes on
+service down/resolved/crash-restart transitions (state kept in steve_state.json).
 
-Also logs metrics history to steve_history.db and notifies (via notify_sender) on
-service down/resolved/crash-restart transitions, using steve_state.json to remember
-what was already reported across cron runs.
+Shared metrics parsing / alert core / history DB live in hostlib.py.
 """
 
 import json
-import sqlite3
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
+sys.path.insert(0, str(Path(__file__).parent))
+import hostlib
 
+sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 try:
     from notify_sender import notify as _notify
 except ImportError:
@@ -26,7 +28,6 @@ LOGS = Path(__file__).resolve().parent.parent / "logs"
 OUT        = DATA / "steve.json"
 STATE_FILE = DATA / "steve_state.json"
 DB_FILE    = DATA / "steve_history.db"
-HISTORY_RETENTION_SECONDS = 48 * 3600
 
 # The home-stack services running on steve — not the generic OS units.
 SERVICES = [
@@ -35,12 +36,6 @@ SERVICES = [
     "next-train", "unifi-poller", "weather",
 ]
 
-# ── Alert thresholds ──
-DISK_WARN_PCT = 80
-DISK_CRIT_PCT = 90
-DISK_GROWTH_PCT_PER_HOUR = 5      # flags e.g. a runaway log filling the disk
-MEM_WARN_PCT = 90
-LOAD_RATIO_WARN = 2.0             # load-1m / cpu count
 CRASH_RESTART_THRESHOLD = 3       # total NRestarts before it's "repeated", not a one-off
 LOG_GROWTH_MB_PER_HOUR = 20
 LOG_SIZE_WARN_MB = 300
@@ -144,40 +139,6 @@ def _top_processes(sort_key, n=5):
     return procs
 
 
-def _log_history(ts, load1, mem_pct, disk_pct):
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS metrics_log "
-        "(ts INTEGER, load1 REAL, mem_pct REAL, disk_pct REAL)"
-    )
-    conn.execute(
-        "INSERT INTO metrics_log (ts, load1, mem_pct, disk_pct) VALUES (?, ?, ?, ?)",
-        (ts, load1, mem_pct, disk_pct),
-    )
-    cutoff = ts - HISTORY_RETENTION_SECONDS
-    conn.execute("DELETE FROM metrics_log WHERE ts < ?", (cutoff,))
-    conn.commit()
-    conn.close()
-
-
-def _load_state():
-    if not STATE_FILE.exists():
-        return None
-    try:
-        return json.loads(STATE_FILE.read_text())
-    except Exception:
-        return None
-
-
-def _save_state(down, restarts, active_alerts, log_sizes):
-    STATE_FILE.write_text(json.dumps({
-        "down": sorted(down),
-        "restarts": restarts,
-        "active_alerts": active_alerts,
-        "log_sizes": log_sizes,
-    }))
-
-
 def _handle_notifications(services, prev):
     curr_down = {s["name"] for s in services if s["active"] != "active"}
     curr_restarts = {s["name"]: s["restarts"] for s in services}
@@ -199,21 +160,6 @@ def _handle_notifications(services, prev):
             _notify("steve: service restarted", f"{name} restarted (NRestarts {prev_restarts.get(name, 0)} -> {count})", sound=True)
 
 
-def _disk_pct_hour_ago(now):
-    if not DB_FILE.exists():
-        return None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        row = conn.execute(
-            "SELECT disk_pct FROM metrics_log WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
-            (now - 3300,),  # ~55 min, tolerant of the 2-minute poll cadence
-        ).fetchone()
-        conn.close()
-        return row[0] if row else None
-    except Exception:
-        return None
-
-
 def _log_growth(now, prev_sizes):
     """Size + growth rate (MB/hr) for each watched log, vs. its size last run."""
     results = []
@@ -233,44 +179,20 @@ def _log_growth(now, prev_sizes):
     return results, new_sizes
 
 
-def _build_alerts(data, now, prev):
-    prev_active = (prev or {}).get("active_alerts", {})
-    prev_log_sizes = (prev or {}).get("log_sizes", {})
-
-    candidates = {}  # key -> (level, header, text)
-
-    disk, mem, load = data["disk"], data["mem"], data["load"]
-    if disk["percent"] >= DISK_CRIT_PCT:
-        candidates["disk_high"] = ("critical", "Disk almost full",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-    elif disk["percent"] >= DISK_WARN_PCT:
-        candidates["disk_high"] = ("warn", "Disk usage high",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-
-    hour_ago = _disk_pct_hour_ago(now)
-    if hour_ago is not None and disk["percent"] - hour_ago >= DISK_GROWTH_PCT_PER_HOUR:
-        candidates["disk_growth"] = ("warn", "Unusual disk activity",
-            f"disk usage rose {disk['percent'] - hour_ago:.1f} pts in the last hour "
-            f"({hour_ago:.1f}% → {disk['percent']}%)")
-
-    if mem["percent"] >= MEM_WARN_PCT:
-        candidates["mem_high"] = ("warn", "Memory pressure",
-            f"{mem['percent']}% RAM in use ({mem['used_mb']:.0f}/{mem['total_mb']:.0f} MB)")
-
-    cpus = load.get("cpus") or 1
-    if load["1m"] / cpus >= LOAD_RATIO_WARN:
-        candidates["load_high"] = ("warn", "Load average high",
-            f"1m load {load['1m']} across {cpus} CPU(s)")
+def _extra_alerts(data, now, prev):
+    """steve-specific alert candidates, same insertion order as before: repeated
+    crashes, failed units, filling logs. Also returns the fresh log-size map for
+    the state file."""
+    extra = {}
 
     for s in data["services"]:
         if s["restarts"] >= CRASH_RESTART_THRESHOLD:
-            candidates[f"crash_{s['name']}"] = ("critical", "Repeated crashes",
+            extra[f"crash_{s['name']}"] = ("critical", "Repeated crashes",
                 f"{s['name']} has restarted {s['restarts']} times")
 
-    for unit in data["other_failed"]:
-        candidates[f"failed_{unit}"] = ("warn", "Unmonitored unit failed", f"{unit} is in a failed state")
+    extra.update(hostlib.failed_unit_alerts(data["other_failed"], "Unmonitored unit failed"))
 
-    log_growth, new_log_sizes = _log_growth(now, prev_log_sizes)
+    log_growth, new_log_sizes = _log_growth(now, (prev or {}).get("log_sizes", {}))
     for path, size, rate in log_growth:
         size_mb = size / 1e6
         if size_mb >= LOG_SIZE_CRIT_MB:
@@ -279,18 +201,10 @@ def _build_alerts(data, now, prev):
             level = "warn"
         else:
             continue
-        candidates[f"log_{path}"] = (level, "Log file filling",
+        extra[f"log_{path}"] = (level, "Log file filling",
             f"{path} is {size_mb:.0f} MB" + (f", growing ~{rate:.0f} MB/hr" if rate > 0 else ""))
 
-    active_alerts = {}
-    alerts = []
-    for key, (level, header, text) in candidates.items():
-        onset = prev_active.get(key, {}).get("ts", now)
-        active_alerts[key] = {"ts": onset, "level": level, "header": header, "text": text}
-        alerts.append({"id": key, "ts": onset, "level": level, "header": header, "text": text})
-    alerts.sort(key=lambda a: a["ts"], reverse=True)
-
-    return alerts, active_alerts, new_log_sizes
+    return extra, new_log_sizes
 
 
 def fetch_and_write():
@@ -316,14 +230,20 @@ def fetch_and_write():
         "top_mem": _top_processes("-%mem"),
     }
 
-    prev = _load_state()
-    alerts, active_alerts, log_sizes = _build_alerts(data, ts, prev)
+    prev = hostlib.load_state(STATE_FILE)
+    extra, log_sizes = _extra_alerts(data, ts, prev)
+    alerts, active_alerts = hostlib.build_alerts(data, ts, prev, DB_FILE, extra)
     data["alerts"] = alerts
 
     OUT.write_text(json.dumps(data, indent=2))
-    _log_history(ts, load["1m"], mem["percent"], disk["percent"])
+    hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"])
     _handle_notifications(services, prev)
-    _save_state({s["name"] for s in down}, {s["name"]: s["restarts"] for s in services}, active_alerts, log_sizes)
+    hostlib.save_state(STATE_FILE, {
+        "down": sorted({s["name"] for s in down}),
+        "restarts": {s["name"]: s["restarts"] for s in services},
+        "active_alerts": active_alerts,
+        "log_sizes": log_sizes,
+    })
 
     status = f"{len(down)} down" if down else "all up"
     print(f"Saved {OUT} — {status}, {len(restarted)} with past restarts, {len(alerts)} alerts, "

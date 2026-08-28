@@ -1,17 +1,22 @@
-"""Writes wacky.json for the web dashboard — CPU/mem/disk/uptime for the wacky host,
-gathered over SSH (unlike steve.py, which reads /proc directly since it runs on steve).
+"""Writes wacky.json for the web dashboard — CPU/mem/disk/uptime for the wacky
+host (a public VPS), gathered over SSH.
 
-Logs metrics history to wacky_history.db, same shape as steve_history.db.
+On top of the shared host-metrics shape (see hostlib.py) this reports a fail2ban
+panel: currently-banned SSH IPs with country flags (geoip memoised in
+wacky_geoip_cache.json) and repeat offenders tracked in a ban_history table.
+
+Metrics history goes to wacky_history.db (4-column schema).
 """
 
 import json
-import re
 import sqlite3
-import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+import hostlib
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -19,20 +24,11 @@ OUT         = DATA / "wacky.json"
 STATE_FILE  = DATA / "wacky_state.json"
 DB_FILE     = DATA / "wacky_history.db"
 GEOIP_CACHE = DATA / "wacky_geoip_cache.json"
-HISTORY_RETENTION_SECONDS = 48 * 3600
 BAN_HISTORY_RETENTION_SECONDS = 180 * 86400
 
-SSH_TIMEOUT = 15
 GEOIP_TIMEOUT = 4
 REPEAT_OFFENDER_MIN = 2
 REPEAT_OFFENDER_TOP_N = 10
-
-# ── Alert thresholds (same values as steve.py) ──
-DISK_WARN_PCT = 80
-DISK_CRIT_PCT = 90
-DISK_GROWTH_PCT_PER_HOUR = 5
-MEM_WARN_PCT = 90
-LOAD_RATIO_WARN = 2.0
 
 REMOTE_SCRIPT = r"""
 echo '===LOADAVG==='; cat /proc/loadavg
@@ -48,78 +44,11 @@ echo '===LANPIHOLE==='; curl -s -o /dev/null -w '%{http_code} %{time_total}' --m
 """
 
 
-def _sections(raw):
-    parts = re.split(r"===(\w+)===\n", raw)[1:]  # drop leading empty chunk
-    return {name: body for name, body in zip(parts[0::2], parts[1::2])}
-
-
-def _fetch_remote():
-    out = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "wacky", REMOTE_SCRIPT],
-        capture_output=True, text=True, timeout=SSH_TIMEOUT,
-    )
-    if out.returncode != 0:
-        raise RuntimeError(f"ssh wacky failed: {out.stderr.strip()}")
-    return _sections(out.stdout)
-
-
-def _parse_mem(block):
-    info = {}
-    for line in block.splitlines():
-        key, _, rest = line.partition(":")
-        if rest.strip():
-            info[key] = int(rest.strip().split()[0])  # kB
-    total = info.get("MemTotal", 0)
-    available = info.get("MemAvailable", 0)
-    used = total - available
-    return {
-        "total_mb": round(total / 1024, 1),
-        "used_mb": round(used / 1024, 1),
-        "percent": round(used / total * 100, 1) if total else 0.0,
-    }
-
-
-def _parse_disk(block):
-    line = block.strip().splitlines()[-1]
-    total, used = (int(x) for x in line.split())
-    return {
-        "total_gb": round(total / 1e9, 1),
-        "used_gb": round(used / 1e9, 1),
-        "percent": round(used / total * 100, 1) if total else 0.0,
-    }
-
-
-def _parse_load(loadavg_block, nproc_block):
-    one, five, fifteen = (float(x) for x in loadavg_block.split()[:3])
-    cpus = int(nproc_block.strip())
-    return {"1m": round(one, 2), "5m": round(five, 2), "15m": round(fifteen, 2), "cpus": cpus}
-
-
-def _parse_procs(block, n=5):
-    procs = []
-    for line in block.strip().splitlines()[:n]:
-        parts = line.split(None, 3)
-        if len(parts) < 4:
-            continue
-        pid, comm, cpu, mem = parts
-        procs.append({"pid": pid, "name": comm, "cpu": float(cpu), "mem": float(mem)})
-    return procs
-
-
 def _parse_lan_check(block):
     parts = block.strip().split()
     code = int(parts[0]) if parts else 0
     latency_ms = round(float(parts[1]) * 1000, 1) if len(parts) > 1 else None
     return {"reachable": code in (200, 301, 302, 401, 403), "http_code": code, "latency_ms": latency_ms}
-
-
-def _parse_failed(block):
-    failed = []
-    for line in block.strip().splitlines():
-        parts = line.split()
-        if parts:
-            failed.append(parts[0])
-    return failed
 
 
 def _parse_fail2ban(block):
@@ -216,108 +145,29 @@ def _repeat_offenders():
              "first_ts": first, "last_ts": last} for ip, cc, count, first, last in rows]
 
 
-def _log_history(ts, load1, mem_pct, disk_pct):
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS metrics_log "
-        "(ts INTEGER, load1 REAL, mem_pct REAL, disk_pct REAL)"
-    )
-    conn.execute(
-        "INSERT INTO metrics_log (ts, load1, mem_pct, disk_pct) VALUES (?, ?, ?, ?)",
-        (ts, load1, mem_pct, disk_pct),
-    )
-    cutoff = ts - HISTORY_RETENTION_SECONDS
-    conn.execute("DELETE FROM metrics_log WHERE ts < ?", (cutoff,))
-    conn.commit()
-    conn.close()
-
-
-def _load_state():
-    if not STATE_FILE.exists():
-        return None
-    try:
-        return json.loads(STATE_FILE.read_text())
-    except Exception:
-        return None
-
-
-def _save_state(active_alerts, banned_ips):
-    STATE_FILE.write_text(json.dumps({"active_alerts": active_alerts, "banned_ips": banned_ips}))
-
-
-def _disk_pct_hour_ago(now):
-    if not DB_FILE.exists():
-        return None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        row = conn.execute(
-            "SELECT disk_pct FROM metrics_log WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
-            (now - 3300,),
-        ).fetchone()
-        conn.close()
-        return row[0] if row else None
-    except Exception:
-        return None
-
-
-def _build_alerts(data, now, prev):
-    prev_active = (prev or {}).get("active_alerts", {})
-    candidates = {}
-
-    disk, mem, load = data["disk"], data["mem"], data["load"]
-    if disk["percent"] >= DISK_CRIT_PCT:
-        candidates["disk_high"] = ("critical", "Disk almost full",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-    elif disk["percent"] >= DISK_WARN_PCT:
-        candidates["disk_high"] = ("warn", "Disk usage high",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-
-    hour_ago = _disk_pct_hour_ago(now)
-    if hour_ago is not None and disk["percent"] - hour_ago >= DISK_GROWTH_PCT_PER_HOUR:
-        candidates["disk_growth"] = ("warn", "Unusual disk activity",
-            f"disk usage rose {disk['percent'] - hour_ago:.1f} pts in the last hour "
-            f"({hour_ago:.1f}% → {disk['percent']}%)")
-
-    if mem["percent"] >= MEM_WARN_PCT:
-        candidates["mem_high"] = ("warn", "Memory pressure",
-            f"{mem['percent']}% RAM in use ({mem['used_mb']:.0f}/{mem['total_mb']:.0f} MB)")
-
-    cpus = load.get("cpus") or 1
-    if load["1m"] / cpus >= LOAD_RATIO_WARN:
-        candidates["load_high"] = ("warn", "Load average high",
-            f"1m load {load['1m']} across {cpus} CPU(s)")
-
-    for unit in data["other_failed"]:
-        candidates[f"failed_{unit}"] = ("warn", "Unit failed", f"{unit} is in a failed state")
-
+def _extra_alerts(data):
+    """wacky-specific alert candidates, same insertion order as before: failed
+    units, then the tailnet Pi-hole reachability check."""
+    extra = dict(hostlib.failed_unit_alerts(data["other_failed"]))
     if not data["lan"]["pihole"]["reachable"]:
-        candidates["lan_pihole"] = ("warn", "Pi-hole unreachable from wacky",
+        extra["lan_pihole"] = ("warn", "Pi-hole unreachable from wacky",
             f"http {data['lan']['pihole']['http_code']} via the tailnet subnet route")
-
-    active_alerts = {}
-    alerts = []
-    for key, (level, header, text) in candidates.items():
-        onset = prev_active.get(key, {}).get("ts", now)
-        active_alerts[key] = {"ts": onset, "level": level, "header": header, "text": text}
-        alerts.append({"id": key, "ts": onset, "level": level, "header": header, "text": text})
-    alerts.sort(key=lambda a: a["ts"], reverse=True)
-
-    return alerts, active_alerts
+    return extra
 
 
 def fetch_and_write():
     ts = int(time.time())
     try:
-        sections = _fetch_remote()
-        load = _parse_load(sections["LOADAVG"], sections["NPROC"])
-        mem = _parse_mem(sections["MEMINFO"])
-        disk = _parse_disk(sections["DISK"])
-        uptime_seconds = float(sections["UPTIME"].split()[0])
-        top_cpu = _parse_procs(sections["TOPCPU"])
-        top_mem = _parse_procs(sections["TOPMEM"])
-        other_failed = _parse_failed(sections["FAILED"])
-        fail2ban = _parse_fail2ban(sections["FAIL2BAN"])
-        lan = {"pihole": _parse_lan_check(sections["LANPIHOLE"])}
+        s = hostlib.fetch_remote("wacky", REMOTE_SCRIPT)
+        load = hostlib.parse_load(s["LOADAVG"], s["NPROC"])
+        mem = hostlib.parse_mem(s["MEMINFO"])
+        disk = hostlib.parse_disk(s["DISK"])
+        uptime_seconds = float(s["UPTIME"].split()[0])
+        top_cpu = hostlib.parse_procs(s["TOPCPU"])
+        top_mem = hostlib.parse_procs(s["TOPMEM"])
+        other_failed = hostlib.parse_failed(s["FAILED"])
+        fail2ban = _parse_fail2ban(s["FAIL2BAN"])
+        lan = {"pihole": _parse_lan_check(s["LANPIHOLE"])}
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"wacky poll failed: {e}")
@@ -337,8 +187,8 @@ def fetch_and_write():
         "top_mem": top_mem,
     }
 
-    prev = _load_state()
-    alerts, active_alerts = _build_alerts(data, ts, prev)
+    prev = hostlib.load_state(STATE_FILE)
+    alerts, active_alerts = hostlib.build_alerts(data, ts, prev, DB_FILE, _extra_alerts(data))
     data["alerts"] = alerts
 
     prev_banned_ips = set((prev or {}).get("banned_ips", []))
@@ -346,8 +196,9 @@ def fetch_and_write():
     fail2ban["repeat_offenders"] = _repeat_offenders()
 
     OUT.write_text(json.dumps(data, indent=2))
-    _log_history(ts, load["1m"], mem["percent"], disk["percent"])
-    _save_state(active_alerts, [e["ip"] for e in fail2ban["banned_ips"]])
+    hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"])
+    hostlib.save_state(STATE_FILE, {"active_alerts": active_alerts,
+                                    "banned_ips": [e["ip"] for e in fail2ban["banned_ips"]]})
 
     print(f"Saved {OUT} — {len(alerts)} alerts, load {load['1m']}, mem {mem['percent']}%, disk {disk['percent']}%")
 

@@ -1,23 +1,22 @@
 """Writes bazza.json for the web dashboard — CPU/mem/disk/uptime for the bazza
-host (the Raspberry Pi that runs the primary Pi-hole), gathered over SSH like
-jeff.py / wacky.py.
+host (the Raspberry Pi that runs the primary Pi-hole), gathered over SSH.
 
-On top of the shared host-metrics shape this also reports Pi-specific health
-(SoC temperature, under-voltage / throttling flags from `vcgencmd get_throttled`)
-and a DNS panel: the pihole-FTL / unbound service state comes over SSH, the query
-/ blocking / gravity figures are lifted from data/pihole.json (already refreshed
+On top of the shared host-metrics shape (see hostlib.py) this also reports
+Pi-specific health (SoC temperature, under-voltage / throttling flags) and a DNS
+panel: the pihole-FTL / unbound service state comes over SSH, the query /
+blocking / gravity figures are lifted from data/pihole.json (already refreshed
 every 5 min by pollers/pihole.py — no second Pi-hole API session from here).
 
-Metrics history goes to bazza_history.db, same schema as jeff_history.db so the
-trend-chart code is shared.
+Metrics history goes to bazza_history.db (5-column schema, with cpu_temp).
 """
 
 import json
-import re
-import sqlite3
-import subprocess
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+import hostlib
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
@@ -25,16 +24,7 @@ OUT        = DATA / "bazza.json"
 STATE_FILE = DATA / "bazza_state.json"
 DB_FILE    = DATA / "bazza_history.db"
 PIHOLE_JSON = DATA / "pihole.json"
-HISTORY_RETENTION_SECONDS = 48 * 3600
 
-SSH_TIMEOUT = 15
-
-# ── Alert thresholds (disk/mem/load match steve.py, wacky.py & jeff.py) ──
-DISK_WARN_PCT = 80
-DISK_CRIT_PCT = 90
-DISK_GROWTH_PCT_PER_HOUR = 5
-MEM_WARN_PCT = 90
-LOAD_RATIO_WARN = 2.0
 TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
 # pihole.json is written by pollers/pihole.py on a */5 cron — anything past ~15 min
@@ -42,6 +32,11 @@ TEMP_CRIT_C = 80.0
 DNS_STALE_SECONDS = 15 * 60
 # Gravity is normally refreshed by the Sunday 04:00 cron; flag if it's well past.
 GRAVITY_STALE_SECONDS = 10 * 24 * 3600
+
+# bazza's take on throttle bit 0 (SD-card risk, not SDR-capture corruption).
+BAZZA_THROTTLE_BITS = dict(hostlib.THROTTLE_BITS)
+BAZZA_THROTTLE_BITS[0] = ("now", "critical", "Under-voltage detected",
+    "the PSU can't hold 5V under load — DNS will still work but the SD card is at risk")
 
 REMOTE_SCRIPT = r"""
 echo '===LOADAVG==='; cat /proc/loadavg
@@ -58,117 +53,6 @@ echo '===THROTTLED==='; (command -v vcgencmd >/dev/null 2>&1 && vcgencmd get_thr
 echo '===FTL==='; systemctl is-active pihole-FTL 2>/dev/null || true
 echo '===UNBOUND==='; echo "$(systemctl is-active unbound 2>/dev/null) $(systemctl is-enabled unbound 2>/dev/null)"
 """
-
-
-def _sections(raw):
-    parts = re.split(r"===(\w+)===\n", raw)[1:]  # drop leading empty chunk
-    return {name: body for name, body in zip(parts[0::2], parts[1::2])}
-
-
-def _fetch_remote():
-    out = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "bazza", REMOTE_SCRIPT],
-        capture_output=True, text=True, timeout=SSH_TIMEOUT,
-    )
-    if out.returncode != 0:
-        raise RuntimeError(f"ssh bazza failed: {out.stderr.strip()}")
-    return _sections(out.stdout)
-
-
-def _parse_mem(block):
-    info = {}
-    for line in block.splitlines():
-        key, _, rest = line.partition(":")
-        if rest.strip():
-            info[key] = int(rest.strip().split()[0])  # kB
-    total = info.get("MemTotal", 0)
-    available = info.get("MemAvailable", 0)
-    used = total - available
-    return {
-        "total_mb": round(total / 1024, 1),
-        "used_mb": round(used / 1024, 1),
-        "percent": round(used / total * 100, 1) if total else 0.0,
-    }
-
-
-def _parse_disk(block):
-    line = block.strip().splitlines()[-1]
-    total, used = (int(x) for x in line.split())
-    return {
-        "total_gb": round(total / 1e9, 1),
-        "used_gb": round(used / 1e9, 1),
-        "percent": round(used / total * 100, 1) if total else 0.0,
-    }
-
-
-def _parse_load(loadavg_block, nproc_block):
-    one, five, fifteen = (float(x) for x in loadavg_block.split()[:3])
-    cpus = int(nproc_block.strip())
-    return {"1m": round(one, 2), "5m": round(five, 2), "15m": round(fifteen, 2), "cpus": cpus}
-
-
-def _parse_procs(block, n=5):
-    procs = []
-    for line in block.strip().splitlines()[:n]:
-        parts = line.split(None, 3)
-        if len(parts) < 4:
-            continue
-        pid, comm, cpu, mem = parts
-        procs.append({"pid": pid, "name": comm, "cpu": float(cpu), "mem": float(mem)})
-    return procs
-
-
-def _parse_failed(block):
-    failed = []
-    for line in block.strip().splitlines():
-        parts = line.split()
-        if parts:
-            failed.append(parts[0])
-    return failed
-
-
-def _parse_temp(block):
-    """vcgencmd prints `temp=47.2'C`; the thermal_zone fallback prints raw
-    millidegrees (`47234`)."""
-    s = block.strip()
-    if not s:
-        return None
-    m = re.search(r"temp=([\d.]+)", s)
-    if m:
-        return round(float(m.group(1)), 1)
-    try:
-        raw = int(s.splitlines()[0])
-        return round(raw / 1000, 1)
-    except (ValueError, IndexError):
-        return None
-
-
-# `vcgencmd get_throttled` bitfield. Low bits = happening right now, bits 16-19 =
-# has-occurred-since-boot (sticky until reboot).
-THROTTLE_BITS = {
-    0:  ("now",  "critical", "Under-voltage detected", "the PSU can't hold 5V under load — DNS will still work but the SD card is at risk"),
-    1:  ("now",  "warn",     "ARM frequency capped",   "the CPU is being held below its rated clock"),
-    2:  ("now",  "critical", "Currently throttled",    "the SoC is actively throttling"),
-    3:  ("now",  "warn",     "Soft temperature limit", "the soft thermal limit is active"),
-    16: ("past", "warn",     "Under-voltage since boot", "at least one brown-out has happened since the last reboot"),
-    17: ("past", "warn",     "Frequency capping since boot", "the CPU has been clock-capped at some point since boot"),
-    18: ("past", "warn",     "Throttling since boot",  "the SoC has throttled at some point since boot"),
-    19: ("past", "warn",     "Temp limit hit since boot", "the soft temperature limit has been reached since boot"),
-}
-
-
-def _parse_throttled(block):
-    s = block.strip()
-    m = re.search(r"throttled=(0x[0-9a-fA-F]+)", s)
-    if not m:
-        return {"available": False, "raw": None, "flags": []}
-    value = int(m.group(1), 16)
-    flags = []
-    for bit, (when, level, header, detail) in THROTTLE_BITS.items():
-        if value & (1 << bit):
-            flags.append({"bit": bit, "when": when, "level": level,
-                          "header": header, "detail": detail})
-    return {"available": True, "raw": m.group(1), "value": value, "flags": flags}
 
 
 def _parse_dns(ftl_block, unbound_block, now):
@@ -221,134 +105,57 @@ def _parse_dns(ftl_block, unbound_block, now):
     return dns
 
 
-def _log_history(ts, load1, mem_pct, disk_pct, cpu_temp):
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS metrics_log "
-        "(ts INTEGER, load1 REAL, mem_pct REAL, disk_pct REAL, cpu_temp REAL)"
-    )
-    conn.execute(
-        "INSERT INTO metrics_log (ts, load1, mem_pct, disk_pct, cpu_temp) VALUES (?, ?, ?, ?, ?)",
-        (ts, load1, mem_pct, disk_pct, cpu_temp),
-    )
-    cutoff = ts - HISTORY_RETENTION_SECONDS
-    conn.execute("DELETE FROM metrics_log WHERE ts < ?", (cutoff,))
-    conn.commit()
-    conn.close()
-
-
-def _load_state():
-    if not STATE_FILE.exists():
-        return None
-    try:
-        return json.loads(STATE_FILE.read_text())
-    except Exception:
-        return None
-
-
-def _save_state(active_alerts):
-    STATE_FILE.write_text(json.dumps({"active_alerts": active_alerts}))
-
-
-def _disk_pct_hour_ago(now):
-    if not DB_FILE.exists():
-        return None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        row = conn.execute(
-            "SELECT disk_pct FROM metrics_log WHERE ts <= ? ORDER BY ts DESC LIMIT 1",
-            (now - 3300,),
-        ).fetchone()
-        conn.close()
-        return row[0] if row else None
-    except Exception:
-        return None
-
-
-def _build_alerts(data, now, prev):
-    prev_active = (prev or {}).get("active_alerts", {})
-    candidates = {}
-
-    disk, mem, load = data["disk"], data["mem"], data["load"]
-    if disk["percent"] >= DISK_CRIT_PCT:
-        candidates["disk_high"] = ("critical", "Disk almost full",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-    elif disk["percent"] >= DISK_WARN_PCT:
-        candidates["disk_high"] = ("warn", "Disk usage high",
-            f"/ is {disk['percent']}% full ({disk['used_gb']}/{disk['total_gb']} GB)")
-
-    hour_ago = _disk_pct_hour_ago(now)
-    if hour_ago is not None and disk["percent"] - hour_ago >= DISK_GROWTH_PCT_PER_HOUR:
-        candidates["disk_growth"] = ("warn", "Unusual disk activity",
-            f"disk usage rose {disk['percent'] - hour_ago:.1f} pts in the last hour "
-            f"({hour_ago:.1f}% → {disk['percent']}%)")
-
-    if mem["percent"] >= MEM_WARN_PCT:
-        candidates["mem_high"] = ("warn", "Memory pressure",
-            f"{mem['percent']}% RAM in use ({mem['used_mb']:.0f}/{mem['total_mb']:.0f} MB)")
-
-    cpus = load.get("cpus") or 1
-    if load["1m"] / cpus >= LOAD_RATIO_WARN:
-        candidates["load_high"] = ("warn", "Load average high",
-            f"1m load {load['1m']} across {cpus} CPU(s)")
+def _extra_alerts(data, now):
+    """bazza-specific alert candidates, in the same insertion order as before:
+    SoC temp, throttle flags, failed units, FTL/unbound/DNS-staleness/gravity."""
+    extra = {}
 
     temp = data.get("cpu_temp")
     if temp is not None and temp >= TEMP_CRIT_C:
-        candidates["temp_high"] = ("critical", "SoC running hot",
+        extra["temp_high"] = ("critical", "SoC running hot",
             f"CPU temperature is {temp} °C — the Pi throttles hard around 80-85 °C")
     elif temp is not None and temp >= TEMP_WARN_C:
-        candidates["temp_high"] = ("warn", "SoC warm",
-            f"CPU temperature is {temp} °C")
+        extra["temp_high"] = ("warn", "SoC warm", f"CPU temperature is {temp} °C")
 
     for f in data["throttled"]["flags"]:
-        key = f"throttle_{f['bit']}"
-        candidates[key] = (f["level"], f["header"], f["detail"])
+        extra[f"throttle_{f['bit']}"] = (f["level"], f["header"], f["detail"])
 
-    for unit in data["other_failed"]:
-        candidates[f"failed_{unit}"] = ("warn", "Unit failed", f"{unit} is in a failed state")
+    extra.update(hostlib.failed_unit_alerts(data["other_failed"]))
 
     dns = data["dns"]
     if not dns.get("ftl_active"):
-        candidates["ftl_down"] = ("critical", "Pi-hole FTL not running",
+        extra["ftl_down"] = ("critical", "Pi-hole FTL not running",
             "pihole-FTL is not active — DNS resolution and ad-blocking are down for the whole LAN")
     if dns.get("unbound_known") and not dns.get("unbound_active"):
-        candidates["unbound_down"] = ("warn", "unbound not running",
+        extra["unbound_down"] = ("warn", "unbound not running",
             "the recursive resolver unbound is inactive — Pi-hole has lost its private upstream")
 
     if dns.get("age_s") is not None and dns["age_s"] > DNS_STALE_SECONDS:
-        candidates["dns_stale"] = ("warn", "Pi-hole poller stale",
+        extra["dns_stale"] = ("warn", "Pi-hole poller stale",
             f"pihole.json hasn't refreshed in {round(dns['age_s'] / 60)} min — the DNS figures may be old")
 
     glu = dns.get("gravity_last_update")
     if glu and now - glu > GRAVITY_STALE_SECONDS:
-        candidates["gravity_stale"] = ("warn", "Gravity list is old",
+        extra["gravity_stale"] = ("warn", "Gravity list is old",
             f"the blocklist was last rebuilt {round((now - glu) / 86400)} days ago")
 
-    active_alerts = {}
-    alerts = []
-    for key, (level, header, text) in candidates.items():
-        onset = prev_active.get(key, {}).get("ts", now)
-        active_alerts[key] = {"ts": onset, "level": level, "header": header, "text": text}
-        alerts.append({"id": key, "ts": onset, "level": level, "header": header, "text": text})
-    alerts.sort(key=lambda a: a["ts"], reverse=True)
-
-    return alerts, active_alerts
+    return extra
 
 
 def fetch_and_write():
     ts = int(time.time())
     try:
-        s = _fetch_remote()
-        load = _parse_load(s["LOADAVG"], s["NPROC"])
-        mem = _parse_mem(s["MEMINFO"])
-        disk = _parse_disk(s["DISK"])
+        s = hostlib.fetch_remote("bazza", REMOTE_SCRIPT)
+        load = hostlib.parse_load(s["LOADAVG"], s["NPROC"])
+        mem = hostlib.parse_mem(s["MEMINFO"])
+        disk = hostlib.parse_disk(s["DISK"])
         uptime_seconds = float(s["UPTIME"].split()[0])
-        top_cpu = _parse_procs(s["TOPCPU"])
-        top_mem = _parse_procs(s["TOPMEM"])
-        other_failed = _parse_failed(s["FAILED"])
+        top_cpu = hostlib.parse_procs(s["TOPCPU"])
+        top_mem = hostlib.parse_procs(s["TOPMEM"])
+        other_failed = hostlib.parse_failed(s["FAILED"])
         model = s["MODEL"].strip() or "Raspberry Pi"
-        cpu_temp = _parse_temp(s["TEMP"])
-        throttled = _parse_throttled(s["THROTTLED"])
+        cpu_temp = hostlib.parse_temp(s["TEMP"])
+        throttled = hostlib.parse_throttled(s["THROTTLED"], BAZZA_THROTTLE_BITS)
         dns = _parse_dns(s.get("FTL", ""), s.get("UNBOUND", ""), ts)
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
@@ -371,13 +178,13 @@ def fetch_and_write():
         "top_mem": top_mem,
     }
 
-    prev = _load_state()
-    alerts, active_alerts = _build_alerts(data, ts, prev)
+    prev = hostlib.load_state(STATE_FILE)
+    alerts, active_alerts = hostlib.build_alerts(data, ts, prev, DB_FILE, _extra_alerts(data, ts))
     data["alerts"] = alerts
 
     OUT.write_text(json.dumps(data, indent=2))
-    _log_history(ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)
-    _save_state(active_alerts)
+    hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)
+    hostlib.save_state(STATE_FILE, {"active_alerts": active_alerts})
 
     blk = f"{dns['percent_blocked']}% blocked" if dns.get("percent_blocked") is not None else "no dns data"
     print(f"Saved {OUT} — {len(alerts)} alerts, load {load['1m']}, mem {mem['percent']}%, "
