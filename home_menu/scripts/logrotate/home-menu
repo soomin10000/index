@@ -1,0 +1,23 @@
+# logrotate rules for the home_menu poller logs.
+#
+# Install:  sudo cp home_menu/scripts/logrotate/home-menu /etc/logrotate.d/home-menu
+#           sudo chown root:root /etc/logrotate.d/home-menu && sudo chmod 644 $_
+# Verify:   sudo logrotate --debug /etc/logrotate.d/home-menu
+# Force once: sudo logrotate --force /etc/logrotate.d/home-menu
+#
+# The pollers log via cron `>> logs/<name>.log 2>&1` and don't hold the fd open,
+# so `create` would also work — but pollers/unifi/poller.py writes unifi.log
+# through a long-lived RotatingFileHandler, and copytruncate keeps that inode
+# intact (the handler keeps writing; logrotate just copies then zeroes it). One
+# mode for the whole directory, so: copytruncate.
+
+/home/simon/projects/home_menu/logs/*.log {
+    weekly
+    rotate 4
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su simon simon
+}
