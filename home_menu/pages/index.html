@@ -246,6 +246,12 @@
       letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
     }
+    .hs-k .lg {
+      display: inline-block; width: 7px; height: 3px; border-radius: 1px;
+      vertical-align: middle; margin-right: 2px;
+    }
+    .hs-k .lg-mem  { background: var(--a, var(--ink-dim)); }
+    .hs-k .lg-load { background: var(--ink); }
     .hs-now {
       font-family: var(--font-mono); font-size: 0.82rem; font-weight: 600;
       color: var(--ink); font-variant-numeric: tabular-nums; flex-shrink: 0;
@@ -257,6 +263,11 @@
     .hb.warn { fill: var(--warn); }
     .hb.crit { fill: var(--down); }
     .card:hover .hb { fill-opacity: 1; }
+    .hs-load {
+      fill: none; stroke: var(--ink); stroke-width: 1.6; opacity: 0.92;
+      stroke-linejoin: round; stroke-linecap: round;
+      paint-order: stroke;
+    }
     .hs-pen { stroke: var(--a, var(--ink)); stroke-width: 1.6; animation: pen-pulse 2.6s ease-in-out infinite; }
     @keyframes pen-pulse { 0%,100% { opacity: 0.45; } 50% { opacity: 1; } }
     .hs-skel {
@@ -588,43 +599,66 @@
     return '⛈️';
   }
 
-  // ── Host strip-chart recorder: a 48h memory trace drawn as a bank of ticks
-  //    in the host's own accent hue, with amber/red for threshold breaches ──
-  function renderTrace(id, points) {
+  // ── Host strip-chart recorder: a 48h trace with two series on one 0-100
+  //    "% of capacity" axis — memory as filled ticks in the host's accent hue
+  //    (amber/red past threshold), load-per-core as a line over the top ──
+  const HOST_CPUS = {};
+  const HOST_HIST = {};
+
+  function renderTrace(id, points, cpus) {
     const box = document.getElementById(id + '-trace');
     if (!box) return;
-    const pts = points || [];
+    if (points && points.length) HOST_HIST[id] = points;   // cache so a later cpus value can redraw
+    const pts = points && points.length ? points : (HOST_HIST[id] || []);
     if (!pts.length) { box.innerHTML = '<div class="hs-skel"></div>'; return; }
 
     const N = 46;
     const t0 = pts[0].ts, t1 = pts[pts.length - 1].ts;
     const span = Math.max(1, t1 - t0);
-    const buck = Array(N).fill(null);
-    for (const p of pts) {
-      const i = Math.min(N - 1, Math.floor((p.ts - t0) / span * N));
-      if (buck[i] == null || p.mem_pct > buck[i]) buck[i] = p.mem_pct;  // worst-in-hour
-    }
-    let carry = buck.find(v => v != null) ?? 0;
-    const vals = buck.map(v => (v == null ? carry : (carry = v)));     // forward-fill gaps
+    const bucket = key => {
+      const b = Array(N).fill(null);
+      for (const p of pts) {
+        const i = Math.min(N - 1, Math.floor((p.ts - t0) / span * N));
+        const v = key(p);
+        if (v != null && (b[i] == null || v > b[i])) b[i] = v;   // worst-in-bucket
+      }
+      let carry = b.find(v => v != null) ?? 0;
+      return b.map(v => (v == null ? carry : (carry = v)));       // forward-fill gaps
+    };
+
+    const memVals = bucket(p => p.mem_pct);
+    const loadVals = cpus ? bucket(p => p.load1 / cpus * 100) : null;
 
     const W = 100, H = 34, step = W / N, bw = step - 0.9;
-    const bars = vals.map((v, i) => {
+    const bars = memVals.map((v, i) => {
       const h = Math.max(1.2, v / 100 * H);
       const cls = v > 90 ? 'crit' : v > 78 ? 'warn' : '';
-      const op = (0.32 + 0.68 * i / (N - 1)).toFixed(3);              // older = fainter
+      const op = (0.32 + 0.68 * i / (N - 1)).toFixed(3);          // older = fainter
       return `<rect class="hb ${cls}" x="${(i * step).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${bw.toFixed(2)}" height="${h.toFixed(2)}" fill-opacity="${op}"/>`;
     }).join('');
 
-    const now = Math.round(vals[vals.length - 1]);
-    const peak = Math.round(Math.max(...vals));
+    let loadPoly = '';
+    if (loadVals) {
+      const poly = loadVals.map((v, i) =>
+        `${(i * step + step / 2).toFixed(2)},${(H - Math.min(100, v) / 100 * H).toFixed(2)}`).join(' ');
+      loadPoly = `<polyline class="hs-load" points="${poly}" vector-effect="non-scaling-stroke"/>`;
+    }
+
+    const now = Math.round(memVals[memVals.length - 1]);
+    const peak = Math.round(Math.max(...memVals));
+    const loadNow = loadVals ? Math.round(loadVals[loadVals.length - 1]) : null;
     const hrs = span / 3600;
     const spanLbl = hrs >= 47 ? '48h' : hrs >= 1.5 ? Math.round(hrs) + 'h' : Math.max(1, Math.round(span / 60)) + 'm';
 
     box.innerHTML =
-      `<div class="hs-cap"><span class="hs-k">Mem · ${spanLbl} · peak ${peak}%</span><span class="hs-now">${now}<i>%</i></span></div>` +
-      `<svg class="hs-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Memory over ${spanLbl}, now ${now}%, peak ${peak}%">` +
+      `<div class="hs-cap"><span class="hs-k">` +
+        `<i class="lg lg-mem"></i>mem` +
+        (loadVals ? `&nbsp;&nbsp;<i class="lg lg-load"></i>load&nbsp;·&nbsp;${spanLbl}` : `&nbsp;·&nbsp;${spanLbl}`) +
+      `</span><span class="hs-now">${now}<i>%</i></span></div>` +
+      `<svg class="hs-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Memory and load over ${spanLbl}: memory now ${now}%, peak ${peak}%${loadNow != null ? `; load now ${loadNow}% of cores` : ''}">` +
         `<line class="hs-mid" x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" vector-effect="non-scaling-stroke"/>` +
         bars +
+        loadPoly +
         `<line class="hs-pen" x1="${W - 0.3}" y1="0" x2="${W - 0.3}" y2="${H}" vector-effect="non-scaling-stroke"/>` +
       `</svg>`;
   }
@@ -632,6 +666,10 @@
   function setReadout(id, d, extra) {
     const el = document.getElementById(id + '-read');
     if (!el) return;
+    if (d.load && d.load.cpus && HOST_CPUS[id] !== d.load.cpus) {
+      HOST_CPUS[id] = d.load.cpus;
+      renderTrace(id, null, d.load.cpus);   // redraw cached trace now the core count is known
+    }
     const parts = [];
     const l1 = d.load && d.load['1m'];
     if (l1 != null) parts.push(`load <b>${l1.toFixed(2)}</b>`);
@@ -1019,7 +1057,7 @@
     ['steve', 'wacky', 'jeff', 'bazza'].forEach(h =>
       fetch(`/api/${h}/history`)
         .then(r => r.json())
-        .then(j => renderTrace(h, j.points))
+        .then(j => renderTrace(h, j.points, HOST_CPUS[h]))
         .catch(() => {}));
   }
 
