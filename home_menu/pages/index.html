@@ -653,16 +653,19 @@
     const critical = alerts.filter(a => a.level === 'critical').length;
     const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#b57edc';
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const adsb = d.adsb;
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     const temp = d.cpu_temp != null ? ` · ${Math.round(d.cpu_temp)}°C` : '';
     parts.push(`mem ${d.mem.percent}% · disk ${d.disk.percent}%${temp}`);
     const sdr = d.sdr || {};
-    parts.push(sdr.dongle_present
-      ? `${dot('dot-on')}RTL-SDR detected${sdr.services && sdr.services.length ? ` · ${sdr.services.length} svc` : ''}`
+    if (adsb) parts.push(`${dot('dot-on')}${adsb.aircraft} aircraft · ${adsb.positions} positioned · ${adsb.msgs_per_sec.toLocaleString()} msg/s`);
+    else parts.push(sdr.dongle_present
+      ? `${dot('dot-on')}RTL-SDR detected`
       : `${dot('dot-amber')}no RTL-SDR on USB`);
     setCard('jeff', {
-      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      val: alerts.length ? alerts.length : (adsb ? adsb.aircraft : 'OK'),
+      unit: alerts.length ? ' alerts' : (adsb ? ' aircraft' : ''),
       sub: parts.join('<br>'), accent, lamp,
     });
   });

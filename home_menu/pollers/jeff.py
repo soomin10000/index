@@ -55,6 +55,8 @@ echo '===USB==='; lsusb 2>/dev/null
 echo '===RTLMODS==='; lsmod 2>/dev/null | awk '{print $1}' | grep -E '^(rtl2832|rtl2838|dvb_usb_rtl28xxu|rtl8xxxu)$' || true
 echo '===RTLTOOLS==='; for t in rtl_test rtl_sdr rtl_fm rtl_tcp rtl_power rtl_433 rtl_adsb; do command -v $t >/dev/null 2>&1 && echo $t; done
 echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -iE 'rtl|sdr|dump1090|readsb|acars|dumpvdl|dump978|satdump|spyserver|soapy|gqrx|piaware|fr24feed|rbfeeder|adsb' || true
+echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length)}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
+echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
 """
 
 
@@ -191,6 +193,29 @@ def _parse_sdr(usb_block, mods_block, tools_block, svc_block):
     }
 
 
+def _parse_adsb(adsb_block, stats_block):
+    """Live readsb numbers off /run/readsb/{aircraft,stats}.json (via jq on the
+    remote). Returns None when readsb isn't running / jq is missing / the files
+    aren't there — the block is just `{}` in that case."""
+    try:
+        a = json.loads(adsb_block.strip() or "{}")
+    except Exception:
+        a = {}
+    try:
+        s = json.loads(stats_block.strip() or "{}")
+    except Exception:
+        s = {}
+    if a.get("total") is None:
+        return None
+    max_dist_m = s.get("max_dist_m") or 0
+    return {
+        "aircraft": a.get("total", 0),
+        "positions": a.get("pos", 0),
+        "msgs_per_sec": round((s.get("msgs_last_min") or 0) / 60, 1),
+        "max_range_km": round(max_dist_m / 1000, 1) if max_dist_m else None,
+    }
+
+
 def _log_history(ts, load1, mem_pct, disk_pct, cpu_temp):
     conn = sqlite3.connect(DB_FILE)
     conn.execute(
@@ -282,6 +307,12 @@ def _build_alerts(data, now, prev):
         candidates["dvb_squat"] = ("warn", "DVB driver has the SDR dongle",
             "dvb_usb_rtl28xxu is loaded — blacklist it so librtlsdr can claim the stick")
 
+    adsb = data.get("adsb")
+    readsb_up = any("readsb" in s for s in data["sdr"]["services"])
+    if readsb_up and adsb and adsb["aircraft"] == 0 and adsb["msgs_per_sec"] == 0:
+        candidates["readsb_deaf"] = ("warn", "readsb is hearing nothing",
+            "readsb is running but 0 aircraft and 0 msg/s — check the antenna and coax")
+
     active_alerts = {}
     alerts = []
     for key, (level, header, text) in candidates.items():
@@ -308,6 +339,7 @@ def fetch_and_write():
         cpu_temp = _parse_temp(s["TEMP"])
         throttled = _parse_throttled(s["THROTTLED"])
         sdr = _parse_sdr(s["USB"], s["RTLMODS"], s["RTLTOOLS"], s["SDRSVC"])
+        adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""))
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"jeff poll failed: {e}")
@@ -324,6 +356,7 @@ def fetch_and_write():
         "cpu_temp": cpu_temp,
         "throttled": throttled,
         "sdr": sdr,
+        "adsb": adsb,
         "other_failed": other_failed,
         "top_cpu": top_cpu,
         "top_mem": top_mem,
@@ -337,9 +370,10 @@ def fetch_and_write():
     _log_history(ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)
     _save_state(active_alerts)
 
+    adsb_note = f", {adsb['aircraft']} aircraft" if adsb else ""
     print(f"Saved {OUT} — {len(alerts)} alerts, load {load['1m']}, mem {mem['percent']}%, "
           f"disk {disk['percent']}%, temp {cpu_temp} °C, "
-          f"sdr {'present' if sdr['dongle_present'] else 'absent'}")
+          f"sdr {'present' if sdr['dongle_present'] else 'absent'}{adsb_note}")
 
 
 if __name__ == "__main__":

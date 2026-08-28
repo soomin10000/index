@@ -176,6 +176,14 @@
   .sdr-head { display: flex; align-items: center; gap: 0.6rem; }
   .sdr-dongle { font-size: 0.9rem; font-weight: 600; color: var(--ink); }
   .sdr-dongle small { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-faint); font-weight: 400; }
+  .adsb-strip {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.3rem 1rem;
+    padding: 0.7rem 0.9rem; background: var(--inset);
+    border: 1px solid var(--bezel); border-radius: 4px;
+  }
+  .adsb-big { font-family: var(--font-mono); font-size: 1.1rem; color: var(--ink); }
+  .adsb-big b { color: var(--sdr); font-size: 1.5rem; font-weight: 700; }
+  .adsb-sub { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
   .sdr-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; align-items: baseline; }
   .sdr-row .k {
     font-size: 0.58rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
@@ -397,17 +405,24 @@
     return items.map(x => `<span class="chip">${esc(x)}</span>`).join('');
   }
 
-  function renderSdr(sdr) {
+  function renderSdr(sdr, adsb) {
     const card = document.getElementById('sdr-card');
     if (!sdr) { card.innerHTML = '<span class="chip none">no data</span>'; return; }
     const present = sdr.dongle_present;
     const squat = present && sdr.dvb_driver_loaded && !sdr.sdr_driver_loaded;
+    const adsbStrip = adsb ? `
+      <div class="adsb-strip">
+        <span class="adsb-big"><b>${adsb.aircraft}</b> aircraft</span>
+        <span class="adsb-sub">${adsb.positions} with position · ${adsb.msgs_per_sec.toLocaleString()} msg/s${
+          adsb.max_range_km != null ? ` · ${adsb.max_range_km} km max` : ''}</span>
+      </div>` : '';
     card.innerHTML = `
       <div class="sdr-head">
         <span class="lamp ${present ? 'on' : ''}"></span>
         <span class="sdr-dongle">${present ? 'RTL-SDR detected' : 'No RTL-SDR on USB'}
           ${present && sdr.dongle_name ? `<small>${esc(sdr.dongle_name)}</small>` : ''}</span>
       </div>
+      ${adsbStrip}
       ${squat ? `<div class="sdr-note">⚠ dvb_usb_rtl28xxu is holding the dongle — blacklist it so librtlsdr can use it</div>` : ''}
       <div class="sdr-row"><span class="k">Driver</span>${
         sdr.sdr_driver_loaded ? '<span class="chip">rtl2832 (SDR)</span>'
@@ -533,7 +548,7 @@
         setGauge('temp', 0, 'ok', '—', 'SOC TEMP', 'no sensor');
       }
 
-      renderSdr(d.sdr);
+      renderSdr(d.sdr, d.adsb);
       renderHealth(d);
 
       const otherFailed = document.getElementById('other-failed');
