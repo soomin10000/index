@@ -408,74 +408,31 @@ sys.path.insert(0, str(BASE / 'pollers'))
 from steve import SERVICES as STEVE_SERVICES
 
 
-def _steve_history():
-    if not STEVE_DB.exists():
+def _metrics_history(db_path, cols):
+    """The `metrics_log` strip-chart feed behind /api/<host>/history. `cols` is
+    both the SELECT list and the per-point dict keys — steve/wacky/jeff/bazza
+    share the load/mem/disk set, vpn has its own."""
+    if not db_path.exists():
         return {'points': []}
     try:
-        conn = sqlite3.connect(STEVE_DB)
+        conn = sqlite3.connect(db_path)
         rows = conn.execute(
-            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
+            f'SELECT {", ".join(cols)} FROM metrics_log ORDER BY ts'
         ).fetchall()
         conn.close()
-        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
+        return {'points': [dict(zip(cols, r)) for r in rows]}
     except Exception as e:
         return {'points': [], 'error': str(e)}
 
 
-def _wacky_history():
-    if not WACKY_DB.exists():
-        return {'points': []}
-    try:
-        conn = sqlite3.connect(WACKY_DB)
-        rows = conn.execute(
-            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
-        ).fetchall()
-        conn.close()
-        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
-    except Exception as e:
-        return {'points': [], 'error': str(e)}
+_HOST_HISTORY_COLS = ('ts', 'load1', 'mem_pct', 'disk_pct')
 
 
-def _jeff_history():
-    if not JEFF_DB.exists():
-        return {'points': []}
-    try:
-        conn = sqlite3.connect(JEFF_DB)
-        rows = conn.execute(
-            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
-        ).fetchall()
-        conn.close()
-        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
-    except Exception as e:
-        return {'points': [], 'error': str(e)}
-
-
-def _bazza_history():
-    if not BAZZA_DB.exists():
-        return {'points': []}
-    try:
-        conn = sqlite3.connect(BAZZA_DB)
-        rows = conn.execute(
-            'SELECT ts, load1, mem_pct, disk_pct FROM metrics_log ORDER BY ts'
-        ).fetchall()
-        conn.close()
-        return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
-    except Exception as e:
-        return {'points': [], 'error': str(e)}
-
-
-def _vpn_history():
-    if not VPN_DB.exists():
-        return {'points': []}
-    try:
-        conn = sqlite3.connect(VPN_DB)
-        rows = conn.execute(
-            'SELECT ts, rtt_ms, loss_pct, api_ms, up FROM metrics_log ORDER BY ts'
-        ).fetchall()
-        conn.close()
-        return {'points': [{'ts': r[0], 'rtt_ms': r[1], 'loss_pct': r[2], 'api_ms': r[3], 'up': r[4]} for r in rows]}
-    except Exception as e:
-        return {'points': [], 'error': str(e)}
+def _steve_history(): return _metrics_history(STEVE_DB, _HOST_HISTORY_COLS)
+def _wacky_history(): return _metrics_history(WACKY_DB, _HOST_HISTORY_COLS)
+def _jeff_history():  return _metrics_history(JEFF_DB, _HOST_HISTORY_COLS)
+def _bazza_history(): return _metrics_history(BAZZA_DB, _HOST_HISTORY_COLS)
+def _vpn_history():   return _metrics_history(VPN_DB, ('ts', 'rtt_ms', 'loss_pct', 'api_ms', 'up'))
 
 
 def _moisture_data(hours=24):
