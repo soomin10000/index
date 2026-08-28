@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bazza</title>
+<script src="/chart.min.js"></script>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --dns: #6aab5b;
+    /* Trend-chart series identity — deliberately distinct from --ok/--warn/--down
+       (status colors), so a line's hue never impersonates a health state. Validated
+       as a set: scripts/validate_palette.js "#3987e5,#199e70,#d95926" --mode dark */
+    --chart-mem:  #3987e5;
+    --chart-load: #d95926;
+    --chart-disk: #199e70;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible {
+    outline: 2px solid var(--copper); outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ── Topbar ── */
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  /* ── Frame / layout ── */
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  /* ── Hero: hostname plate + gauges ── */
+  .hero {
+    display: grid; grid-template-columns: minmax(200px, 280px) 1fr;
+    gap: 1.6rem; align-items: stretch;
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.6rem 1.8rem;
+  }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } }
+
+  .hero-id { display: flex; flex-direction: column; justify-content: center; }
+  .hero-id .eyebrow { margin-bottom: 0.5rem; }
+  .hero-id h1 {
+    font-size: 3rem; font-weight: 700; letter-spacing: 0.01em;
+    line-height: 1; margin-bottom: 0.6rem;
+    border-bottom: 2px solid var(--copper); padding-bottom: 0.5rem; width: fit-content;
+  }
+  .uname { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); letter-spacing: 0.02em; }
+
+  .gauges { display: flex; gap: 1.2rem; align-items: center; justify-content: space-evenly; flex-wrap: wrap; }
+  .gauge { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+  .gauge-dial { position: relative; width: 120px; height: 68px; }
+  .gauge-dial svg { width: 100%; height: 100%; overflow: visible; }
+  .gauge-track { fill: none; stroke: var(--inset); stroke-width: 10; stroke-linecap: round; }
+  .gauge-fill  { fill: none; stroke-width: 10; stroke-linecap: round;
+    stroke-dasharray: 157.08 157.08; transition: stroke-dashoffset 0.9s cubic-bezier(.2,.8,.2,1), stroke 0.4s; }
+  .gauge-fill.ok   { stroke: var(--ok); }
+  .gauge-fill.warn { stroke: var(--warn); }
+  .gauge-fill.down { stroke: var(--down); }
+  .gauge-tick { fill: var(--bezel-lit); }
+  .gauge-readout {
+    position: absolute; left: 0; right: 0; bottom: 2px; text-align: center;
+    font-family: var(--font-mono); font-size: 1.15rem; font-weight: 600; color: var(--ink);
+  }
+  .gauge-cap { font-size: 0.62rem; letter-spacing: 0.16em; color: var(--ink-dim); text-transform: uppercase; }
+  .gauge-sub { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); }
+
+  /* ── Trend chart ── */
+  .trend-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.4rem 1.6rem 1rem;
+  }
+  .trend-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; }
+  .legend { display: flex; gap: 1.1rem; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); margin-bottom: 0.4rem; }
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend i { width: 9px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  .advisory { font-family: var(--font-mono); font-size: 0.68rem; color: var(--down); }
+
+  /* ── Alerts / health flags ── */
+  .ack-btn {
+    padding: 0.3rem 0.8rem; border-radius: 4px; border: 1px solid var(--bezel);
+    background: var(--panel); color: var(--ink-dim); font-size: 0.64rem;
+    letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    flex-shrink: 0; align-self: center;
+  }
+  .ack-btn:hover { border-color: var(--bezel-lit); color: var(--ink); }
+  .alert-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .alert-item {
+    background: var(--panel); border: 1px solid var(--bezel); border-left: 3px solid var(--warn);
+    border-radius: 4px; padding: 0.7rem 0.9rem; display: flex; align-items: center; gap: 0.9rem;
+  }
+  .alert-item.critical { border-left-color: var(--down); }
+  .alert-item.calm { border-left-color: var(--ok); }
+  .alert-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+  .alert-item-top { display: flex; align-items: baseline; gap: 0.5rem; }
+  .alert-header { font-size: 0.78rem; font-weight: 600; }
+  .alert-item.critical .alert-header { color: var(--down); }
+  .alert-item.calm .alert-header { color: var(--ok); }
+  .alert-item:not(.critical):not(.calm) .alert-header { color: var(--warn); }
+  .alert-text { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim); }
+  .alert-time { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); margin-left: auto; }
+
+  /* ── DNS panel ── */
+  .dns-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    border-left: 3px solid var(--dns); padding: 1.2rem 1.4rem;
+    display: flex; flex-direction: column; gap: 0.9rem;
+  }
+  .dns-head { display: flex; align-items: center; gap: 0.6rem; }
+  .dns-title { font-size: 0.9rem; font-weight: 600; color: var(--ink); }
+  .dns-strip {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.3rem 1rem;
+    padding: 0.7rem 0.9rem; background: var(--inset);
+    border: 1px solid var(--bezel); border-radius: 4px;
+  }
+  .dns-big { font-family: var(--font-mono); font-size: 1.1rem; color: var(--ink); }
+  .dns-big b { color: var(--dns); font-size: 1.5rem; font-weight: 700; }
+  .dns-sub { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
+  .dns-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; align-items: baseline; }
+  .dns-row .k {
+    font-size: 0.58rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint); flex-shrink: 0; min-width: 4.8rem;
+  }
+  .chip {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-dim);
+    background: var(--inset); border: 1px solid var(--bezel); border-radius: 3px;
+    padding: 0.15rem 0.5rem;
+  }
+  .chip.none { color: var(--ink-faint); border-style: dashed; }
+  .chip.ok   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 45%, var(--bezel)); }
+  .chip.down { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--bezel)); }
+  .dns-note { font-family: var(--font-mono); font-size: 0.68rem; color: var(--warn); }
+
+  /* ── Process manifests ── */
+  .manifests { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+  @media (max-width: 700px) { .manifests { grid-template-columns: 1fr; } }
+  .manifest-card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1.2rem 1.4rem; }
+  .rows { font-family: var(--font-mono); font-size: 0.72rem; }
+  .rows .row {
+    display: grid; grid-template-columns: 3.2rem 1fr 3rem 3rem; gap: 0.6rem;
+    padding: 0.4rem 0; border-bottom: 1px solid var(--inset); color: var(--ink-dim);
+  }
+  .rows .row:last-child { border-bottom: none; }
+  .rows .row span:first-child { color: var(--ink-faint); }
+  .rows .row .proc-name { color: var(--ink); }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">BAZZA</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <section class="hero">
+    <div class="hero-id">
+      <div class="eyebrow">HOST</div>
+      <h1 id="hostname">bazza</h1>
+      <div class="uname" id="uname">—</div>
+    </div>
+    <div class="gauges" id="gauges"></div>
+  </section>
+
+  <section id="alerts-section" style="display:none">
+    <div class="eyebrow">⚠ ALERTS</div>
+    <div class="alert-list" id="alert-list"></div>
+  </section>
+
+  <section class="trend-card">
+    <div class="trend-head">
+      <div class="eyebrow" style="margin-bottom:0">TREND · LAST 48H</div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <canvas id="ch-history" height="70"></canvas>
+  </section>
+
+  <section>
+    <div class="eyebrow">DNS — PI-HOLE</div>
+    <div class="dns-card" id="dns-card"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">PI HEALTH — UNDER-VOLTAGE &amp; THROTTLING</div>
+    <div class="alert-list" id="health-list"></div>
+  </section>
+
+  <section>
+    <div class="advisory" id="other-failed"></div>
+  </section>
+
+  <section class="manifests">
+    <div class="manifest-card">
+      <div class="eyebrow">TOP CPU</div>
+      <div class="rows" id="top-cpu"></div>
+    </div>
+    <div class="manifest-card">
+      <div class="eyebrow">TOP MEMORY</div>
+      <div class="rows" id="top-mem"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+  const num = n => (n == null ? '—' : Number(n).toLocaleString());
+
+  const ARC_LEN = 157.08; // half-circumference for r=50
+
+  function gaugeSVG() {
+    return `
+      <div class="gauge-dial">
+        <svg viewBox="0 0 120 70">
+          <path class="gauge-track" d="M 10 60 A 50 50 0 0 1 110 60" />
+          <path class="gauge-fill"  d="M 10 60 A 50 50 0 0 1 110 60" style="stroke-dashoffset:${ARC_LEN}" />
+          <circle class="gauge-tick" cx="10"    cy="60"    r="1.6" />
+          <circle class="gauge-tick" cx="24.6"  cy="24.6"  r="1.6" />
+          <circle class="gauge-tick" cx="60"    cy="10"    r="1.6" />
+          <circle class="gauge-tick" cx="95.4"  cy="24.6"  r="1.6" />
+          <circle class="gauge-tick" cx="110"   cy="60"    r="1.6" />
+        </svg>
+        <div class="gauge-readout"></div>
+      </div>
+      <div class="gauge-cap"></div>
+      <div class="gauge-sub"></div>
+    `;
+  }
+
+  function ensureGauges() {
+    const box = document.getElementById('gauges');
+    if (box.children.length) return;
+    ['load', 'mem', 'disk', 'temp'].forEach(id => {
+      const g = document.createElement('div');
+      g.className = 'gauge'; g.id = 'gauge-' + id;
+      g.innerHTML = gaugeSVG();
+      box.appendChild(g);
+    });
+  }
+
+  function setGauge(id, pct, cls, readout, cap, sub) {
+    const g = document.getElementById('gauge-' + id);
+    const fill = g.querySelector('.gauge-fill');
+    fill.classList.remove('ok', 'warn', 'down');
+    fill.classList.add(cls);
+    const clamped = Math.max(0, Math.min(100, pct));
+    fill.style.strokeDashoffset = ARC_LEN * (1 - clamped / 100);
+    g.querySelector('.gauge-readout').textContent = readout;
+    g.querySelector('.gauge-cap').textContent = cap;
+    g.querySelector('.gauge-sub').textContent = sub;
+  }
+
+  function fmtUptime(s) {
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function fmtAgo(sec) {
+    if (sec == null) return '—';
+    if (sec < 90) return 'just now';
+    const m = Math.round(sec / 60);
+    if (m < 90) return `${m} min ago`;
+    const h = Math.round(sec / 3600);
+    if (h < 36) return `${h}h ago`;
+    return `${Math.round(sec / 86400)}d ago`;
+  }
+
+  // ── History chart ── (colors resolved from :root so there's one source of truth)
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = name => rootStyle.getPropertyValue(name).trim();
+  const CHART_GRID = 'rgba(234,231,223,0.08)';
+  const CHART_LABEL = cssVar('--ink-dim');
+  const C_LOAD = cssVar('--chart-load');
+  const C_MEM  = cssVar('--chart-mem');
+  const C_DISK = cssVar('--chart-disk');
+
+  Chart.defaults.color = CHART_LABEL;
+  Chart.defaults.borderColor = CHART_GRID;
+  Chart.defaults.font.family = "ui-monospace, 'DejaVu Sans Mono', monospace";
+  Chart.defaults.font.size = 10;
+
+  const baseOpts = {
+    responsive: true,
+    animation: { duration: 350 },
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: false },
+      tooltip: { backgroundColor: '#141516', borderColor: cssVar('--bezel'), borderWidth: 1,
+        titleColor: cssVar('--ink'), bodyColor: cssVar('--ink-dim'), padding: 9,
+        usePointStyle: true, boxHeight: 4, boxPadding: 3 } },
+    scales: {
+      x: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL, maxTicksLimit: 10 } },
+      y: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL }, beginAtZero: true, suggestedMax: 100 },
+    },
+  };
+
+  let historyChart = null;
+  function renderHistory(points, cpus) {
+    const labels = points.map(p => {
+      const dt = new Date(p.ts * 1000);
+      return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0');
+    });
+    const series = (label, color, values) => ({
+      label, data: values, borderColor: color, borderWidth: 2, fill: false,
+      tension: 0.25, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 12,
+      pointStyle: 'line', pointBackgroundColor: color, pointBorderColor: color,
+    });
+    const data = {
+      labels,
+      datasets: [
+        series('load', C_LOAD, points.map(p => Math.round(p.load1 / cpus * 100))),
+        series('mem',  C_MEM,  points.map(p => p.mem_pct)),
+        series('disk', C_DISK, points.map(p => p.disk_pct)),
+      ],
+    };
+    if (historyChart) { historyChart.data = data; historyChart.update(); return; }
+    historyChart = new Chart(document.getElementById('ch-history'), { type: 'line', data, options: baseOpts });
+    document.getElementById('legend').innerHTML = `
+      <span><i style="background:${C_LOAD}"></i>load / cpu</span>
+      <span><i style="background:${C_MEM}"></i>mem</span>
+      <span><i style="background:${C_DISK}"></i>disk</span>
+    `;
+  }
+
+  async function loadHistory(cpus) {
+    try {
+      const r = await fetch('/api/bazza/history');
+      const d = await r.json();
+      renderHistory(d.points || [], cpus || 1);
+    } catch {}
+  }
+
+  function procRow(p) {
+    return `<div class="row"><span>${p.pid}</span><span class="proc-name">${esc(p.name)}</span><span>${p.cpu.toFixed(1)}</span><span>${p.mem.toFixed(1)}</span></div>`;
+  }
+
+  function renderDns(dns) {
+    const card = document.getElementById('dns-card');
+    if (!dns) { card.innerHTML = '<span class="chip none">no data</span>'; return; }
+
+    const ftl = dns.ftl_active;
+    const haveFigures = dns.percent_blocked != null;
+    const strip = haveFigures ? `
+      <div class="dns-strip">
+        <span class="dns-big"><b>${dns.percent_blocked}%</b> blocked</span>
+        <span class="dns-sub">${num(dns.total)} queries · ${num(dns.blocked)} blocked · ${num(dns.cached)} cached · ${num(dns.forwarded)} forwarded</span>
+      </div>` : '';
+
+    const unboundChip = dns.unbound_known
+      ? `<span class="chip ${dns.unbound_active ? 'ok' : 'down'}">unbound ${dns.unbound_active ? 'active' : 'inactive'}</span>`
+      : `<span class="chip none">unbound n/a</span>`;
+
+    const gravity = dns.gravity_domains != null
+      ? `<span class="chip">${num(dns.gravity_domains)} domains</span>` +
+        (dns.gravity_last_update ? `<span class="chip">rebuilt ${fmtAgo(Math.floor(Date.now() / 1000) - dns.gravity_last_update)}</span>` : '')
+      : `<span class="chip none">unknown</span>`;
+
+    const staleNote = (dns.stale && dns.age_s != null)
+      ? `<div class="dns-note">⚠ figures are ${fmtAgo(dns.age_s)} — the Pi-hole poller on steve is behind</div>` : '';
+
+    card.innerHTML = `
+      <div class="dns-head">
+        <span class="lamp ${ftl ? 'on' : 'down'}"></span>
+        <span class="dns-title">${ftl ? 'Pi-hole FTL active' : 'Pi-hole FTL not running'}</span>
+      </div>
+      ${strip}
+      ${staleNote}
+      <div class="dns-row"><span class="k">Resolvers</span>
+        <span class="chip ${ftl ? 'ok' : 'down'}">pihole-FTL ${ftl ? 'active' : 'down'}</span>
+        ${unboundChip}
+      </div>
+      <div class="dns-row"><span class="k">Gravity</span>${gravity}</div>
+      <div class="dns-row"><span class="k">Top blocked</span>${
+        dns.top_blocked
+          ? `<span class="chip">${esc(dns.top_blocked.domain)}</span><span class="dns-sub">${num(dns.top_blocked.count)}</span>`
+          : '<span class="chip none">—</span>'}</div>
+      <div class="dns-row"><span class="k">Top client</span>${
+        dns.top_client
+          ? `<span class="chip">${esc(dns.top_client.name)}</span><span class="dns-sub">${num(dns.top_client.count)} queries</span>`
+          : '<span class="chip none">—</span>'}</div>
+    `;
+  }
+
+  function renderHealth(d) {
+    const list = document.getElementById('health-list');
+    const flags = (d.throttled && d.throttled.flags) || [];
+    if (!d.throttled || !d.throttled.available) {
+      list.innerHTML = `<div class="alert-item"><div class="alert-body"><div class="alert-item-top">
+        <span class="alert-header">vcgencmd unavailable</span></div>
+        <div class="alert-text">can't read the under-voltage / throttling bitfield on this host</div></div></div>`;
+      return;
+    }
+    if (!flags.length) {
+      list.innerHTML = `<div class="alert-item calm"><div class="alert-body"><div class="alert-item-top">
+        <span class="alert-header">Clean</span></div>
+        <div class="alert-text">no under-voltage or throttling flags set (${esc(d.throttled.raw)})</div></div></div>`;
+      return;
+    }
+    list.innerHTML = flags.map(f => `
+      <div class="alert-item ${f.level === 'critical' ? 'critical' : ''}">
+        <div class="alert-body">
+          <div class="alert-item-top">
+            <span class="alert-header">${esc(f.header)}</span>
+            <span class="alert-time">${f.when === 'now' ? 'happening now' : 'since boot'}</span>
+          </div>
+          <div class="alert-text">${esc(f.detail)}</div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── Alerts (each acknowledged individually — an ack is "id -> onset ts",
+  // so a re-triggered episode with a fresh onset ts un-acks itself) ──
+  const ACKS_KEY = 'bazza_alert_acks';
+  function loadAcks() {
+    try { return JSON.parse(localStorage.getItem(ACKS_KEY) || '{}'); } catch { return {}; }
+  }
+  function saveAck(id, ts) {
+    const acks = loadAcks();
+    acks[id] = ts;
+    localStorage.setItem(ACKS_KEY, JSON.stringify(acks));
+  }
+
+  function renderAlerts(allAlerts) {
+    const acks = loadAcks();
+    const alerts = allAlerts.filter(a => (acks[a.id] || 0) < a.ts);
+
+    const liveIds = new Set(allAlerts.map(a => a.id));
+    const pruned = Object.fromEntries(Object.entries(acks).filter(([id]) => liveIds.has(id)));
+    localStorage.setItem(ACKS_KEY, JSON.stringify(pruned));
+
+    const section = document.getElementById('alerts-section');
+    if (!alerts.length) { section.style.display = 'none'; return { count: 0, critical: 0 }; }
+
+    section.style.display = '';
+    document.getElementById('alert-list').innerHTML = alerts.map(a => `
+      <div class="alert-item ${a.level === 'critical' ? 'critical' : ''}" data-id="${esc(a.id)}">
+        <div class="alert-body">
+          <div class="alert-item-top">
+            <span class="alert-header">${esc(a.header)}</span>
+            <span class="alert-time">${new Date(a.ts * 1000).toLocaleString('en-GB')}</span>
+          </div>
+          <div class="alert-text">${esc(a.text)}</div>
+        </div>
+        <button class="ack-btn ack-one" data-id="${esc(a.id)}" data-ts="${a.ts}">Ack</button>
+      </div>`).join('');
+
+    document.querySelectorAll('.ack-one').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveAck(btn.dataset.id, Number(btn.dataset.ts));
+        btn.closest('.alert-item').remove();
+        if (!document.querySelectorAll('.alert-item').length) section.style.display = 'none';
+      });
+    });
+
+    return { count: alerts.length, critical: alerts.filter(a => a.level === 'critical').length };
+  }
+
+  async function load() {
+    ensureGauges();
+    try {
+      const r = await fetch('/api/bazza');
+      const d = await r.json();
+      if (d.error) {
+        document.getElementById('status-text').textContent = 'ERROR';
+        document.getElementById('status-lamp').className = 'lamp down';
+        document.getElementById('uname').textContent = esc(d.error);
+        return;
+      }
+
+      const alertSummary = renderAlerts(d.alerts || []);
+      const lamp = document.getElementById('status-lamp');
+      const statusText = document.getElementById('status-text');
+      const lampCls = alertSummary.critical ? 'down' : alertSummary.count ? 'warn' : 'on';
+      lamp.className = 'lamp ' + lampCls;
+      statusText.textContent = alertSummary.count ? `${alertSummary.count} ALERT${alertSummary.count > 1 ? 'S' : ''}` : 'ALL SYSTEMS UP';
+
+      document.getElementById('hostname').textContent = d.hostname;
+      document.getElementById('uname').textContent =
+        `${esc(d.model || 'Raspberry Pi')} · ${d.load.cpus} cores · up ${fmtUptime(d.uptime_seconds)}`;
+
+      const loadPct = d.load['1m'] / d.load.cpus * 100;
+      const loadCls = loadPct > 100 ? 'down' : loadPct > 70 ? 'warn' : 'ok';
+      setGauge('load', loadPct, loadCls, d.load['1m'].toFixed(2), 'LOAD 1M', `${d.load['5m']} / ${d.load['15m']} · 5m/15m`);
+
+      const memCls = d.mem.percent > 90 ? 'down' : d.mem.percent > 75 ? 'warn' : 'ok';
+      setGauge('mem', d.mem.percent, memCls, d.mem.percent + '%', 'MEMORY', `${d.mem.used_mb.toLocaleString()} / ${d.mem.total_mb.toLocaleString()} MB`);
+
+      const diskCls = d.disk.percent > 90 ? 'down' : d.disk.percent > 75 ? 'warn' : 'ok';
+      setGauge('disk', d.disk.percent, diskCls, d.disk.percent + '%', 'DISK /', `${d.disk.used_gb} / ${d.disk.total_gb} GB`);
+
+      if (d.cpu_temp != null) {
+        const t = d.cpu_temp;
+        const tCls = t >= 80 ? 'down' : t >= 65 ? 'warn' : 'ok';
+        setGauge('temp', t / 90 * 100, tCls, Math.round(t) + '°', 'SOC TEMP', `${t} °C`);
+      } else {
+        setGauge('temp', 0, 'ok', '—', 'SOC TEMP', 'no sensor');
+      }
+
+      renderDns(d.dns);
+      renderHealth(d);
+
+      const otherFailed = document.getElementById('other-failed');
+      otherFailed.textContent = d.other_failed && d.other_failed.length
+        ? `Failed units: ${d.other_failed.join(', ')}` : '';
+
+      document.getElementById('top-cpu').innerHTML = (d.top_cpu || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
+      document.getElementById('top-mem').innerHTML = (d.top_mem || []).map(procRow).join('') || '<div class="row"><span>—</span></div>';
+
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+      loadHistory(d.load.cpus);
+    } catch (e) {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  load();
+  setInterval(load, 15000);
+</script>
+</body>
+</html>
