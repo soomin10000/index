@@ -63,33 +63,50 @@
       font-variant-numeric: tabular-nums; letter-spacing: 0.08em; text-transform: uppercase;
     }
 
-    /* Live rollup pill — overall status of every card */
-    #rollup {
-      margin-top: 0.35rem;
-      display: inline-flex; align-items: center; gap: 0.55rem;
-      font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.04em;
-      color: var(--ink-dim);
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 999px; padding: 0.32rem 0.9rem;
-      max-width: 100%;
-      transition: border-color 0.3s, color 0.3s;
+    /* ── Master bus-bar: overall panel status as panel hardware, not a pill ── */
+    .busbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.7rem 1.2rem; flex-wrap: wrap;
+      padding: 0.6rem 1rem 0.6rem 0.85rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--ink-faint);
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      transition: border-left-color 0.35s;
     }
-    #rollup .rl-lamp {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    .busbar.ok   { border-left-color: var(--ok); }
+    .busbar.warn { border-left-color: var(--warn); }
+    .busbar.down { border-left-color: var(--down); }
+
+    .bb-left { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+    .bb-lamp {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
       background: var(--ink-faint); box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
     }
-    #rollup.ok   { border-color: color-mix(in srgb, var(--ok) 45%, var(--border)); color: var(--ink); }
-    #rollup.ok   .rl-lamp { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 60%, transparent); }
-    #rollup.warn { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); color: var(--ink); }
-    #rollup.warn .rl-lamp { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 60%, transparent); }
-    #rollup.down { border-color: color-mix(in srgb, var(--down) 60%, var(--border)); color: var(--ink); }
-    #rollup.down .rl-lamp { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 70%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
-    #rollup .rl-names { color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #rollup a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
-    #rollup a:hover { color: #fff; }
-    #rollup .rl-names a { color: var(--ink-faint); }
-    #rollup .rl-names a:hover { color: var(--ink); }
-    #rollup:not(.warn):not(.down) .rl-text { text-decoration: none; }
+    .busbar.ok   .bb-lamp { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 60%, transparent); }
+    .busbar.warn .bb-lamp { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 60%, transparent); }
+    .busbar.down .bb-lamp { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 70%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+
+    .bb-status {
+      font-size: 0.66rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+      color: var(--ink-dim); text-decoration: none;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .busbar.warn .bb-status, .busbar.down .bb-status { color: var(--ink); }
+    a.bb-status:hover { color: #fff; }
+
+    .bb-right {
+      display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;
+      font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .bb-right a {
+      color: var(--ink-dim); text-decoration: none;
+      border-bottom: 1px dotted var(--border-lit); padding-bottom: 1px;
+    }
+    .bb-right a:hover { color: var(--ink); border-bottom-color: var(--ink-dim); }
+    .bb-sep { opacity: 0.4; }
 
     /* ── Bands ── */
     main {
@@ -288,10 +305,17 @@
   <div class="brand">Totally Pointless Website</div>
   <div class="eyebrow-top">Home Control Panel</div>
   <div id="clock"></div>
-  <div id="rollup"><span class="rl-lamp"></span><a class="rl-text">checking systems…</a><span class="rl-names"></span></div>
 </header>
 
 <main>
+
+  <div class="busbar" id="busbar">
+    <div class="bb-left">
+      <span class="bb-lamp"></span>
+      <a class="bb-status" id="bb-status">Systems · checking…</a>
+    </div>
+    <div class="bb-right" id="bb-right"></div>
+  </div>
 
   <section class="band">
     <div class="band-label">Hosts <span class="bl-count" id="bl-hosts"></span></div>
@@ -945,30 +969,35 @@
       if (c.classList.contains('is-offline') || l?.classList.contains('down')) down.push(entry(c));
       else if (l?.classList.contains('warn')) warn.push(entry(c));
     }
-    const rollup = document.getElementById('rollup');
-    const txt = rollup.querySelector('.rl-text');
-    const names = rollup.querySelector('.rl-names');
-    rollup.classList.remove('ok', 'warn', 'down');
+    const bar = document.getElementById('busbar');
+    const status = document.getElementById('bb-status');
+    const right = document.getElementById('bb-right');
+    bar.classList.remove('ok', 'warn', 'down');
+    status.removeAttribute('href');
 
     if (loading && !down.length && !warn.length) {
-      txt.textContent = 'checking systems…'; names.innerHTML = ''; txt.removeAttribute('href');
+      status.textContent = 'Systems · checking…';
+      right.innerHTML = '';
       return;
     }
     const attention = [...down, ...warn];
+    const total = cards.length - loading;
+
     if (!attention.length) {
-      rollup.classList.add('ok');
-      txt.textContent = `all clear · ${cards.length - loading} systems up`;
-      txt.removeAttribute('href');
-      names.innerHTML = '';
-    } else {
-      rollup.classList.add(down.length ? 'down' : 'warn');
-      txt.textContent = `${attention.length} need${attention.length === 1 ? 's' : ''} attention`;
-      txt.href = attention[0].href;            // pill text jumps to the first offender
-      const shown = attention.slice(0, 6);
-      names.innerHTML = '· ' + shown.map(e =>
-        `<a href="${esc(e.href)}">${esc(e.name)}</a>`).join(', ')
-        + (attention.length > 6 ? ` +${attention.length - 6}` : '');
+      bar.classList.add('ok');
+      status.textContent = 'Systems nominal';
+      right.innerHTML = `${total} / ${total} up`;
+      return;
     }
+
+    bar.classList.add(down.length ? 'down' : 'warn');
+    const n = attention.length;
+    status.textContent = `${n} circuit${n > 1 ? 's' : ''} tripped`;
+    status.href = attention[0].href;          // status text jumps to the first offender
+    const shown = attention.slice(0, 6);
+    right.innerHTML = shown.map(e => `<a href="${esc(e.href)}">${esc(e.name)}</a>`)
+      .join(' <span class="bb-sep">·</span> ')
+      + (n > 6 ? ` <span class="bb-sep">+${n - 6}</span>` : '');
   }
 
   // per-band counts in the section labels
