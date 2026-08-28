@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Site-to-Site VPN</title>
+<script src="/chart.min.js"></script>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --tunnel: #e0709a;
+    --chart-rtt:  #3987e5;
+    --chart-loss: #d95926;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link { font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); text-decoration: none; }
+  .home-link:hover { color: var(--ink); }
+  .plate-name { font-weight: 700; font-size: 0.92rem; letter-spacing: 0.28em; color: var(--ink); text-transform: uppercase; }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+  .eyebrow { font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 0.9rem; }
+  section { margin-bottom: 2.1rem; }
+
+  /* ── Hero: the link ── */
+  .hero {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.8rem;
+  }
+  .link {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 1.4rem; align-items: center;
+  }
+  @media (max-width: 720px) { .link { grid-template-columns: 1fr; gap: 1rem; } }
+
+  .site {
+    background: var(--inset); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.1rem 1.3rem;
+  }
+  .site .role { font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-faint); }
+  .site h2 { font-size: 1.5rem; font-weight: 700; margin: 0.25rem 0 0.35rem; }
+  .site .meta { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); line-height: 1.6; }
+
+  .span {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    min-width: 150px;
+  }
+  .span .wire {
+    width: 100%; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--bezel), var(--tunnel), var(--bezel));
+    position: relative;
+  }
+  .span.down .wire { background: linear-gradient(90deg, var(--bezel), var(--down), var(--bezel)); }
+  .span.warn .wire { background: linear-gradient(90deg, var(--bezel), var(--warn), var(--bezel)); }
+  .span .pill {
+    font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--tunnel); border: 1px solid color-mix(in srgb, var(--tunnel) 45%, var(--bezel));
+    border-radius: 999px; padding: 0.2rem 0.7rem; background: var(--inset);
+  }
+  .span.down .pill { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--bezel)); }
+  .span.warn .pill { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--bezel)); }
+  .span .rtt { font-family: var(--font-mono); font-size: 1.35rem; font-weight: 700; color: var(--ink); }
+  .span .rtt small { font-size: 0.62rem; font-weight: 400; color: var(--ink-faint); }
+  .span .loss { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); }
+  .transport { text-align: center; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); margin-top: 1.3rem; letter-spacing: 0.06em; }
+
+  /* ── Trend ── */
+  .trend-card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1.4rem 1.6rem 1rem; }
+  .trend-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; }
+  .legend { display: flex; gap: 1.1rem; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); margin-bottom: 0.4rem; }
+  .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .legend i { width: 9px; height: 3px; border-radius: 2px; display: inline-block; }
+
+  /* ── Alerts ── */
+  .ack-btn {
+    padding: 0.3rem 0.8rem; border-radius: 4px; border: 1px solid var(--bezel);
+    background: var(--panel); color: var(--ink-dim); font-size: 0.64rem;
+    letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: border-color 0.2s, color 0.2s;
+    flex-shrink: 0; align-self: center;
+  }
+  .ack-btn:hover { border-color: var(--bezel-lit); color: var(--ink); }
+  .alert-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .alert-item {
+    background: var(--panel); border: 1px solid var(--bezel); border-left: 3px solid var(--warn);
+    border-radius: 4px; padding: 0.7rem 0.9rem; display: flex; align-items: center; gap: 0.9rem;
+  }
+  .alert-item.critical { border-left-color: var(--down); }
+  .alert-item.calm { border-left-color: var(--ok); }
+  .alert-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+  .alert-item-top { display: flex; align-items: baseline; gap: 0.5rem; }
+  .alert-header { font-size: 0.78rem; font-weight: 600; }
+  .alert-item.critical .alert-header { color: var(--down); }
+  .alert-item.calm .alert-header { color: var(--ok); }
+  .alert-item:not(.critical):not(.calm) .alert-header { color: var(--warn); }
+  .alert-text { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim); }
+  .alert-time { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); margin-left: auto; }
+
+  /* ── Detail panels ── */
+  .info-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    border-left: 3px solid var(--tunnel); padding: 1.2rem 1.4rem;
+    display: flex; flex-direction: column; gap: 0.7rem;
+  }
+  .info-card.muted { border-left-color: var(--bezel-lit); }
+  .info-row { display: flex; flex-wrap: wrap; gap: 0.4rem 0.7rem; align-items: baseline; }
+  .info-row .k {
+    font-size: 0.58rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--ink-faint); flex-shrink: 0; min-width: 6.5rem;
+  }
+  .info-row .v { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); }
+  .info-note { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-faint); line-height: 1.6; }
+  .chip {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-dim);
+    background: var(--inset); border: 1px solid var(--bezel); border-radius: 3px; padding: 0.15rem 0.5rem;
+  }
+  .chip.ok   { color: var(--ok);   border-color: color-mix(in srgb, var(--ok) 45%, var(--bezel)); }
+  .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--bezel)); }
+  .chip.down { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--bezel)); }
+  .chip.none { color: var(--ink-faint); border-style: dashed; }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">Site-to-Site VPN</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <section class="hero">
+    <div class="link">
+      <div class="site">
+        <div class="role">Home</div>
+        <h2>UCG-Max</h2>
+        <div class="meta" id="home-meta">—</div>
+      </div>
+      <div class="span" id="span">
+        <span class="pill" id="span-pill">···</span>
+        <div class="wire"></div>
+        <div class="rtt" id="span-rtt">— <small>ms</small></div>
+        <div class="loss" id="span-loss">—</div>
+      </div>
+      <div class="site">
+        <div class="role">Remote base</div>
+        <h2 id="far-name">Dream Machine</h2>
+        <div class="meta" id="far-meta">—</div>
+      </div>
+    </div>
+    <div class="transport" id="transport">—</div>
+  </section>
+
+  <section id="alerts-section" style="display:none">
+    <div class="eyebrow">⚠ ALERTS</div>
+    <div class="alert-list" id="alert-list"></div>
+  </section>
+
+  <section class="trend-card">
+    <div class="trend-head">
+      <div class="eyebrow" style="margin-bottom:0">TREND · LAST 7 DAYS</div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <canvas id="ch-history" height="70"></canvas>
+  </section>
+
+  <section>
+    <div class="eyebrow">REMOTE END — as seen through the tunnel</div>
+    <div class="info-card" id="far-card"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">WHAT THE UNIFI CONSOLE REPORTS</div>
+    <div class="info-card muted" id="console-card"></div>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  function fmtUptime(s) {
+    if (s == null) return '—';
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  const rootStyle = getComputedStyle(document.documentElement);
+  const cssVar = n => rootStyle.getPropertyValue(n).trim();
+  const CHART_GRID = 'rgba(234,231,223,0.08)';
+  const CHART_LABEL = cssVar('--ink-dim');
+  const C_RTT = cssVar('--chart-rtt');
+  const C_LOSS = cssVar('--chart-loss');
+
+  Chart.defaults.color = CHART_LABEL;
+  Chart.defaults.borderColor = CHART_GRID;
+  Chart.defaults.font.family = "ui-monospace, 'DejaVu Sans Mono', monospace";
+  Chart.defaults.font.size = 10;
+
+  let historyChart = null;
+  function renderHistory(points) {
+    const labels = points.map(p => {
+      const dt = new Date(p.ts * 1000);
+      return `${dt.getDate()}/${dt.getMonth() + 1} ${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`;
+    });
+    const line = (label, color, values, axis) => ({
+      label, data: values, borderColor: color, backgroundColor: color, borderWidth: 2, fill: false,
+      tension: 0.25, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 12,
+      pointStyle: 'line', yAxisID: axis, spanGaps: true,
+    });
+    const data = {
+      labels,
+      datasets: [
+        line('rtt', C_RTT, points.map(p => p.rtt_ms), 'y'),
+        line('loss', C_LOSS, points.map(p => p.loss_pct), 'y1'),
+      ],
+    };
+    const opts = {
+      responsive: true,
+      animation: { duration: 350 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#141516', borderColor: cssVar('--bezel'), borderWidth: 1,
+          titleColor: cssVar('--ink'), bodyColor: cssVar('--ink-dim'), padding: 9,
+          usePointStyle: true, boxHeight: 4, boxPadding: 3,
+          callbacks: {
+            label: c => c.dataset.label === 'loss'
+              ? ` loss ${c.parsed.y}%`
+              : ` rtt ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(1)} ms`,
+          },
+        },
+      },
+      scales: {
+        x: { grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL, maxTicksLimit: 8 } },
+        y:  { position: 'left',  grid: { color: CHART_GRID }, ticks: { color: CHART_LABEL }, beginAtZero: true, title: { display: true, text: 'ms', color: CHART_LABEL } },
+        y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: CHART_LABEL }, beginAtZero: true, suggestedMax: 100, title: { display: true, text: '% loss', color: CHART_LABEL } },
+      },
+    };
+    if (historyChart) { historyChart.data = data; historyChart.update(); return; }
+    historyChart = new Chart(document.getElementById('ch-history'), { type: 'line', data, options: opts });
+    document.getElementById('legend').innerHTML = `
+      <span><i style="background:${C_RTT}"></i>round-trip ms</span>
+      <span><i style="background:${C_LOSS}"></i>packet loss %</span>
+    `;
+  }
+
+  async function loadHistory() {
+    try {
+      const r = await fetch('/api/vpn/history');
+      const d = await r.json();
+      renderHistory(d.points || []);
+    } catch {}
+  }
+
+  // ── Alerts (individual ack: id -> onset ts) ──
+  const ACKS_KEY = 'vpn_alert_acks';
+  const loadAcks = () => { try { return JSON.parse(localStorage.getItem(ACKS_KEY) || '{}'); } catch { return {}; } };
+  function saveAck(id, ts) { const a = loadAcks(); a[id] = ts; localStorage.setItem(ACKS_KEY, JSON.stringify(a)); }
+
+  function renderAlerts(all) {
+    const acks = loadAcks();
+    const alerts = all.filter(a => (acks[a.id] || 0) < a.ts);
+    const liveIds = new Set(all.map(a => a.id));
+    localStorage.setItem(ACKS_KEY, JSON.stringify(Object.fromEntries(Object.entries(acks).filter(([id]) => liveIds.has(id)))));
+
+    const section = document.getElementById('alerts-section');
+    if (!alerts.length) { section.style.display = 'none'; return { count: 0, critical: 0 }; }
+    section.style.display = '';
+    document.getElementById('alert-list').innerHTML = alerts.map(a => `
+      <div class="alert-item ${a.level === 'critical' ? 'critical' : ''}">
+        <div class="alert-body">
+          <div class="alert-item-top">
+            <span class="alert-header">${esc(a.header)}</span>
+            <span class="alert-time">${new Date(a.ts * 1000).toLocaleString('en-GB')}</span>
+          </div>
+          <div class="alert-text">${esc(a.text)}</div>
+        </div>
+        <button class="ack-btn ack-one" data-id="${esc(a.id)}" data-ts="${a.ts}">Ack</button>
+      </div>`).join('');
+    document.querySelectorAll('.ack-one').forEach(btn => btn.addEventListener('click', () => {
+      saveAck(btn.dataset.id, Number(btn.dataset.ts));
+      btn.closest('.alert-item').remove();
+      if (!document.querySelectorAll('.alert-item').length) section.style.display = 'none';
+    }));
+    return { count: alerts.length, critical: alerts.filter(a => a.level === 'critical').length };
+  }
+
+  function renderFar(far, api) {
+    const card = document.getElementById('far-card');
+    if (!api || !api.attempted) {
+      card.innerHTML = `<div class="info-note">No far-console API key configured — health is ping-only.</div>`;
+      return;
+    }
+    if (!api.ok) {
+      card.innerHTML = `
+        <div class="info-row"><span class="k">API call</span><span class="chip down">failed${api.error ? ' · ' + esc(api.error) : ''}</span></div>
+        <div class="info-note">The authenticated request to the remote console through the tunnel did not succeed.</div>`;
+      return;
+    }
+    const wanCls = far.wan_status === 'ok' ? 'ok' : 'warn';
+    const rows = [
+      ['API call', `<span class="chip ok">200 · ${api.ms} ms round trip</span>`],
+      ['ISP', far.isp ? `<span class="v">${esc(far.isp)}</span>` : '<span class="chip none">—</span>'],
+      ['Remote WAN', `<span class="chip ${wanCls}">${esc(far.wan_status || '—')}</span>${far.wan_ip ? ` <span class="v">${esc(far.wan_ip)}</span>` : ''}`],
+      ['WAN uptime', far.wan_availability != null ? `<span class="v">${far.wan_availability}% avail · ${far.wan_latency_ms ?? '—'} ms to ping.ui.com</span>` : '<span class="chip none">—</span>'],
+      ['Gateway', far.gw_name ? `<span class="v">${esc(far.gw_name)}${far.gw_version ? ' · ' + esc(far.gw_version) : ''}</span>` : '<span class="chip none">—</span>'],
+      ['Gateway load', (far.gw_cpu != null || far.gw_mem != null)
+        ? `<span class="v">cpu ${far.gw_cpu ?? '—'}% · mem ${far.gw_mem ?? '—'}% · up ${fmtUptime(far.gw_uptime_s)}</span>` : '<span class="chip none">—</span>'],
+    ];
+    card.innerHTML = rows.map(([k, v]) => `<div class="info-row"><span class="k">${k}</span>${v}</div>`).join('');
+  }
+
+  function renderConsole(cr) {
+    const card = document.getElementById('console-card');
+    if (!cr || !cr.attempted) {
+      card.innerHTML = `<div class="info-note">Home-console API key not configured.</div>`;
+      return;
+    }
+    if (!cr.available) {
+      card.innerHTML = `<div class="info-note">The home console returned no VPN subsystem in its health payload.</div>`;
+      return;
+    }
+    const s = (cr.status || '').toLowerCase();
+    const cls = s === 'ok' ? 'ok' : s === 'warning' ? 'warn' : 'down';
+    card.innerHTML = `
+      <div class="info-row"><span class="k">Reported</span>
+        <span class="chip ${cls}">${esc(cr.status || 'unknown')}</span>
+        <span class="chip">${cr.site_to_site_active ?? 0} active tunnel(s)</span>
+      </div>
+      <div class="info-note">${esc(cr.note || '')}</div>`;
+  }
+
+  async function load() {
+    try {
+      const r = await fetch('/api/vpn');
+      const d = await r.json();
+      if (d.error) {
+        document.getElementById('status-text').textContent = 'ERROR';
+        document.getElementById('status-lamp').className = 'lamp down';
+        return;
+      }
+
+      const alertSummary = renderAlerts(d.alerts || []);
+      const STATUS = { up: ['on', 'TUNNEL UP'], degraded: ['warn', 'DEGRADED'], down: ['down', 'TUNNEL DOWN'] };
+      const [lampCls, label] = STATUS[d.status] || ['warn', d.status.toUpperCase()];
+      document.getElementById('status-lamp').className = 'lamp ' + lampCls;
+      document.getElementById('status-text').textContent =
+        alertSummary.count ? `${alertSummary.count} ALERT${alertSummary.count > 1 ? 'S' : ''}` : label;
+
+      document.getElementById('home-meta').innerHTML =
+        `${esc(d.home.lan)}<br>console ${esc(d.home.console)}`;
+      document.getElementById('far-name').textContent = d.far.gw_name || 'Remote gateway';
+      document.getElementById('far-meta').innerHTML =
+        `${esc(d.far.lan)}<br>gateway ${esc(d.far.ip)}`;
+      document.getElementById('transport').textContent = `transport · ${d.transport}`;
+
+      const span = document.getElementById('span');
+      const spanCls = d.status === 'down' ? 'down' : d.status === 'degraded' ? 'warn' : '';
+      span.className = 'span ' + spanCls;
+      document.getElementById('span-pill').textContent =
+        d.status === 'down' ? 'no path' : d.status === 'degraded' ? 'degraded' : 'encrypted';
+      const rtt = d.ping.rtt_avg;
+      document.getElementById('span-rtt').innerHTML = rtt != null
+        ? `${rtt.toFixed(1)} <small>ms rtt</small>` : `— <small>ms</small>`;
+      document.getElementById('span-loss').textContent =
+        `${d.ping.recv}/${d.ping.sent} replies · ${d.ping.loss_pct.toFixed(0)}% loss`;
+
+      renderFar(d.far, d.api);
+      renderConsole(d.console_reported);
+
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+      loadHistory();
+    } catch (e) {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  load();
+  setInterval(load, 15000);
+</script>
+</body>
+</html>

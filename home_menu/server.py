@@ -258,6 +258,8 @@ JEFF_JSON    = DATA / 'jeff.json'
 JEFF_DB      = DATA / 'jeff_history.db'
 BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
+VPN_JSON     = DATA / 'vpn.json'
+VPN_DB       = DATA / 'vpn_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
@@ -372,6 +374,20 @@ def _bazza_history():
         ).fetchall()
         conn.close()
         return {'points': [{'ts': r[0], 'load1': r[1], 'mem_pct': r[2], 'disk_pct': r[3]} for r in rows]}
+    except Exception as e:
+        return {'points': [], 'error': str(e)}
+
+
+def _vpn_history():
+    if not VPN_DB.exists():
+        return {'points': []}
+    try:
+        conn = sqlite3.connect(VPN_DB)
+        rows = conn.execute(
+            'SELECT ts, rtt_ms, loss_pct, api_ms, up FROM metrics_log ORDER BY ts'
+        ).fetchall()
+        conn.close()
+        return {'points': [{'ts': r[0], 'rtt_ms': r[1], 'loss_pct': r[2], 'api_ms': r[3], 'up': r[4]} for r in rows]}
     except Exception as e:
         return {'points': [], 'error': str(e)}
 
@@ -1267,6 +1283,7 @@ ROUTES_GET = {
     '/wacky':                _page('wacky.html'),
     '/jeff':                 _page('jeff.html'),
     '/bazza':                _page('bazza.html'),
+    '/vpn':                  _page('vpn.html'),
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
     '/is-it-broken':         _page('is-it-broken.html'),
@@ -1289,6 +1306,7 @@ ROUTES_GET = {
     '/api/wacky':            _absfile(WACKY_JSON, 'application/json'),
     '/api/jeff':             _absfile(JEFF_JSON, 'application/json'),
     '/api/bazza':            _absfile(BAZZA_JSON, 'application/json'),
+    '/api/vpn':              _absfile(VPN_JSON, 'application/json'),
     '/api/arr':              _absfile(ARR_JSON, 'application/json'),
     '/api/eufy':             _absfile(EUFY_JSON, 'application/json'),
     '/api/eufy/vacuum':      _absfile(EUFY_VACUUM_JSON, 'application/json'),
@@ -1302,6 +1320,7 @@ ROUTES_GET = {
     '/api/wacky/history':    _jsonfn(_wacky_history),
     '/api/jeff/history':     _jsonfn(_jeff_history),
     '/api/bazza/history':    _jsonfn(_bazza_history),
+    '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref, auth=True),
 
     # Request-specific (parse the query string / stream raw bytes)
