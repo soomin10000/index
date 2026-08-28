@@ -2,6 +2,10 @@
 Description=Home menu — project index page
 After=network-online.target
 Wants=network-online.target
+# Give up instead of hammering a restart loop if startup keeps failing
+# (e.g. a syntax error shipped in server.py) — 5 starts / 5 min, then stop.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple

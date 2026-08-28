@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Home menu — sign in</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --chassis: #1c1e20;
+      --card: #26282b;
+      --border: #38393c;
+      --ink: #eae7df;
+      --ink-dim: #9ea1a5;
+      --accent: #6fb98a;
+      --down: #c9584a;
+      --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+      --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+    }
+
+    body {
+      font-family: var(--font-plate);
+      background: var(--chassis);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    form {
+      width: 100%;
+      max-width: 340px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.6rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.8rem;
+      color: var(--ink-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    input {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      color: var(--ink);
+      background: #1b1d1f;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.6rem 0.7rem;
+    }
+    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    button {
+      font-family: var(--font-plate);
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      color: #12241a;
+      background: var(--accent);
+      border: 0;
+      border-radius: 7px;
+      padding: 0.65rem;
+      cursor: pointer;
+      margin-top: 0.2rem;
+    }
+
+    .err {
+      display: none;
+      font-size: 0.85rem;
+      color: var(--down);
+    }
+    body.has-error .err { display: block; }
+  </style>
+</head>
+<body>
+  <form method="post" action="/login">
+    <h1>Home menu</h1>
+    <p class="err">Wrong username or password.</p>
+    <label>Username
+      <input type="text" name="username" autocomplete="username"
+             autocapitalize="off" autocorrect="off" spellcheck="false" required autofocus>
+    </label>
+    <label>Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Sign in</button>
+  </form>
+  <script>
+    if (new URLSearchParams(location.search).has('e')) document.body.classList.add('has-error');
+  </script>
+</body>
+</html>

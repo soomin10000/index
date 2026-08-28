@@ -5,14 +5,17 @@ import hmac
 import json
 import os
 import re
+import secrets
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
@@ -196,6 +199,34 @@ def _freshness(path):
     return data, fresh
 
 
+def _annotate_freshness(data, max_age=STALE_SECONDS):
+    """Add `_age_s` / `_stale` to a poller-JSON dict in place, keyed off its `ts`.
+    A dict already carrying `error` is treated as stale. A dict with no numeric
+    `ts` is left untouched (nothing to judge freshness against)."""
+    ts = data.get('ts')
+    if isinstance(ts, (int, float)):
+        age = round(time.time() - ts)
+        data['_age_s'] = age
+        data['_stale'] = age > max_age or 'error' in data
+    elif 'error' in data:
+        data['_stale'] = True
+    return data
+
+
+def _fresh_json_bytes(path, max_age=STALE_SECONDS):
+    """Bytes for a _jsonfile route: the file's JSON with freshness annotation, or a
+    200 stale stub if it can't be read."""
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            return json.dumps(data).encode()
+    except FileNotFoundError:
+        return json.dumps({'_stale': True, 'error': 'no data yet'}).encode()
+    except Exception as e:
+        return json.dumps({'_stale': True, 'error': f'unreadable: {e}'}).encode()
+    return json.dumps(_annotate_freshness(data, max_age)).encode()
+
+
 def _is_it_broken_status():
     checks = {}
 
@@ -249,7 +280,7 @@ STEVE_JSON   = DATA / 'steve.json'
 EUFY_JSON    = DATA / 'eufy.json'
 EUFY_VACUUM_JSON = DATA / 'eufy_vacuum.json'
 EUFY_SNAPSHOTS = DATA / 'eufy_snapshots'
-_EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9_.-]+$')
+_EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpg|jpeg)$', re.I)
 STEVE_DB     = DATA / 'steve_history.db'
 WACKY_JSON   = DATA / 'wacky.json'
 ARR_JSON     = DATA / 'arr.json'
@@ -261,7 +292,6 @@ BAZZA_DB     = DATA / 'bazza_history.db'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
-REPORT_HTML  = DATA / 'network_report_2026-07-19.html'  # static analysis report, served at /report
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
 # Retired sensors whose old readings are still in the DB — hidden from the
 # dashboard, since "latest per plant" never expires a silent sensor on its own.
@@ -311,13 +341,69 @@ def _trigger_gravity():
     threading.Thread(target=run, daemon=True).start()
     return {'ok': True, 'started': True}
 
-# Gates /cross_ref, /api/cross_ref and /api/capture — this page can trigger live packet
-# captures, so it needs its own login rather than riding on the rest of the (unauthenticated)
-# home dashboard suite. Fails closed: unset creds means the routes refuse all requests.
-CROSS_REF_USER = os.environ.get('CROSS_REF_USER')
-CROSS_REF_PASS = os.environ.get('CROSS_REF_PASS')
+# ── Dashboard auth ───────────────────────────────────────────────────────────
+# The whole dashboard sits behind a form login + signed session cookie, except
+# PUBLIC_PATHS (the login page itself, the shared static JS, and the kids'
+# /is-it-broken status page). Fails closed: unset DASH_USER/DASH_PASS means the
+# login endpoint refuses every attempt, so nothing behind the gate is reachable.
+DASH_USER = os.environ.get('DASH_USER')
+DASH_PASS = os.environ.get('DASH_PASS')
+SESSION_TTL = 30 * 86400  # seconds; also the cookie Max-Age
+_SECRET_FILE = DATA / '.session_secret'
 
-import sys
+PUBLIC_PATHS = {
+    '/login', '/logout', '/is-it-broken', '/api/is-it-broken',
+    '/chart.min.js', '/vis-network.min.js', '/static/world_land.js', '/auth.js',
+}
+
+
+def _session_secret():
+    """HMAC key for session cookies. Prefer DASH_SESSION_SECRET; otherwise keep a
+    random key in data/.session_secret (gitignored) so it survives restarts with
+    no manual setup and never enters the repo."""
+    env = os.environ.get('DASH_SESSION_SECRET')
+    if env:
+        return env.encode()
+    try:
+        return _SECRET_FILE.read_bytes()
+    except FileNotFoundError:
+        pass
+    key = secrets.token_bytes(32)
+    try:
+        _SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _SECRET_FILE.write_bytes(key)
+        _SECRET_FILE.chmod(0o600)
+    except OSError:
+        pass  # not writable (e.g. CI checkout) — fall back to an ephemeral key
+    return key
+
+
+SESSION_SECRET = _session_secret()
+
+
+def _make_session(user):
+    exp = int(time.time()) + SESSION_TTL
+    sig = hmac.new(SESSION_SECRET, f'{user}|{exp}'.encode(), 'sha256').hexdigest()
+    return f'{user}|{exp}|{sig}'
+
+
+def _session_user(cookie_header):
+    """Username from a valid, unexpired session cookie, else None."""
+    if not cookie_header:
+        return None
+    try:
+        morsel = SimpleCookie(cookie_header).get('session')
+        if morsel is None:
+            return None
+        user, exp, sig = morsel.value.rsplit('|', 2)
+        good = hmac.new(SESSION_SECRET, f'{user}|{exp}'.encode(), 'sha256').hexdigest()
+        if not hmac.compare_digest(sig, good) or int(exp) < time.time():
+            return None
+        return user
+    except (ValueError, KeyError):
+        return None
+
+
 sys.path.insert(0, str(BASE / 'pollers'))
 from steve import SERVICES as STEVE_SERVICES
 
@@ -449,13 +535,9 @@ def _restart_steve_service(name):
 
 
 def _kismet_bytes():
-    """Raw file bytes — avoid parsing+re-serializing JSON we're just forwarding to the client."""
-    if not KISMET_JSON.exists():
-        return json.dumps({'error': 'no kismet.json — run pollers/kismet.py'}).encode()
-    try:
-        return KISMET_JSON.read_bytes()
-    except Exception as e:
-        return json.dumps({'error': str(e)}).encode()
+    """kismet.json with freshness annotation (_age_s/_stale) so an unplugged adapter
+    shows as stale rather than as frozen-but-plausible device counts."""
+    return _fresh_json_bytes(KISMET_JSON)
 
 
 def _hostnames_match(a, b):
@@ -595,6 +677,7 @@ def _network_anomalies(unifi_devices, result, ks):
 
 
 _cross_ref_cache = {'mtimes': None, 'result': None}
+_cross_ref_lock = threading.Lock()
 
 
 def _cross_ref():
@@ -603,12 +686,13 @@ def _cross_ref():
     to rerun the full anomaly scan on every request between updates."""
     mtimes = tuple(p.stat().st_mtime if p.exists() else None
                    for p in (PIHOLE_JSON, DEVICES_JSON, KISMET_JSON))
-    if mtimes == _cross_ref_cache['mtimes'] and _cross_ref_cache['result'] is not None:
-        return _cross_ref_cache['result']
-    result = _compute_cross_ref()
-    _cross_ref_cache['mtimes'] = mtimes
-    _cross_ref_cache['result'] = result
-    return result
+    with _cross_ref_lock:
+        if mtimes == _cross_ref_cache['mtimes'] and _cross_ref_cache['result'] is not None:
+            return _cross_ref_cache['result']
+        result = _compute_cross_ref()
+        _cross_ref_cache['mtimes'] = mtimes
+        _cross_ref_cache['result'] = result
+        return result
 
 
 def _compute_cross_ref():
@@ -968,10 +1052,8 @@ def _unifi_radio_history(days=3):
 
 def _trigger_gateway_speedtest():
     try:
-        import sys
         sys.path.insert(0, str(Path.home() / 'projects' / 'unifi_poller'))
         from unifi_client import UnifiClient
-        import os
         pw = os.environ.get('UNIFI_PASSWORD', '')
         if not pw:
             return {'ok': False, 'error': 'UNIFI_PASSWORD not set'}
@@ -1013,25 +1095,32 @@ def _unifi_events():
 
 @dataclass(frozen=True)
 class Route:
-    """One dispatch-table entry. `handler(request)` writes the whole response; `auth`
-    gates the route behind the cross-ref Basic-auth login; `json_ct` (POST only) rejects
-    anything but an application/json body. Every route's auth policy lives right here on
-    it — there is no separate list of "protected" paths to keep in sync."""
+    """One dispatch-table entry. `handler(request)` writes the whole response; `json_ct`
+    (POST only) rejects anything but an application/json body. The login gate is global
+    (see do_GET/do_POST + PUBLIC_PATHS), not per-route."""
     handler: Callable
-    auth: bool = False
     json_ct: bool = False
 
 
-def _page(name, auth=False):
-    return Route(lambda h: h._file(name, 'text/html; charset=utf-8'), auth=auth)
+def _page(name):
+    return Route(lambda h: h._file(name, 'text/html; charset=utf-8'))
 
 
 def _absfile(path, ct):
     return Route(lambda h: h._abs_file(path, ct))
 
 
-def _jsonfn(fn, auth=False):
-    return Route(lambda h: h._json(fn()), auth=auth)
+def _jsonfn(fn):
+    return Route(lambda h: h._json(fn()))
+
+
+def _jsonfile(path, max_age=STALE_SECONDS):
+    """Serve a poller's JSON file with freshness annotation: injects `_age_s` and
+    `_stale` (keyed off the file's own top-level `ts`, `max_age` seconds tolerance)
+    so a dead cron shows as stale rather than as frozen-but-plausible numbers. A
+    missing/broken file still returns 200 — with `_stale: true` and `error` — so
+    the frontend can badge it instead of the card just reading "Offline"."""
+    return Route(lambda h: h._raw(_fresh_json_bytes(path, max_age), 'application/json'))
 
 
 def _proxy_to(url):
@@ -1049,29 +1138,68 @@ class Handler(BaseHTTPRequestHandler):
         # lags the actual requests by however long the pipe buffer takes to fill.
         print('%s ref=%s' % (fmt % args, ref), flush=True)
 
-    def _require_cross_ref_auth(self):
-        """True if the request is authorized. Sends the 401/503 response itself on failure."""
-        if not CROSS_REF_USER or not CROSS_REF_PASS:
-            self.send_error(503, 'CROSS_REF_USER/CROSS_REF_PASS not configured on server')
-            return False
-        given = self.headers.get('Authorization', '')
-        ok = False
-        if given.startswith('Basic '):
-            try:
-                user, pw = base64.b64decode(given[6:]).decode().split(':', 1)
-                ok = hmac.compare_digest(user, CROSS_REF_USER) and hmac.compare_digest(pw, CROSS_REF_PASS)
-            except Exception:
-                ok = False
-        if not ok:
+    # ── auth ──────────────────────────────────────────────────────────────────
+    def _authed(self):
+        # Loopback is already trusted — anything with a shell on steve can read
+        # data/ and drive systemctl directly. This keeps local consumers working
+        # without a login (homelab_mcp on stdio, ad-hoc curl). The exposure being
+        # closed is LAN + tailnet, not 127.0.0.1.
+        if self.client_address and self.client_address[0] in ('127.0.0.1', '::1'):
+            return True
+        return _session_user(self.headers.get('Cookie')) is not None
+
+    def _redirect(self, location, extra=None):
+        self.send_response(302)
+        self.send_header('Location', location)
+        self.send_header('Content-Length', '0')
+        for k, v in (extra or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+
+    def _deny(self, path):
+        # Page navigations bounce to the login screen; API/XHR/asset requests get a
+        # bare 401 so a stale tab's fetch fails cleanly and its own handler redirects.
+        if (path.startswith('/api/') or path.startswith('/eufy/snapshot/')
+                or path.endswith('.png')):
             self.send_response(401)
-            self.send_header('WWW-Authenticate', 'Basic realm="cross-ref"')
             self.send_header('Content-Length', '0')
             self.end_headers()
-            return False
-        return True
+        else:
+            self._redirect('/login')
+
+    def _serve_login(self):
+        self._file('login.html', 'text/html; charset=utf-8')
+
+    def _do_login(self):
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+        except ValueError:
+            length = 0
+        body = self.rfile.read(length).decode('utf-8', 'replace') if 0 < length <= 65536 else ''
+        from urllib.parse import parse_qs
+        form = parse_qs(body)
+        user = form.get('username', [''])[0]
+        pw = form.get('password', [''])[0]
+        if not DASH_USER or not DASH_PASS:
+            self.send_error(503, 'DASH_USER/DASH_PASS not configured on server')
+            return
+        ok = (hmac.compare_digest(user.encode(), DASH_USER.encode())
+              and hmac.compare_digest(pw.encode(), DASH_PASS.encode()))
+        if ok:
+            cookie = (f'session={_make_session(user)}; HttpOnly; SameSite=Lax; '
+                      f'Path=/; Max-Age={SESSION_TTL}')
+            self._redirect('/', {'Set-Cookie': cookie})
+        else:
+            self._redirect('/login?e=1')
 
     def do_GET(self):
         path = self.path.split('?')[0]
+        if path == '/login':
+            self._serve_login()
+            return
+        if path == '/logout':
+            self._redirect('/login', {'Set-Cookie': 'session=; Path=/; Max-Age=0'})
+            return
         if path.startswith('/eufy/snapshot/'):
             route = ROUTES_GET.get('/eufy/snapshot/')
         else:
@@ -1079,19 +1207,26 @@ class Handler(BaseHTTPRequestHandler):
         if route is None:
             self.send_error(404)
             return
-        if route.auth and not self._require_cross_ref_auth():
+        if path not in PUBLIC_PATHS and not self._authed():
+            self._deny(path)
             return
         route.handler(self)
 
     def do_POST(self):
         path = self.path.split('?')[0]
+        if path == '/login':
+            self._do_login()
+            return
         route = ROUTES_POST.get(path)
         if route is None:
             self.send_error(404)
             return
-        # State-changing endpoints need the login: a restart rides passwordless sudo and a
-        # speedtest saturates the WAN, so a hostile LAN host must not reach them unauthenticated.
-        if route.auth and not self._require_cross_ref_auth():
+        # Every POST route is state-changing (passwordless-sudo restart, WAN-saturating
+        # speedtest, live packet capture) — all sit behind the login.
+        if not self._authed():
+            self.send_response(401)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
             return
         # Requiring application/json forces a cross-origin POST through a CORS preflight, which
         # we never answer — so a malicious page can't drive these from a plain <form> (text/plain
@@ -1243,7 +1378,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', len(body))
             self.end_headers()
             self.wfile.write(body)
-        except FileNotFoundError:
+        except (FileNotFoundError, IsADirectoryError):
             self.send_error(404)
 
     def _file(self, name, ct):
@@ -1260,9 +1395,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 # ── Route tables ──────────────────────────────────────────────────────────────
-# The single source of truth for what each path serves and whether it needs the
-# cross-ref login. cross_ref is the only browser-facing route behind auth=True; the
-# four state-changing POSTs carry auth=True + json_ct=True together (see do_POST).
+# The single source of truth for what each path serves. The login gate is global
+# (do_GET/do_POST + PUBLIC_PATHS) — every route here needs a session except the
+# PUBLIC_PATHS entries (login page, shared static JS, the kids' /is-it-broken).
 ROUTES_GET = {
     # HTML pages
     '/':                     _page('index.html'),
@@ -1272,7 +1407,7 @@ ROUTES_GET = {
     '/unifi/devices':        _page('unifi_devices.html'),
     '/unifi/events':         _page('unifi_events.html'),
     '/speedtest':            _page('speedtest.html'),
-    '/cross_ref':            _page('cross_ref.html', auth=True),
+    '/cross_ref':            _page('cross_ref.html'),
     '/kismet':               _page('kismet.html'),
     '/pihole':               _page('pihole.html'),
     '/atlas':                _page('atlas.html'),
@@ -1287,29 +1422,29 @@ ROUTES_GET = {
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
     '/is-it-broken':         _page('is-it-broken.html'),
-    '/report':               _absfile(REPORT_HTML, 'text/html; charset=utf-8'),
 
     # Static assets
     '/vis-network.min.js':   _absfile(STATIC / 'vis-network.min.js', 'application/javascript'),
     '/static/world_land.js': _absfile(STATIC / 'world_land.js', 'application/javascript'),
     '/chart.min.js':         _absfile(STATIC / 'chart.min.js', 'application/javascript'),
+    '/auth.js':              _absfile(STATIC / 'auth.js', 'application/javascript'),
 
     # JSON served straight from a file on disk (written by the pollers)
     '/api/unifi/graph':      _absfile(UNIFI_DATA / 'topology.json', 'application/json'),
     '/api/unifi/devices':    _absfile(DEVICES_JSON, 'application/json'),
-    '/api/pihole':           _absfile(PIHOLE_JSON, 'application/json'),
-    '/api/atlas':            _absfile(DATA / 'atlas.json', 'application/json'),
-    '/api/uplink':           _absfile(DATA / 'uplink.json', 'application/json'),
+    '/api/pihole':           _jsonfile(PIHOLE_JSON),
+    '/api/atlas':            _jsonfile(DATA / 'atlas.json', max_age=2400),   # poller runs */15
+    '/api/uplink':           _jsonfile(DATA / 'uplink.json', max_age=2400),  # poller runs */15
     '/api/smokeping':        _jsonfn(_smokeping_status),
     '/api/smokeping/rrd':    _absfile(DATA / 'smokeping_rrd.json', 'application/json'),
-    '/api/steve':            _absfile(STEVE_JSON, 'application/json'),
-    '/api/wacky':            _absfile(WACKY_JSON, 'application/json'),
-    '/api/jeff':             _absfile(JEFF_JSON, 'application/json'),
-    '/api/bazza':            _absfile(BAZZA_JSON, 'application/json'),
-    '/api/vpn':              _absfile(VPN_JSON, 'application/json'),
-    '/api/arr':              _absfile(ARR_JSON, 'application/json'),
-    '/api/eufy':             _absfile(EUFY_JSON, 'application/json'),
-    '/api/eufy/vacuum':      _absfile(EUFY_VACUUM_JSON, 'application/json'),
+    '/api/steve':            _jsonfile(STEVE_JSON),
+    '/api/wacky':            _jsonfile(WACKY_JSON),
+    '/api/jeff':             _jsonfile(JEFF_JSON),
+    '/api/bazza':            _jsonfile(BAZZA_JSON),
+    '/api/vpn':              _jsonfile(VPN_JSON),
+    '/api/arr':              _jsonfile(ARR_JSON),
+    '/api/eufy':             _jsonfile(EUFY_JSON),
+    '/api/eufy/vacuum':      _jsonfile(EUFY_VACUUM_JSON),
 
     # JSON computed on demand
     '/api/unifi':            _jsonfn(_unifi_status),
@@ -1321,7 +1456,7 @@ ROUTES_GET = {
     '/api/jeff/history':     _jsonfn(_jeff_history),
     '/api/bazza/history':    _jsonfn(_bazza_history),
     '/api/vpn/history':      _jsonfn(_vpn_history),
-    '/api/cross_ref':        _jsonfn(_cross_ref, auth=True),
+    '/api/cross_ref':        _jsonfn(_cross_ref),
 
     # Request-specific (parse the query string / stream raw bytes)
     '/api/kismet':           Route(Handler._res_kismet),
@@ -1333,17 +1468,17 @@ ROUTES_GET = {
     '/unifi/dashboard.png':  Route(Handler._res_unifi_png),
     '/eufy/snapshot/':       Route(Handler._res_eufy_snapshot),
 }
-# Service API pass-throughs (all unauthenticated GETs) — see PROXIES.
+# Service API pass-throughs (behind the login like everything else) — see PROXIES.
 for _p, _u in PROXIES.items():
     ROUTES_GET[_p] = _proxy_to(_u)
 
 ROUTES_POST = {
     '/api/speedtest/trigger': Route(lambda h: h._json(_trigger_gateway_speedtest()),
-                                    auth=True, json_ct=True),
+                                    json_ct=True),
     '/api/pihole/gravity':    Route(lambda h: h._json(_trigger_gravity()),
-                                    auth=True, json_ct=True),
-    '/api/steve/restart':     Route(Handler._res_steve_restart, auth=True, json_ct=True),
-    '/api/capture':           Route(Handler._res_capture, auth=True, json_ct=True),
+                                    json_ct=True),
+    '/api/steve/restart':     Route(Handler._res_steve_restart, json_ct=True),
+    '/api/capture':           Route(Handler._res_capture, json_ct=True),
 }
 
 

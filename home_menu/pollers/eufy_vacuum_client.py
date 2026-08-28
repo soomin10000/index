@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import time
 import uuid
 
@@ -25,6 +26,11 @@ import requests
 EUFY_LOGIN_URL = "https://home-api.eufylife.com/v1/user/email/login"
 EUFY_DEVICES_URL = "https://api.eufylife.com/v1/device/list/devices-and-groups"
 EUFY_UA = "EufyHome-Android-3.1.3-753"
+# Shared EufyHome-app OAuth client identity (not a personal credential — the same
+# pair every open-source eufy client ships, baked into the Android app). Same
+# class as the TUYA_* constants below. Override via env only if it ever rotates.
+EUFY_CLIENT_ID = os.environ.get("EUFY_CLIENT_ID", "eufyhome-app")
+EUFY_CLIENT_SECRET = os.environ.get("EUFY_CLIENT_SECRET", "GQCpr9dSp3uQpsOMgJ4xQ")
 
 TUYA_CLIENT_ID = "yx5v9uc3ef9wg3v9atje"
 TUYA_APP_SECRET = "s8x78u7xwymasd9kqa7a73pjhxqsedaj"
@@ -114,7 +120,7 @@ def _eufy_login(email: str, password: str) -> tuple[str, str]:
         },
         json={
             "email": email, "password": password,
-            "client_id": "eufyhome-app", "client_secret": "GQCpr9dSp3uQpsOMgJ4xQ",
+            "client_id": EUFY_CLIENT_ID, "client_secret": EUFY_CLIENT_SECRET,
         },
         timeout=15,
     )

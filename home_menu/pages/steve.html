@@ -208,6 +208,7 @@
     font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
   }
 </style>
+  <script src="/auth.js"></script>
 </head>
 <body>
 
@@ -397,8 +398,8 @@
     btn.className = 'switch';
     btn.dataset.service = s.name;
     btn.innerHTML = `
-      <div class="switch-top"><span class="switch-led ${ledCls}"></span><span class="switch-label">${s.name}</span></div>
-      <span class="switch-status ${statusCls}">${statusText}</span>
+      <div class="switch-top"><span class="switch-led ${ledCls}"></span><span class="switch-label">${esc(s.name)}</span></div>
+      <span class="switch-status ${statusCls}">${esc(statusText)}</span>
     `;
     btn.addEventListener('click', () => handleSwitchClick(btn, s.name));
     return btn;

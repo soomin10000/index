@@ -1,0 +1,6 @@
+# Runtime deps for server.py + pollers/. The service runs under the system
+# interpreter (/usr/bin/python3), so these track what's installed there; the
+# stdlib carries the HTTP server, sqlite, cookies and hashing itself.
+requests>=2.31,<3
+urllib3>=2,<3
+tinytuya>=1.13,<2        # pollers/eufy_vacuum_client.py — local Tuya protocol for the robovac

@@ -1,0 +1,25 @@
+name: home_menu tests
+
+on:
+  push:
+    paths:
+      - "home_menu/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "home_menu/**"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps
+        run: pip install -r home_menu/requirements-dev.txt
+      - name: Run tests
+        working-directory: home_menu
+        run: python -m pytest tests -q

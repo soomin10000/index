@@ -374,6 +374,16 @@
     @keyframes flicker { 0%,100%{opacity:1} 50%{opacity:0.25} }
     .is-loading .c-val { animation: flicker 1.4s ease infinite; color: var(--ink-faint); }
 
+    /* Stale: served a 200 but the poller behind it hasn't updated in >15 min */
+    .card.is-stale { border-color: var(--warn); }
+    .card.is-stale::before {
+      content: 'STALE';
+      position: absolute; top: 0; right: 0; z-index: 2;
+      font-family: var(--font-mono); font-size: 0.55rem; letter-spacing: 0.12em;
+      color: #1c1e20; background: var(--warn);
+      padding: 2px 6px; border-bottom-left-radius: 6px;
+    }
+
     footer {
       color: var(--ink-faint); text-align: center;
       font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.14em; text-transform: uppercase;
@@ -627,6 +637,7 @@
     const t = setTimeout(() => c.abort(), 4000);
     try {
       const r = await fetch(path, { signal: c.signal });
+      if (r.status === 401) { location.href = '/login'; throw new Error('unauth'); }
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
     } finally { clearTimeout(t); }
@@ -634,7 +645,10 @@
 
   async function poll(id, path, handler, offlineText = 'Offline') {
     try {
-      handler(await get(path));
+      const d = await get(path);
+      handler(d);
+      const card = document.getElementById('c-' + id);
+      if (card) card.classList.toggle('is-stale', !!(d && (d._stale || d.error)));
     } catch {
       setCard(id, { val: offlineText, unit: '' }, true);
     }
@@ -643,7 +657,7 @@
   function setCard(id, { val, unit, sub, accent, lamp } = {}, offline = false) {
     const card = document.getElementById('c-' + id);
     if (!card) return;
-    card.classList.remove('is-loading', 'is-offline');
+    card.classList.remove('is-loading', 'is-offline', 'is-stale');
     if (offline) card.classList.add('is-offline');
     const v = card.querySelector('.c-val');
     const u = card.querySelector('.c-unit');

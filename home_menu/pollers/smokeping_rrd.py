@@ -32,10 +32,16 @@ def sync() -> int:
     # also walks Synology's @eaDir/#recycle metadata trees alongside the
     # data and took 2.5 minutes; listing just the *.rrd paths first is 2s.
     ssh = subprocess.Popen(
-        ["ssh", "noob", f"cd {REMOTE_DIR} && find . -iname '*.rrd' | tar -cf - -T -"],
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "noob",
+         f"cd {REMOTE_DIR} && find . -iname '*.rrd' | tar -cf - -T -"],
         stdout=subprocess.PIPE,
     )
-    tar = subprocess.run(["tar", "-C", str(tmp_dir), "-xf", "-"], stdin=ssh.stdout)
+    try:
+        tar = subprocess.run(["tar", "-C", str(tmp_dir), "-xf", "-"],
+                             stdin=ssh.stdout, timeout=120)
+    except subprocess.TimeoutExpired:
+        ssh.kill()
+        raise RuntimeError("sync failed: tar extract timed out")
     ssh.stdout.close()
     ssh.wait(timeout=30)
     if ssh.returncode != 0 or tar.returncode != 0:

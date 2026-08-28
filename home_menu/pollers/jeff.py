@@ -67,7 +67,7 @@ def _sections(raw):
 
 def _fetch_remote():
     out = subprocess.run(
-        ["ssh", "jeff", REMOTE_SCRIPT],
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "jeff", REMOTE_SCRIPT],
         capture_output=True, text=True, timeout=SSH_TIMEOUT,
     )
     if out.returncode != 0:

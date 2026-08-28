@@ -21,7 +21,7 @@ STALE_AFTER_SECONDS = 15 * 60  # wacky's own cron runs every 5 min
 
 def _fetch_remote():
     out = subprocess.run(
-        ["ssh", "wacky", "cat ~/arr-collector/status.json"],
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "wacky", "cat ~/arr-collector/status.json"],
         capture_output=True, text=True, timeout=SSH_TIMEOUT,
     )
     if out.returncode != 0:
