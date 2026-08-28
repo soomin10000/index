@@ -1008,7 +1008,14 @@ def _proxy_to(url):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
-        print(fmt % args)
+        # Append the Referer so index -> subpage click-throughs are visible in the
+        # journal (same-site referers look like http://<host>:8080/). headers may be
+        # unset when logging a malformed request line, hence the guard.
+        hdrs = getattr(self, 'headers', None)
+        ref = hdrs.get('Referer', '-') if hdrs else '-'
+        # flush: stdout is block-buffered under systemd, so without this the journal
+        # lags the actual requests by however long the pipe buffer takes to fill.
+        print('%s ref=%s' % (fmt % args, ref), flush=True)
 
     def _require_cross_ref_auth(self):
         """True if the request is authorized. Sends the 401/503 response itself on failure."""
