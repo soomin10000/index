@@ -153,6 +153,20 @@
 <footer class="updated" id="updated"></footer>
 
 <script>
+  // Page-local helpers for the DNS panel. These lived in bazza.html's inline
+  // block before the hostcard.js split; that refactor moved the shared subset
+  // out and dropped these two by mistake, which broke renderDns().
+  const num = n => (n == null ? '—' : Number(n).toLocaleString());
+  function fmtAgo(sec) {
+    if (sec == null) return '—';
+    if (sec < 90) return 'just now';
+    const m = Math.round(sec / 60);
+    if (m < 90) return `${m} min ago`;
+    const h = Math.round(sec / 3600);
+    if (h < 36) return `${h}h ago`;
+    return `${Math.round(sec / 86400)}d ago`;
+  }
+
   async function loadHistory(cpus) {
     try {
       const r = await fetch('/api/bazza/history');
