@@ -1,0 +1,25 @@
+# logrotate rules for steve's root-owned helper logs.
+#
+# These are written by root-run units (weekly-update.service, rtl88xxau-check
+# .service) and deliberately live in /var/log, NOT home_menu/logs/ — that
+# directory's stanza runs `su simon simon` and can't touch root-owned files,
+# which fails the whole logrotate.service run. Keep root logs here instead.
+#
+# Install:  sudo cp home_menu/scripts/logrotate/steve-root /etc/logrotate.d/steve-root
+#           sudo chown root:root /etc/logrotate.d/steve-root && sudo chmod 644 $_
+# Verify:   sudo logrotate --debug /etc/logrotate.d/steve-root
+# Force once: sudo logrotate --force /etc/logrotate.d/steve-root
+#
+# Low-volume (per-boot / weekly), so monthly + keep 3 is plenty. No `su` line:
+# logrotate runs as root by default, which is exactly what these files need.
+
+/var/log/weekly_update.log
+/var/log/rtl_driver_check.log {
+    monthly
+    rotate 3
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

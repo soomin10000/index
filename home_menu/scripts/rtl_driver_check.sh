@@ -11,7 +11,10 @@
 # longer exists because the module for the new kernel was never built.
 set -uo pipefail
 
-LOG_DIR="/home/simon/projects/home_menu/logs"
+# Runs as root (rtl88xxau-check.service, User=root). Keep the log under /var/log,
+# not home_menu/logs/ — that dir's logrotate stanza runs `su simon simon` and
+# chokes on root-owned files, failing the whole logrotate.service run.
+LOG_DIR="/var/log"
 LOG="$LOG_DIR/rtl_driver_check.log"
 RTL_SRC="/home/simon/rtl8812au"
 RTL_FIX="/home/simon/projects/home_menu/scripts/install_rtl_fix.sh"
@@ -44,9 +47,9 @@ if (cd "$RTL_SRC" && make clean && make); then
     if bash "$RTL_FIX"; then
         notify "steve rtl88XXau" "Kernel $(uname -r): driver was missing/stale after boot, rebuilt and reloaded automatically." 3
     else
-        notify "steve rtl88XXau" "Kernel $(uname -r): driver rebuild OK but install FAILED — needs manual attention (see rtl_driver_check.log)." 4
+        notify "steve rtl88XXau" "Kernel $(uname -r): driver rebuild OK but install FAILED — needs manual attention (see /var/log/rtl_driver_check.log)." 4
     fi
 else
-    notify "steve rtl88XXau" "Kernel $(uname -r): driver rebuild FAILED — needs manual attention (see rtl_driver_check.log)." 4
+    notify "steve rtl88XXau" "Kernel $(uname -r): driver rebuild FAILED — needs manual attention (see /var/log/rtl_driver_check.log)." 4
 fi
 echo "===== done ====="

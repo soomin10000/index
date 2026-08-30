@@ -14,7 +14,10 @@
 # rebuilds/reinstalls whenever it doesn't match the known-good patched build.
 set -uo pipefail
 
-LOG_DIR="/home/simon/projects/home_menu/logs"
+# Runs as root (weekly-update.service). Keep the log under /var/log, not
+# home_menu/logs/ — that dir's logrotate stanza runs `su simon simon` and chokes
+# on root-owned files, failing the whole logrotate.service run.
+LOG_DIR="/var/log"
 LOG="$LOG_DIR/weekly_update.log"
 RTL_SRC="/home/simon/rtl8812au"
 RTL_FIX="/home/simon/projects/home_menu/scripts/install_rtl_fix.sh"
@@ -60,10 +63,10 @@ if [[ "$LOADED_SRCVER" != "$GOOD_SRCVERSION" ]]; then
         if bash "$RTL_FIX"; then
             DRIVER_NOTE=" rtl88XXau syslog-flood fix was reapplied automatically after a kernel change."
         else
-            DRIVER_NOTE=" WARNING: rtl88XXau fix install FAILED — needs manual attention (see weekly_update.log)."
+            DRIVER_NOTE=" WARNING: rtl88XXau fix install FAILED — needs manual attention (see /var/log/weekly_update.log)."
         fi
     else
-        DRIVER_NOTE=" WARNING: rtl88XXau rebuild FAILED — needs manual attention (see weekly_update.log)."
+        DRIVER_NOTE=" WARNING: rtl88XXau rebuild FAILED — needs manual attention (see /var/log/weekly_update.log)."
     fi
 fi
 
