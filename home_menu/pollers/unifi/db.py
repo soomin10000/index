@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS weak_client_log (
     ts          INTEGER NOT NULL,
     hostname    TEXT    NOT NULL,
     signal      INTEGER NOT NULL,
-    retry_pct   REAL    NOT NULL,
+    retry_pct   REAL,               -- NULL when a client is flagged on weak
+                                    -- signal alone and carries no TX-retry telemetry
     essid       TEXT
 );
 
@@ -73,8 +74,38 @@ CREATE INDEX IF NOT EXISTS events_log_ts       ON events_log (ts);
 def open_db(path=DEFAULT_DB):
     conn = sqlite3.connect(path)
     conn.executescript(_SCHEMA)
+    _migrate(conn)
     conn.commit()
     return conn
+
+
+def _migrate(conn):
+    """One-off fixups for DBs created by an older _SCHEMA."""
+    # weak_client_log.retry_pct was NOT NULL; a weak-signal-only flag has no
+    # retry telemetry, so inserts of that shape crashed the poller. Rebuild the
+    # table without the constraint (SQLite can't drop it in place).
+    cols = conn.execute("PRAGMA table_info(weak_client_log)").fetchall()
+    retry_col = next((c for c in cols if c[1] == "retry_pct"), None)
+    if retry_col and retry_col[3]:  # notnull flag still set
+        conn.executescript("""
+            BEGIN;
+            ALTER TABLE weak_client_log RENAME TO weak_client_log_old;
+            CREATE TABLE weak_client_log (
+                id          INTEGER PRIMARY KEY,
+                ts          INTEGER NOT NULL,
+                hostname    TEXT    NOT NULL,
+                signal      INTEGER NOT NULL,
+                retry_pct   REAL,
+                essid       TEXT
+            );
+            INSERT INTO weak_client_log (id, ts, hostname, signal, retry_pct, essid)
+                SELECT id, ts, hostname, signal, retry_pct, essid FROM weak_client_log_old;
+            DROP TABLE weak_client_log_old;
+            COMMIT;
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS weak_client_log_ts ON weak_client_log (ts)"
+        )
 
 
 def last_flagged_clients(conn, within_seconds=600):

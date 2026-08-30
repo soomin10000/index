@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 
 from unifi_client import UnifiClient, UnifiAuthError
-from checks import check_congestion, check_weak_clients
+from checks import check_congestion
 import topology
 import dashboard
 from db import (open_db, log_poll, last_flagged_congestion,
@@ -323,7 +323,9 @@ def run(interval, client):
             continue
 
         congestion      = check_congestion(devices)
-        weak_clients    = check_weak_clients(stations)
+        weak_clients    = []  # weak-client flagging disabled 2026-08-30 — home
+                              # setup, a weak signal here isn't worth acting on.
+                              # check_weak_clients() kept in checks.py if ever wanted.
         curr_congestion = {_congestion_key(f): f for f in congestion}
 
         # Congestion alerts

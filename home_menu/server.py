@@ -190,7 +190,8 @@ def _unifi_status():
         ).fetchone()
         conn.close()
         return {
-            'flagged_clients':    [{'hostname': r[0], 'signal': r[1], 'retry_pct': round(r[2], 1)} for r in weak],
+            'flagged_clients':    [{'hostname': r[0], 'signal': r[1],
+                                    'retry_pct': round(r[2], 1) if r[2] is not None else None} for r in weak],
             'flagged_congestion': [{'ap': r[0], 'radio': r[1], 'cu_total': r[2]} for r in cong],
             'speedtest': {'ts': speed_row[0], 'ping_ms': speed_row[1],
                           'download_mbps': round(speed_row[2], 1),
