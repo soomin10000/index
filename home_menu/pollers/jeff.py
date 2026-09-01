@@ -10,9 +10,11 @@ Metrics history goes to jeff_history.db (5-column schema, with cpu_temp).
 """
 
 import json
+import os
 import re
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -26,6 +28,19 @@ DB_FILE    = DATA / "jeff_history.db"
 
 TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
+
+# readsb (ADS-B) has wedged twice on a flaky USB/dongle link (2026-09-01). The
+# `/jeff` card already shows a "deaf" alert; this also fires a phone push via the
+# self-hosted ntfy on steve so it doesn't only land on a dashboard nobody's
+# looking at. Reuses the `steve_updates` topic the SDR driver-check already pushes
+# to (phones are subscribed). All overridable from the crontab env.
+NTFY_URL   = os.environ.get("JEFF_NTFY_URL", "http://localhost:8197")
+NTFY_TOPIC = os.environ.get("JEFF_NTFY_TOPIC", "steve_updates")
+# readsb's feed files count as stale (i.e. readsb hung / crashed) past this age.
+ADSB_STALE_SEC = 120
+# how long the deaf alert must have been active before we push — rides out a
+# single restart/deploy blip (poll cadence is every 2 min).
+NOTIFY_MIN_ACTIVE_SEC = 180
 
 # RTL2832U-based dongles (incl. the R820T2 stick jeff is for) enumerate under
 # Realtek vendor 0bda, product 2832 or 2838.
@@ -47,7 +62,8 @@ echo '===USB==='; lsusb 2>/dev/null
 echo '===RTLMODS==='; lsmod 2>/dev/null | awk '{print $1}' | grep -E '^(rtl2832|rtl2838|dvb_usb_rtl28xxu|rtl8xxxu)$' || true
 echo '===RTLTOOLS==='; for t in rtl_test rtl_sdr rtl_fm rtl_tcp rtl_power rtl_433 rtl_adsb; do command -v $t >/dev/null 2>&1 && echo $t; done
 echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -iE 'rtl|sdr|dump1090|readsb|acars|dumpvdl|dump978|satdump|spyserver|soapy|gqrx|piaware|fr24feed|rbfeeder|adsb' || true
-echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length)}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
+echo '===NOW==='; date +%s
+echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0)}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
 echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
 """
 
@@ -74,10 +90,14 @@ def _parse_sdr(usb_block, mods_block, tools_block, svc_block):
     }
 
 
-def _parse_adsb(adsb_block, stats_block):
+def _parse_adsb(adsb_block, stats_block, remote_now=None):
     """Live readsb numbers off /run/readsb/{aircraft,stats}.json (via jq on the
     remote). Returns None when readsb isn't running / jq is missing / the files
-    aren't there — the block is just `{}` in that case."""
+    aren't there — the block is just `{}` in that case.
+
+    `feed_age` is how many seconds behind wall-clock aircraft.json's own
+    timestamp is; `stale` means readsb has stopped updating it (hung / crashed)
+    even though the file — and its last message counts — are still on disk."""
     try:
         a = json.loads(adsb_block.strip() or "{}")
     except Exception:
@@ -89,11 +109,18 @@ def _parse_adsb(adsb_block, stats_block):
     if a.get("total") is None:
         return None
     max_dist_m = s.get("max_dist_m") or 0
+    file_ts = a.get("file_ts") or 0
+    try:
+        feed_age = int(float(remote_now) - float(file_ts)) if remote_now and file_ts else None
+    except (TypeError, ValueError):
+        feed_age = None
     return {
         "aircraft": a.get("total", 0),
         "positions": a.get("pos", 0),
         "msgs_per_sec": round((s.get("msgs_last_min") or 0) / 60, 1),
         "max_range_km": round(max_dist_m / 1000, 1) if max_dist_m else None,
+        "feed_age": feed_age,
+        "stale": feed_age is not None and feed_age > ADSB_STALE_SEC,
     }
 
 
@@ -120,12 +147,71 @@ def _extra_alerts(data):
             "dvb_usb_rtl28xxu is loaded — blacklist it so librtlsdr can claim the stick")
 
     adsb = data.get("adsb")
-    readsb_up = any("readsb" in s for s in data["sdr"]["services"])
-    if readsb_up and adsb and adsb["aircraft"] == 0 and adsb["msgs_per_sec"] == 0:
-        extra["readsb_deaf"] = ("warn", "readsb is hearing nothing",
-            "readsb is running but 0 aircraft and 0 msg/s — check the antenna and coax")
+    svcs = data["sdr"]["services"]
+    readsb_up = any("readsb" in s for s in svcs)
+    piaware_up = any("piaware" in s for s in svcs)
+    dongle = data["sdr"]["dongle_present"]
+    wedge_hint = ("the USB/dongle link most likely wedged (see the 2026-09-01 "
+                  "incidents) — usbreset 0bda:2838 then restart readsb; a bare "
+                  "service restart alone did not clear it last time")
+    if readsb_up and adsb and adsb.get("stale"):
+        extra["readsb_deaf"] = ("critical", "readsb feed is frozen",
+            f"readsb is up but aircraft.json is {adsb['feed_age']}s stale — {wedge_hint}")
+    elif readsb_up and adsb and adsb["aircraft"] == 0 and adsb["msgs_per_sec"] == 0:
+        extra["readsb_deaf"] = ("critical", "readsb is hearing nothing",
+            f"readsb is running but 0 aircraft and 0 msg/s — {wedge_hint}")
+    elif dongle and piaware_up and not readsb_up:
+        extra["readsb_deaf"] = ("critical", "readsb is down",
+            "the dongle is present and piaware is up but readsb isn't running — "
+            f"it may be crash-looping on a wedged USB device; {wedge_hint}")
 
     return extra
+
+
+def _ntfy(title, message, priority=4, tags=("satellite",)):
+    body = json.dumps({
+        "topic": NTFY_TOPIC, "title": title, "message": message,
+        "priority": priority, "tags": list(tags),
+    }).encode()
+    req = urllib.request.Request(
+        NTFY_URL, data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        r.read()
+
+
+def notify_readsb(alerts, now, prev, state_out):
+    """Push once to ntfy when readsb goes (and stays) deaf, and once more when it
+    recovers. Watermarks in jeff_state.json so a sustained outage is a single
+    push, not one every 2 minutes; on the very first run (no prior state) it just
+    records the baseline without pushing, so a fresh state file can't replay an
+    old outage. Never raises — the poll's real job is writing jeff.json.
+
+    `state_out` is the dict about to be saved as the new state; this adds a
+    `readsb_notified` flag to it.
+    """
+    deaf = next((a for a in alerts if a["id"] == "readsb_deaf"), None)
+    already = bool((prev or {}).get("readsb_notified"))
+    notified = already
+    try:
+        if deaf and not already and now - deaf["ts"] >= NOTIFY_MIN_ACTIVE_SEC:
+            if prev is None:
+                print("readsb notifier: seeding baseline (deaf on first run, not pushing)")
+            else:
+                mins = max(1, int((now - deaf["ts"]) / 60))
+                _ntfy(f"📡 jeff — {deaf['header']}",
+                      f"{deaf['text']}\n\nDeaf for ~{mins} min.",
+                      priority=4, tags=("warning", "satellite"))
+                print(f"readsb notifier: pushed deaf alert ({deaf['header']})")
+            notified = True
+        elif not deaf and already:
+            _ntfy("📡 jeff — readsb recovered",
+                  "readsb is hearing planes again.",
+                  priority=3, tags=("white_check_mark", "satellite"))
+            print("readsb notifier: pushed recovery")
+            notified = False
+    except Exception as e:  # ntfy down / network blip — retry on the next poll
+        print(f"readsb notifier: ntfy push failed: {e}")
+    state_out["readsb_notified"] = notified
 
 
 def fetch_and_write():
@@ -143,7 +229,7 @@ def fetch_and_write():
         cpu_temp = hostlib.parse_temp(s["TEMP"])
         throttled = hostlib.parse_throttled(s["THROTTLED"])
         sdr = _parse_sdr(s["USB"], s["RTLMODS"], s["RTLTOOLS"], s["SDRSVC"])
-        adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""))
+        adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""), s.get("NOW", "").strip())
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"jeff poll failed: {e}")
@@ -170,9 +256,12 @@ def fetch_and_write():
     alerts, active_alerts = hostlib.build_alerts(data, ts, prev, DB_FILE, _extra_alerts(data))
     data["alerts"] = alerts
 
+    new_state = {"active_alerts": active_alerts}
+    notify_readsb(alerts, ts, prev, new_state)
+
     OUT.write_text(json.dumps(data, indent=2))
     hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)
-    hostlib.save_state(STATE_FILE, {"active_alerts": active_alerts})
+    hostlib.save_state(STATE_FILE, new_state)
 
     adsb_note = f", {adsb['aircraft']} aircraft" if adsb else ""
     print(f"Saved {OUT} — {len(alerts)} alerts, load {load['1m']}, mem {mem['percent']}%, "
