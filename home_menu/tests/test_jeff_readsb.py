@@ -50,6 +50,20 @@ def test_alert_zero_traffic():
     assert "0 aircraft" in a["readsb_deaf"][2]
 
 
+def test_alert_wedged_dongle_still_dribbling_frames():
+    # half-wedged: a few frames sneak through, a stale track or two on the map —
+    # still deaf, and the old aircraft==0 and msgs==0 check used to miss this
+    d = _data(adsb={"aircraft": 2, "msgs_per_sec": 3.0, "stale": False, "feed_age": 4})
+    a = jeff._extra_alerts(d)
+    assert a["readsb_deaf"][0] == "critical"
+
+
+def test_no_alert_when_traffic_light_but_real():
+    # genuinely quiet sky, dongle fine — one aircraft alone clears the msg floor
+    d = _data(adsb={"aircraft": 3, "msgs_per_sec": 25.0, "stale": False, "feed_age": 5})
+    assert "readsb_deaf" not in jeff._extra_alerts(d)
+
+
 def test_alert_frozen_feed_even_with_stale_counts():
     # readsb hung: aircraft.json is old but its last message counts look healthy
     d = _data(adsb={"aircraft": 30, "msgs_per_sec": 120.0, "stale": True, "feed_age": 300})
@@ -76,7 +90,7 @@ def test_no_alert_when_readsb_intentionally_absent():
     assert "readsb_deaf" not in jeff._extra_alerts(d)
 
 
-# ── notify_readsb: debounce + recovery ────────────────────────────────────
+# ── notify_readsb: leaky-bucket debounce + recovery ──────────────────────
 class _Spy:
     def __init__(self):
         self.calls = []
@@ -85,60 +99,98 @@ class _Spy:
         self.calls.append({"title": title, "message": message, "priority": priority})
 
 
-def _deaf_alert(ts):
-    return [{"id": "readsb_deaf", "ts": ts, "level": "critical",
-             "header": "readsb is hearing nothing", "text": "..."}]
+def _deaf_alert():
+    return [{"id": "readsb_deaf", "ts": 0, "level": "critical",
+             "header": "readsb is hearing (almost) nothing", "text": "..."}]
+
+
+def _run(alerts, prev, spy, monkeypatch):
+    monkeypatch.setattr(jeff, "_ntfy", spy)
+    st = {}
+    jeff.notify_readsb(alerts, 10_000, prev, st)
+    return st
+
+
+_HEALTHY = {"readsb_deaf_score": 0, "readsb_notified": False}
 
 
 def test_notify_pushes_once_outage_sustained(monkeypatch):
     spy = _Spy()
-    monkeypatch.setattr(jeff, "_ntfy", spy)
-    now = 10_000
-    onset = now - 400  # deaf longer than NOTIFY_MIN_ACTIVE_SEC
+    prev = _HEALTHY
+    for expected in (1, 2, 3):  # climbs, pushes on the 3rd consecutive deaf poll
+        prev = _run(_deaf_alert(), prev, spy, monkeypatch)
+        assert prev["readsb_deaf_score"] == expected
+    assert len(spy.calls) == 1 and prev["readsb_notified"] is True
 
-    st1 = {}
-    jeff.notify_readsb(_deaf_alert(onset), now, {"readsb_notified": False}, st1)
-    assert len(spy.calls) == 1 and st1["readsb_notified"] is True
-
-    # next poll, still deaf — must NOT push again
-    st2 = {}
-    jeff.notify_readsb(_deaf_alert(onset), now + 120, st1, st2)
-    assert len(spy.calls) == 1 and st2["readsb_notified"] is True
+    for _ in range(6):  # stays deaf — no repeat pushes, score caps
+        prev = _run(_deaf_alert(), prev, spy, monkeypatch)
+    assert len(spy.calls) == 1
+    assert prev["readsb_deaf_score"] == jeff.DEAF_SCORE_CAP
 
 
 def test_notify_rides_out_a_brief_blip(monkeypatch):
     spy = _Spy()
-    monkeypatch.setattr(jeff, "_ntfy", spy)
-    now = 10_000
-    # deaf for only 60s (e.g. a deploy restart) — under the threshold
-    jeff.notify_readsb(_deaf_alert(now - 60), now, {"readsb_notified": False}, {})
+    prev = _HEALTHY
+    # two deaf polls (e.g. a deploy restart) then clear — never reached HI
+    prev = _run(_deaf_alert(), prev, spy, monkeypatch)
+    prev = _run(_deaf_alert(), prev, spy, monkeypatch)
+    prev = _run([], prev, spy, monkeypatch)
     assert spy.calls == []
+    assert prev["readsb_deaf_score"] == 1 and prev["readsb_notified"] is False
+
+
+def test_notify_flapping_dongle_still_pushes_eventually(monkeypatch):
+    spy = _Spy()
+    prev = _HEALTHY
+    # 2 deaf : 1 clear — net +1 per 3 polls, so it still crosses HI
+    seq = [_deaf_alert(), _deaf_alert(), [],
+           _deaf_alert(), _deaf_alert(), [],
+           _deaf_alert(), _deaf_alert(), []]
+    for a in seq:
+        prev = _run(a, prev, spy, monkeypatch)
+    assert len(spy.calls) == 1 and prev["readsb_notified"] is True
+
+
+def test_notify_recovery_needs_sustained_clear(monkeypatch):
+    spy = _Spy()
+    prev = {"readsb_deaf_score": jeff.DEAF_SCORE_CAP, "readsb_notified": True}
+    prev = _run([], prev, spy, monkeypatch)  # one good poll must not recover
+    assert spy.calls == [] and prev["readsb_notified"] is True
+    while prev["readsb_deaf_score"] > 0:
+        prev = _run([], prev, spy, monkeypatch)
+    assert len(spy.calls) == 1
+    assert "recovered" in spy.calls[0]["title"]
+    assert prev["readsb_notified"] is False
+
+
+def test_notify_blip_during_outage_does_not_reset(monkeypatch):
+    spy = _Spy()
+    prev = {"readsb_deaf_score": jeff.DEAF_SCORE_CAP, "readsb_notified": True}
+    prev = _run([], prev, spy, monkeypatch)          # -1
+    prev = _run(_deaf_alert(), prev, spy, monkeypatch)  # +1, back to CAP
+    assert spy.calls == []
+    assert prev["readsb_deaf_score"] == jeff.DEAF_SCORE_CAP
+    assert prev["readsb_notified"] is True
 
 
 def test_notify_seeds_silently_on_first_run(monkeypatch):
     spy = _Spy()
-    monkeypatch.setattr(jeff, "_ntfy", spy)
-    now = 10_000
-    st = {}
-    jeff.notify_readsb(_deaf_alert(now - 999), now, None, st)
-    assert spy.calls == [] and st["readsb_notified"] is True
+    st = _run(_deaf_alert(), None, spy, monkeypatch)
+    assert spy.calls == []
+    assert st["readsb_notified"] is True
+    assert st["readsb_deaf_score"] == jeff.DEAF_SCORE_CAP
 
 
-def test_notify_recovery_push(monkeypatch):
+def test_notify_first_run_healthy_is_quiet(monkeypatch):
     spy = _Spy()
-    monkeypatch.setattr(jeff, "_ntfy", spy)
-    st = {}
-    jeff.notify_readsb([], 10_000, {"readsb_notified": True}, st)
-    assert len(spy.calls) == 1
-    assert "recovered" in spy.calls[0]["title"]
-    assert st["readsb_notified"] is False
+    st = _run([], None, spy, monkeypatch)
+    assert spy.calls == []
+    assert st["readsb_notified"] is False and st["readsb_deaf_score"] == 0
 
 
 def test_notify_quiet_when_healthy_and_was_healthy(monkeypatch):
     spy = _Spy()
-    monkeypatch.setattr(jeff, "_ntfy", spy)
-    st = {}
-    jeff.notify_readsb([], 10_000, {"readsb_notified": False}, st)
+    st = _run([], _HEALTHY, spy, monkeypatch)
     assert spy.calls == [] and st["readsb_notified"] is False
 
 
@@ -147,6 +199,8 @@ def test_notify_never_raises_when_ntfy_down(monkeypatch):
         raise OSError("connection refused")
     monkeypatch.setattr(jeff, "_ntfy", boom)
     st = {}
-    jeff.notify_readsb(_deaf_alert(0), 10_000, {"readsb_notified": False}, st)
+    prev = {"readsb_deaf_score": jeff.DEAF_SCORE_HI - 1, "readsb_notified": False}
+    jeff.notify_readsb(_deaf_alert(), 10_000, prev, st)
     # push failed, so we did not latch — next poll retries
     assert st["readsb_notified"] is False
+    assert st["readsb_deaf_score"] == jeff.DEAF_SCORE_HI

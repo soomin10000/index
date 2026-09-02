@@ -29,18 +29,28 @@ DB_FILE    = DATA / "jeff_history.db"
 TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
 
-# readsb (ADS-B) has wedged twice on a flaky USB/dongle link (2026-09-01). The
-# `/jeff` card already shows a "deaf" alert; this also fires a phone push via the
-# self-hosted ntfy on steve so it doesn't only land on a dashboard nobody's
+# readsb (ADS-B) has wedged repeatedly on a flaky USB/dongle link (2026-09-01/02).
+# The `/jeff` card already shows a "deaf" alert; this also fires a phone push via
+# the self-hosted ntfy on steve so it doesn't only land on a dashboard nobody's
 # looking at. Reuses the `steve_updates` topic the SDR driver-check already pushes
 # to (phones are subscribed). All overridable from the crontab env.
 NTFY_URL   = os.environ.get("JEFF_NTFY_URL", "http://localhost:8197")
 NTFY_TOPIC = os.environ.get("JEFF_NTFY_TOPIC", "steve_updates")
 # readsb's feed files count as stale (i.e. readsb hung / crashed) past this age.
 ADSB_STALE_SEC = 120
-# how long the deaf alert must have been active before we push — rides out a
-# single restart/deploy blip (poll cadence is every 2 min).
-NOTIFY_MIN_ACTIVE_SEC = 180
+# A half-wedged dongle doesn't go silent — it dribbles the odd frame, enough to
+# put 1-3 aircraft on the map for a poll. Anything under this message rate is
+# "hearing (almost) nothing"; healthy jeff runs 100-300 msg/s, so a single
+# genuinely-received aircraft still clears it comfortably.
+DEAF_MSGS_PER_SEC = 10
+# That flapping means one good/bad poll says little, so score it as a leaky
+# bucket: +1 every poll the deaf alert is up, -1 every poll it's clear, clamped
+# to [0, CAP]. Push once when it climbs to HI (a sustained outage, not a blip),
+# push again only when it drains back to 0 (a sustained recovery, not one lucky
+# poll). At the 2-min cadence HI=3 is ~6 min of net-deaf; a full drain from CAP
+# is ~12 min of clean polls.
+DEAF_SCORE_HI  = 3
+DEAF_SCORE_CAP = 6
 
 # RTL2832U-based dongles (incl. the R820T2 stick jeff is for) enumerate under
 # Realtek vendor 0bda, product 2832 or 2838.
@@ -157,9 +167,10 @@ def _extra_alerts(data):
     if readsb_up and adsb and adsb.get("stale"):
         extra["readsb_deaf"] = ("critical", "readsb feed is frozen",
             f"readsb is up but aircraft.json is {adsb['feed_age']}s stale — {wedge_hint}")
-    elif readsb_up and adsb and adsb["aircraft"] == 0 and adsb["msgs_per_sec"] == 0:
-        extra["readsb_deaf"] = ("critical", "readsb is hearing nothing",
-            f"readsb is running but 0 aircraft and 0 msg/s — {wedge_hint}")
+    elif readsb_up and adsb and adsb["msgs_per_sec"] < DEAF_MSGS_PER_SEC:
+        extra["readsb_deaf"] = ("critical", "readsb is hearing (almost) nothing",
+            f"readsb is running but only {adsb['msgs_per_sec']} msg/s and "
+            f"{adsb['aircraft']} aircraft — {wedge_hint}")
     elif dongle and piaware_up and not readsb_up:
         extra["readsb_deaf"] = ("critical", "readsb is down",
             "the dongle is present and piaware is up but readsb isn't running — "
@@ -180,30 +191,43 @@ def _ntfy(title, message, priority=4, tags=("satellite",)):
 
 
 def notify_readsb(alerts, now, prev, state_out):
-    """Push once to ntfy when readsb goes (and stays) deaf, and once more when it
-    recovers. Watermarks in jeff_state.json so a sustained outage is a single
-    push, not one every 2 minutes; on the very first run (no prior state) it just
-    records the baseline without pushing, so a fresh state file can't replay an
-    old outage. Never raises — the poll's real job is writing jeff.json.
+    """Push to ntfy once when readsb goes (and stays) deaf, and once more when it
+    recovers, riding out the heavy flapping a half-wedged USB dongle produces.
 
-    `state_out` is the dict about to be saved as the new state; this adds a
-    `readsb_notified` flag to it.
+    A leaky-bucket score (`readsb_deaf_score`) rises while the deaf alert is
+    active and falls while it's clear; the deaf push fires when it crosses
+    DEAF_SCORE_HI and the recovery push when it drains back to 0. `readsb_notified`
+    latches between the two so a sustained outage is a single push, not one per
+    poll, and a one-poll blip mid-outage can't fake a recovery. On the very first
+    run (no prior state) it only seeds the baseline — latched if already deaf —
+    so a fresh state file can't replay an old outage. Never raises: the poll's
+    real job is writing jeff.json.
+
+    `state_out` is the dict about to be saved as the new state; this adds the
+    `readsb_deaf_score` / `readsb_notified` watermarks to it.
     """
     deaf = next((a for a in alerts if a["id"] == "readsb_deaf"), None)
-    already = bool((prev or {}).get("readsb_notified"))
-    notified = already
+    prev = prev or {}
+
+    if "readsb_notified" not in prev and "readsb_deaf_score" not in prev:
+        if deaf:
+            print("readsb notifier: seeding baseline (deaf on first run, not pushing)")
+        state_out["readsb_deaf_score"] = DEAF_SCORE_CAP if deaf else 0
+        state_out["readsb_notified"] = bool(deaf)
+        return
+
+    score = prev.get("readsb_deaf_score", 0)
+    score = min(score + 1, DEAF_SCORE_CAP) if deaf else max(score - 1, 0)
+    notified = bool(prev.get("readsb_notified"))
+
     try:
-        if deaf and not already and now - deaf["ts"] >= NOTIFY_MIN_ACTIVE_SEC:
-            if prev is None:
-                print("readsb notifier: seeding baseline (deaf on first run, not pushing)")
-            else:
-                mins = max(1, int((now - deaf["ts"]) / 60))
-                _ntfy(f"📡 jeff — {deaf['header']}",
-                      f"{deaf['text']}\n\nDeaf for ~{mins} min.",
-                      priority=4, tags=("warning", "satellite"))
-                print(f"readsb notifier: pushed deaf alert ({deaf['header']})")
+        if deaf and not notified and score >= DEAF_SCORE_HI:
+            _ntfy(f"📡 jeff — {deaf['header']}",
+                  f"{deaf['text']}\n\nDeaf across ~{score * 2}+ min of polling.",
+                  priority=4, tags=("warning", "satellite"))
+            print(f"readsb notifier: pushed deaf alert ({deaf['header']})")
             notified = True
-        elif not deaf and already:
+        elif notified and score == 0:
             _ntfy("📡 jeff — readsb recovered",
                   "readsb is hearing planes again.",
                   priority=3, tags=("white_check_mark", "satellite"))
@@ -211,6 +235,8 @@ def notify_readsb(alerts, now, prev, state_out):
             notified = False
     except Exception as e:  # ntfy down / network blip — retry on the next poll
         print(f"readsb notifier: ntfy push failed: {e}")
+
+    state_out["readsb_deaf_score"] = score
     state_out["readsb_notified"] = notified
 
 
