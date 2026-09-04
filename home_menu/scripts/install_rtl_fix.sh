@@ -40,12 +40,17 @@ depmod -a "$KREL"
 
 echo "[4/6] Reloading driver..."
 if lsmod | grep -q '^88XXau'; then
-    modprobe -r 88XXau || { echo "rmmod failed — is the adapter still in use? Aborting before it's half-installed."; systemctl start kismet; exit 1; }
+    modprobe -r 88XXau || { echo "rmmod failed — is the adapter still in use? Aborting before it's half-installed."; systemctl start --no-block kismet; exit 1; }
 fi
 modprobe 88XXau
 
 echo "[5/6] Restarting kismet (poller re-adds the datasource on its next run)..."
-systemctl start kismet
+# --no-block: at boot this script runs inside rtl88xxau-check.service's ExecStart,
+# and kismet.service is ordered After= it. A blocking `systemctl start kismet`
+# would then wait for kismet's job, which waits for this oneshot to finish — a
+# deadlock that never times out. Queue the start and let systemd run it once the
+# oneshot exits.
+systemctl start --no-block kismet
 
 echo "[6/6] Done. Verifying loaded module:"
 sleep 2
