@@ -1,0 +1,11 @@
+[Unit]
+Description=Recover a wedged RTL-SDR / readsb on jeff (usbreset + restart)
+After=readsb.service
+Wants=readsb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/readsb-watchdog
+# readsb-recover exits 1 when the dongle stays deaf; that's a useful signal, not
+# a unit failure to alert on.
+SuccessExitStatus=1

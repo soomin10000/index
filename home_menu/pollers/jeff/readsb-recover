@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# readsb-recover -- idempotent recovery for a wedged RTL-SDR / readsb on jeff.
+#
+# The cheap Nooelec RTL2838 stick wedges every day or two: readsb keeps running
+# but pulls zero IQ samples off the dongle. The only reliable fix is a USB-level
+# reset followed by a readsb restart -- a bare `systemctl restart readsb` alone
+# has repeatedly NOT been enough (see the 2026-09-01/02/04 incidents). This
+# script is that fix, wrapped so both the readsb-watchdog timer and the /jeff
+# dashboard button share one code path.
+#
+#   Usage:  readsb-recover [auto|manual]        (default: manual)
+#
+# Safe to run any time. Runs as root from the timer, or via a scoped sudoers
+# line for the dashboard button (see README.md). Exits 0 if readsb is hearing
+# planes again afterwards, 1 if it's still deaf (dongle probably dead).
+set -u
+
+TRIGGER="${1:-manual}"
+DONGLE="0bda:2838"
+LOG="/var/log/readsb-watchdog.log"
+STATE_DIR="/var/lib/readsb-watchdog"
+STATE="$STATE_DIR/state.json"
+FIRES="$STATE_DIR/fires"                 # append-only epoch-per-fire, for the 24h count
+NTFY_URL="${READSB_NTFY_URL:-http://192.168.1.183:8197}"   # steve's ntfy, LAN
+NTFY_TOPIC="${READSB_NTFY_TOPIC:-steve_updates}"           # phones already subscribed
+
+mkdir -p "$STATE_DIR"
+log() { printf '%s recover[%s] %s\n' "$(date -Is)" "$TRIGGER" "$*" >> "$LOG"; }
+
+log "start"
+
+# 1. USB reset (retry once) -- the load-bearing step
+if /usr/bin/usbreset "$DONGLE" >>"$LOG" 2>&1; then
+    log "usbreset ok"
+else
+    sleep 2
+    if /usr/bin/usbreset "$DONGLE" >>"$LOG" 2>&1; then
+        log "usbreset ok (2nd try)"
+    else
+        log "usbreset FAILED both tries"
+    fi
+fi
+
+# 2. restart readsb (+ piaware, non-fatal)
+sleep 2
+systemctl restart readsb  && log "readsb restarted"  || log "readsb restart FAILED"
+systemctl restart piaware && log "piaware restarted" || log "piaware restart FAILED (non-fatal)"
+
+# 3. wait up to 30s for IQ samples to start flowing again
+RESULT="still-deaf"
+for i in $(seq 1 15); do
+    sleep 2
+    s=$(jq -r '.last1min.local.samples_processed // 0' /run/readsb/stats.json 2>/dev/null || echo 0)
+    if [ "${s:-0}" -gt 0 ] 2>/dev/null; then
+        RESULT="recovered"
+        log "recovered after $((i * 2))s (samples_processed=$s)"
+        break
+    fi
+done
+[ "$RESULT" = "still-deaf" ] && log "still deaf after 30s"
+
+# 4. bookkeeping -- fires in the last 24h, from the append-only epoch log
+NOW=$(date +%s)
+CUTOFF=$((NOW - 86400))
+echo "$NOW" >> "$FIRES"
+if [ -f "$FIRES" ]; then
+    awk -v c="$CUTOFF" '$1 >= c' "$FIRES" > "$FIRES.tmp" 2>/dev/null && mv "$FIRES.tmp" "$FIRES"
+fi
+FIRES_24H=$(wc -l < "$FIRES" 2>/dev/null | tr -d ' ')
+FIRES_24H=${FIRES_24H:-1}
+
+jq -n --argjson lf "$NOW" --arg lr "$RESULT" --arg lt "$TRIGGER" --argjson f "$FIRES_24H" \
+   '{last_fire: $lf, last_result: $lr, last_trigger: $lt, fires_24h: $f}' > "$STATE" 2>/dev/null \
+   || printf '{"last_fire":%s,"last_result":"%s","last_trigger":"%s","fires_24h":%s}\n' \
+        "$NOW" "$RESULT" "$TRIGGER" "$FIRES_24H" > "$STATE"
+
+# 5. one ntfy push per run (non-fatal if ntfy is down)
+if [ "$RESULT" = "recovered" ]; then
+    TITLE="📡 jeff — readsb auto-healed"
+    MSG="usbreset + restart cleared a deaf SDR ($TRIGGER trigger). ${FIRES_24H} heal(s) in the last 24h."
+    PRIO=2; TAGS='["satellite"]'
+else
+    TITLE="📡 jeff — readsb heal FAILED"
+    MSG="usbreset + restart did NOT clear the deaf SDR ($TRIGGER trigger). Dongle may be dead — reseat or swap the NESDR. ${FIRES_24H} attempt(s) in the last 24h."
+    PRIO=4; TAGS='["warning","satellite"]'
+fi
+BODY=$(jq -nc --arg t "$NTFY_TOPIC" --arg ti "$TITLE" --arg m "$MSG" --argjson p "$PRIO" --argjson tg "$TAGS" \
+    '{topic:$t, title:$ti, message:$m, priority:$p, tags:$tg}' 2>/dev/null)
+curl -sf -m 5 -H 'Content-Type: application/json' -d "$BODY" "$NTFY_URL" >>"$LOG" 2>&1 \
+    || log "ntfy push failed (non-fatal)"
+
+log "done ($RESULT)"
+if [ "$RESULT" = "recovered" ]; then
+    echo "readsb-recover: OK — readsb is hearing planes again (${FIRES_24H} heal(s) in 24h)"
+    exit 0
+else
+    echo "readsb-recover: FAILED — still deaf after usbreset + restart; reseat or swap the dongle"
+    exit 1
+fi

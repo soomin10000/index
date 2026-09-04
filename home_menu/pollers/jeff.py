@@ -29,11 +29,17 @@ DB_FILE    = DATA / "jeff_history.db"
 TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
 
-# readsb (ADS-B) has wedged repeatedly on a flaky USB/dongle link (2026-09-01/02).
+# readsb (ADS-B) has wedged repeatedly on a flaky USB/dongle link (2026-09-01/02/04).
 # The `/jeff` card already shows a "deaf" alert; this also fires a phone push via
 # the self-hosted ntfy on steve so it doesn't only land on a dashboard nobody's
 # looking at. Reuses the `steve_updates` topic the SDR driver-check already pushes
 # to (phones are subscribed). All overridable from the crontab env.
+#
+# NB since 2026-09-04 jeff also runs its own `readsb-watchdog` timer (see
+# pollers/jeff/) that usbresets the dongle and restarts readsb within ~4 min of a
+# wedge — under the leaky-bucket HI below (~6 min), so this push now mostly fires
+# only for wedges the auto-heal couldn't clear. The watchdog sends its own
+# (lower-priority) push per heal.
 NTFY_URL   = os.environ.get("JEFF_NTFY_URL", "http://localhost:8197")
 NTFY_TOPIC = os.environ.get("JEFF_NTFY_TOPIC", "steve_updates")
 # readsb's feed files count as stale (i.e. readsb hung / crashed) past this age.
@@ -75,6 +81,7 @@ echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-le
 echo '===NOW==='; date +%s
 echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0)}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
 echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
+echo '===WATCHDOG==='; cat /var/lib/readsb-watchdog/state.json 2>/dev/null || echo '{}'
 """
 
 
@@ -134,6 +141,47 @@ def _parse_adsb(adsb_block, stats_block, remote_now=None):
     }
 
 
+def _parse_watchdog(block, now=None):
+    """State written by jeff's `readsb-recover` script (pollers/jeff/) each time
+    it runs — the auto-heal that usbresets the wedged dongle and restarts readsb.
+    `{}` when the watchdog has never fired (or isn't installed). None-safe; never
+    raises — the poll's real job is writing jeff.json."""
+    try:
+        w = json.loads(block.strip() or "{}")
+    except Exception:
+        w = {}
+    if not isinstance(w, dict):  # json.loads("null") -> None, "[]" -> list, etc.
+        w = {}
+    last_fire = w.get("last_fire")
+    try:
+        last_fire = int(last_fire) if last_fire is not None else None
+    except (TypeError, ValueError):
+        last_fire = None
+    try:
+        fires_24h = int(w.get("fires_24h") or 0)
+    except (TypeError, ValueError):
+        fires_24h = 0
+    age = None
+    if last_fire is not None and now:
+        try:
+            age = max(int(float(now) - last_fire), 0)
+        except (TypeError, ValueError):
+            age = None
+    return {
+        "installed": last_fire is not None,
+        "last_fire": last_fire,
+        "last_fire_age": age,
+        "fires_24h": fires_24h,
+        "last_result": w.get("last_result"),
+        "last_trigger": w.get("last_trigger"),
+    }
+
+
+# readsb-recover fires >= this many times in 24h => the dongle is genuinely on
+# its way out, not just an occasional soft wedge the usbreset clears.
+WATCHDOG_FLAP_24H = 4
+
+
 def _extra_alerts(data):
     """jeff-specific alert candidates, in the same insertion order as before:
     SoC temp, throttle flags, failed units, DVB squat, deaf readsb."""
@@ -175,6 +223,12 @@ def _extra_alerts(data):
         extra["readsb_deaf"] = ("critical", "readsb is down",
             "the dongle is present and piaware is up but readsb isn't running — "
             f"it may be crash-looping on a wedged USB device; {wedge_hint}")
+
+    wd = data.get("readsb_watchdog") or {}
+    if wd.get("fires_24h", 0) >= WATCHDOG_FLAP_24H:
+        extra["readsb_flapping"] = ("warn", "SDR auto-heal firing repeatedly",
+            f"readsb-recover has usbreset the dongle {wd['fires_24h']}× in the last "
+            "24h — the £30 NESDR stick is on its way out, reseat it or swap it")
 
     return extra
 
@@ -255,7 +309,9 @@ def fetch_and_write():
         cpu_temp = hostlib.parse_temp(s["TEMP"])
         throttled = hostlib.parse_throttled(s["THROTTLED"])
         sdr = _parse_sdr(s["USB"], s["RTLMODS"], s["RTLTOOLS"], s["SDRSVC"])
-        adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""), s.get("NOW", "").strip())
+        remote_now = s.get("NOW", "").strip()
+        adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""), remote_now)
+        watchdog = _parse_watchdog(s.get("WATCHDOG", ""), remote_now)
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"jeff poll failed: {e}")
@@ -273,6 +329,7 @@ def fetch_and_write():
         "throttled": throttled,
         "sdr": sdr,
         "adsb": adsb,
+        "readsb_watchdog": watchdog,
         "other_failed": other_failed,
         "top_cpu": top_cpu,
         "top_mem": top_mem,

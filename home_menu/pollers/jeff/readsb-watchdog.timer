@@ -1,0 +1,10 @@
+[Unit]
+Description=Check readsb (ADS-B) every 2 min, recover if the SDR has gone deaf
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

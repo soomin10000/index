@@ -90,6 +90,76 @@ def test_no_alert_when_readsb_intentionally_absent():
     assert "readsb_deaf" not in jeff._extra_alerts(d)
 
 
+# ── _parse_watchdog: readsb-recover state file ───────────────────────────
+def test_parse_watchdog_valid():
+    block = ('{"last_fire":1000,"last_result":"recovered",'
+             '"last_trigger":"auto","fires_24h":2}')
+    w = jeff._parse_watchdog(block, "1180")
+    assert w["installed"] is True
+    assert w["last_fire"] == 1000 and w["last_fire_age"] == 180
+    assert w["fires_24h"] == 2
+    assert w["last_result"] == "recovered" and w["last_trigger"] == "auto"
+
+
+def test_parse_watchdog_empty_means_not_installed():
+    w = jeff._parse_watchdog("{}", "1180")
+    assert w["installed"] is False
+    assert w["last_fire"] is None and w["fires_24h"] == 0
+    assert w["last_fire_age"] is None
+
+
+def test_parse_watchdog_malformed_never_raises():
+    for block in ("", "not json", "{oops", '{"fires_24h":"lots"}', "null"):
+        w = jeff._parse_watchdog(block, "1180")
+        assert w["fires_24h"] == 0 and w["installed"] is False
+
+
+def test_parse_watchdog_no_remote_now():
+    w = jeff._parse_watchdog('{"last_fire":1000,"fires_24h":1}', "")
+    assert w["installed"] is True and w["last_fire_age"] is None
+
+
+def test_parse_watchdog_clock_skew_clamps_age_to_zero():
+    w = jeff._parse_watchdog('{"last_fire":2000,"fires_24h":1}', "1900")
+    assert w["last_fire_age"] == 0
+
+
+# ── _extra_alerts: readsb_flapping (auto-heal firing too often) ───────────
+def _data_wd(fires_24h):
+    d = _data(adsb={"aircraft": 25, "msgs_per_sec": 140.0, "stale": False, "feed_age": 3})
+    d["readsb_watchdog"] = {"installed": True, "fires_24h": fires_24h,
+                            "last_fire": 1, "last_fire_age": 60,
+                            "last_result": "recovered", "last_trigger": "auto"}
+    return d
+
+
+def test_flapping_alert_fires_at_threshold():
+    a = jeff._extra_alerts(_data_wd(jeff.WATCHDOG_FLAP_24H))
+    assert a["readsb_flapping"][0] == "warn"
+    assert str(jeff.WATCHDOG_FLAP_24H) in a["readsb_flapping"][2]
+
+
+def test_flapping_alert_quiet_below_threshold():
+    assert "readsb_flapping" not in jeff._extra_alerts(_data_wd(jeff.WATCHDOG_FLAP_24H - 1))
+
+
+def test_flapping_alert_absent_when_watchdog_missing():
+    d = _data(adsb={"aircraft": 25, "msgs_per_sec": 140.0, "stale": False, "feed_age": 3})
+    assert "readsb_flapping" not in jeff._extra_alerts(d)
+
+
+def test_deaf_and_flapping_can_coexist_deaf_first():
+    # a genuinely dying dongle: still deaf right now AND healed a lot today
+    d = _data(adsb={"aircraft": 0, "msgs_per_sec": 0, "stale": False, "feed_age": 5})
+    d["readsb_watchdog"] = {"installed": True, "fires_24h": 6, "last_fire": 1,
+                            "last_fire_age": 60, "last_result": "still-deaf",
+                            "last_trigger": "auto"}
+    a = jeff._extra_alerts(d)
+    ids = list(a)
+    assert "readsb_deaf" in ids and "readsb_flapping" in ids
+    assert ids.index("readsb_deaf") < ids.index("readsb_flapping")
+
+
 # ── notify_readsb: leaky-bucket debounce + recovery ──────────────────────
 class _Spy:
     def __init__(self):

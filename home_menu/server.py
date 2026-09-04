@@ -508,6 +508,27 @@ def _restart_steve_service(name):
         return {'ok': False, 'error': str(e)}
 
 
+def _jeff_readsb_recover():
+    """Manual trigger for jeff's readsb auto-heal (usbreset the wedged RTL-SDR +
+    restart readsb). Runs the same `readsb-recover` script the on-jeff watchdog
+    timer uses; the `manual` arg is the exact string the jeff sudoers line
+    whitelists. Exit 1 means "ran, but the dongle stayed deaf" — surface that as
+    ok:False with the tail so the card can say so."""
+    try:
+        result = subprocess.run(
+            ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'jeff',
+             'sudo', '-n', '/usr/local/bin/readsb-recover', 'manual'],
+            capture_output=True, text=True, timeout=60,
+        )
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+    tail = (result.stdout or result.stderr or '').strip().splitlines()[-4:]
+    if result.returncode == 0:
+        return {'ok': True, 'log': tail}
+    return {'ok': False, 'error': 'readsb still deaf after usbreset + restart — '
+            'reseat or swap the dongle', 'log': tail}
+
+
 def _kismet_bytes():
     """kismet.json with freshness annotation (_age_s/_stale) so an unplugged adapter
     shows as stale rather than as frozen-but-plausible device counts."""
@@ -1295,6 +1316,9 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._json(_restart_steve_service(name))
 
+    def _res_jeff_readsb_restart(self):
+        self._json(_jeff_readsb_recover())
+
     def _res_capture(self):
         mac = self._body_json().get('mac', '')
         result, err = _capture_traffic(mac)
@@ -1456,6 +1480,7 @@ ROUTES_POST = {
     '/api/pihole/gravity':    Route(lambda h: h._json(_trigger_gravity()),
                                     json_ct=True),
     '/api/steve/restart':     Route(Handler._res_steve_restart, json_ct=True),
+    '/api/jeff/readsb-restart': Route(Handler._res_jeff_readsb_restart, json_ct=True),
     '/api/capture':           Route(Handler._res_capture, json_ct=True),
 }
 

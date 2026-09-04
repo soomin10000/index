@@ -180,6 +180,38 @@
     setTimeout(() => btn.classList.remove('busy'), 2200);
   }
 
+  // Cross-host: kick jeff's ADS-B dongle when it wedges (usbreset + restart
+  // readsb, over SSH). Not a steve unit, so it's a fixed tile with no status
+  // from the steve poller — just an action.
+  function jeffReadsbTile() {
+    const btn = document.createElement('button');
+    btn.className = 'switch';
+    btn.style.borderLeft = '2px solid var(--sdr, #b57edc)';
+    btn.innerHTML = `
+      <div class="switch-top"><span class="switch-led on"></span><span class="switch-label">jeff · readsb</span></div>
+      <span class="switch-status ok">USBRESET + RESTART</span>
+    `;
+    btn.addEventListener('click', async () => {
+      if (!window.confirm('Recover jeff’s ADS-B SDR?\n(usbreset the dongle + restart readsb — takes ~30s)')) return;
+      btn.classList.add('busy');
+      const statusEl = btn.querySelector('.switch-status');
+      statusEl.textContent = 'RECOVERING…';
+      try {
+        const r = await fetch('/api/jeff/readsb-restart', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        const d = await r.json();
+        statusEl.textContent = d.ok ? 'HEARING PLANES' : 'STILL DEAF';
+        statusEl.className = 'switch-status ' + (d.ok ? 'ok' : 'down');
+      } catch {
+        statusEl.textContent = 'FAILED';
+        statusEl.className = 'switch-status down';
+      }
+      setTimeout(() => btn.classList.remove('busy'), 2200);
+    });
+    return btn;
+  }
+
   // ── Alerts (each acknowledged individually — an ack is "id -> onset ts",
   // so a re-triggered episode with a fresh onset ts un-acks itself) ──
   const ACKS_KEY = 'steve_alert_acks';
@@ -221,6 +253,7 @@
       const switchBox = document.getElementById('switches');
       switchBox.innerHTML = '';
       d.services.forEach(s => switchBox.appendChild(switchTile(s)));
+      switchBox.appendChild(jeffReadsbTile());
 
       const otherFailed = document.getElementById('other-failed');
       otherFailed.textContent = d.other_failed && d.other_failed.length

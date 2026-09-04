@@ -1,0 +1,9 @@
+/var/log/readsb-watchdog.log {
+    weekly
+    rotate 4
+    missingok
+    notifempty
+    compress
+    delaycompress
+    create 0644 root root
+}

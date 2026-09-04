@@ -66,6 +66,17 @@
   }
   .chip.none { color: var(--ink-faint); border-style: dashed; }
   .sdr-note { font-family: var(--font-mono); font-size: 0.68rem; color: var(--warn); }
+  .sdr-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
+  .sdr-btn {
+    font-family: var(--font-mono); font-size: 0.66rem; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+    color: var(--ink-dim); background: var(--inset);
+    border: 1px solid var(--bezel); border-radius: 3px; padding: 0.3rem 0.7rem;
+  }
+  .sdr-btn:hover:not(:disabled) { color: var(--ink); border-color: var(--sdr); }
+  .sdr-btn:disabled { opacity: 0.5; cursor: progress; }
+  .sdr-btn-msg { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-faint); }
+  .sdr-btn-msg.bad { color: var(--warn); }
 
   /* ── Process manifests ── */
   .manifests { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
@@ -165,17 +176,48 @@
     return items.map(x => `<span class="chip">${esc(x)}</span>`).join('');
   }
 
-  function renderSdr(sdr, adsb) {
+  function fmtAgo(sec) {
+    if (sec == null) return '—';
+    if (sec < 90) return `${Math.round(sec)}s ago`;
+    if (sec < 5400) return `${Math.round(sec / 60)}m ago`;
+    if (sec < 172800) return `${Math.round(sec / 3600)}h ago`;
+    return `${Math.round(sec / 86400)}d ago`;
+  }
+
+  function renderSdr(sdr, adsb, wd) {
     const card = document.getElementById('sdr-card');
     if (!sdr) { card.innerHTML = '<span class="chip none">no data</span>'; return; }
     const present = sdr.dongle_present;
     const squat = present && sdr.dvb_driver_loaded && !sdr.sdr_driver_loaded;
+    const readsbUp = (sdr.services || []).some(s => /readsb/.test(s));
     const adsbStrip = adsb ? `
       <div class="adsb-strip">
         <span class="adsb-big"><b>${adsb.aircraft}</b> aircraft</span>
         <span class="adsb-sub">${adsb.positions} with position · ${adsb.msgs_per_sec.toLocaleString()} msg/s${
           adsb.max_range_km != null ? ` · ${adsb.max_range_km} km max` : ''}</span>
       </div>` : '';
+
+    // auto-heal status (readsb-recover on jeff — usbreset + restart on a wedge)
+    let healRow = '';
+    if (wd && wd.installed) {
+      const bits = [`last fired ${fmtAgo(wd.last_fire_age)}`];
+      if (wd.last_result) bits.push(wd.last_result === 'recovered' ? 'recovered' : '⚠ still deaf');
+      bits.push(`${wd.fires_24h}× in 24h`);
+      healRow = `<div class="sdr-row"><span class="k">Auto-heal</span>
+        <span class="chip">${esc(bits.join(' · '))}</span></div>`;
+    } else if (wd) {
+      healRow = `<div class="sdr-row"><span class="k">Auto-heal</span><span class="chip none">standing by</span></div>`;
+    }
+    const flapNote = (wd && wd.fires_24h >= 4)
+      ? `<div class="sdr-note">⚠ auto-heal has usbreset the dongle ${wd.fires_24h}× in 24h — the £30 stick is failing, reseat or swap it</div>`
+      : '';
+
+    const actions = readsbUp ? `
+      <div class="sdr-actions">
+        <button class="sdr-btn" id="readsb-restart-btn">Restart readsb</button>
+        <span class="sdr-btn-msg" id="readsb-restart-msg"></span>
+      </div>` : '';
+
     card.innerHTML = `
       <div class="sdr-head">
         <span class="lamp ${present ? 'on' : ''}"></span>
@@ -184,13 +226,40 @@
       </div>
       ${adsbStrip}
       ${squat ? `<div class="sdr-note">⚠ dvb_usb_rtl28xxu is holding the dongle — blacklist it so librtlsdr can use it</div>` : ''}
+      ${flapNote}
       <div class="sdr-row"><span class="k">Driver</span>${
         sdr.sdr_driver_loaded ? '<span class="chip">rtl2832 (SDR)</span>'
         : sdr.dvb_driver_loaded ? '<span class="chip">dvb_usb_rtl28xxu (DVB-T)</span>'
         : '<span class="chip none">none loaded</span>'}</div>
       <div class="sdr-row"><span class="k">Tools</span>${chips(sdr.tools, 'none installed')}</div>
       <div class="sdr-row"><span class="k">Services</span>${chips(sdr.services, 'none running')}</div>
+      ${healRow}
+      ${actions}
     `;
+
+    const btn = document.getElementById('readsb-restart-btn');
+    if (btn) btn.addEventListener('click', () => restartReadsb(btn));
+  }
+
+  async function restartReadsb(btn) {
+    if (!window.confirm('Restart readsb on jeff?\n(usbreset the dongle + restart the service — takes ~30s)')) return;
+    const msg = document.getElementById('readsb-restart-msg');
+    btn.disabled = true;
+    msg.className = 'sdr-btn-msg';
+    msg.textContent = 'working… (usbreset + restart)';
+    try {
+      const r = await fetch('/api/jeff/readsb-restart', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      const d = await r.json();
+      msg.textContent = d.ok ? 'readsb is hearing planes again' : (d.error || 'restart failed');
+      if (!d.ok) msg.className = 'sdr-btn-msg bad';
+    } catch (e) {
+      msg.textContent = 'request failed'; msg.className = 'sdr-btn-msg bad';
+    } finally {
+      btn.disabled = false;
+      load();
+    }
   }
 
   function renderHealth(d) {
@@ -264,7 +333,7 @@
         setGauge('temp', 0, 'ok', '—', 'SOC TEMP', 'no sensor');
       }
 
-      renderSdr(d.sdr, d.adsb);
+      renderSdr(d.sdr, d.adsb, d.readsb_watchdog);
       renderHealth(d);
 
       const otherFailed = document.getElementById('other-failed');
