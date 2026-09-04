@@ -10,6 +10,7 @@ phosphor-cyan hero trace, reserved status colours, clean thin marks (no glow).
 """
 
 import sqlite3
+import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -75,6 +76,13 @@ plt.rcParams.update({
 _DB  = Path.home() / "unifi_poller.db"
 _OUT = Path(__file__).resolve().parents[2] / "data" / "unifi" / "dashboard.png"
 
+# How much history the time-series panels draw. radio_util_log gets a row per
+# radio per poll and is kept for 90 days (prune_radio_util), which is ~90k rows —
+# pulling and plotting all of it every render is the poller's main memory churn,
+# and a 90-day dense line is unreadable anyway. The "by hour of day" averages
+# stay stable on a few weeks of samples.
+_WINDOW_DAYS = 21
+
 # ── Marks (clean, no glow) ─────────────────────────────────────────────────────
 
 def _line(ax, x, y, color, lw=1.8, fill=False):
@@ -126,22 +134,27 @@ def _legend(ax, names, colors):
 # ── Main render ─────────────────────────────────────────────────────────────────
 
 def render():
+    cutoff = int(time.time()) - _WINDOW_DAYS * 86400
     conn = sqlite3.connect(_DB)
     weak_rows  = conn.execute(
-        "SELECT ts, hostname, signal, retry_pct FROM weak_client_log ORDER BY ts"
+        "SELECT ts, hostname, signal, retry_pct FROM weak_client_log "
+        "WHERE ts >= ? ORDER BY ts", (cutoff,)
     ).fetchall()
     # Continuous per-poll samples (every radio, every poll) rather than
     # congestion_log, which only has a row once cu_total crosses the alert
     # threshold — that's fine for dedup-alerting but too sparse to trend on.
     util_rows  = conn.execute(
-        "SELECT ts, ap, radio, cu_total FROM radio_util_log ORDER BY ts"
+        "SELECT ts, ap, radio, cu_total FROM radio_util_log "
+        "WHERE ts >= ? ORDER BY ts", (cutoff,)
     ).fetchall()
     speed_rows = conn.execute(
-        "SELECT ts, ping_ms, download_mbps, upload_mbps FROM speedtest_log ORDER BY ts"
+        "SELECT ts, ping_ms, download_mbps, upload_mbps FROM speedtest_log "
+        "WHERE ts >= ? ORDER BY ts", (cutoff,)
     ).fetchall()
     event_rows = conn.execute(
         "SELECT ts, type, message FROM events_log "
-        "WHERE type IN ('device_joined', 'device_left', 'channel_changed') ORDER BY ts"
+        "WHERE type IN ('device_joined', 'device_left', 'channel_changed') "
+        "AND ts >= ? ORDER BY ts", (cutoff,)
     ).fetchall()
     conn.close()
 

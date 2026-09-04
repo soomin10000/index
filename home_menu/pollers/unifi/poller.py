@@ -298,6 +298,11 @@ def run(interval, client):
     speedtest_every = max(1, 3600 // interval)
     # Prune old radio_util_log rows: once per day
     prune_every = max(1, 86400 // interval)
+    # Regenerate the topology / dashboard PNGs at most every 15 min, not every
+    # poll — matplotlib re-rendering two large figures on a 5-min loop was the
+    # bulk of this process's CPU and drove a slow RSS ratchet via heap
+    # fragmentation. The visuals don't need 5-min freshness.
+    visuals_every = max(1, 900 // interval)
     poll_count = 0
 
     # Seeded on the first poll below (not here) so a process restart doesn't
@@ -306,7 +311,8 @@ def run(interval, client):
     prev_active_macs = None
     prev_channels = None
 
-    log.info("Poll loop started — interval %ds, speedtest every %d polls", interval, speedtest_every)
+    log.info("Poll loop started — interval %ds, speedtest every %d polls, visuals every %d polls",
+             interval, speedtest_every, visuals_every)
 
     while True:
         try:
@@ -408,7 +414,10 @@ def run(interval, client):
             prune_radio_util(db)
         sync_speedtest(db, client)
 
-        _regenerate_visuals(devices, stations, wlans)
+        # First poll always renders (so a restart refreshes the PNGs promptly),
+        # then only every visuals_every-th poll.
+        if poll_count == 1 or poll_count % visuals_every == 0:
+            _regenerate_visuals(devices, stations, wlans)
 
         prev_congestion = set(curr_congestion.keys())
 
