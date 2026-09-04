@@ -1,7 +1,10 @@
 [Unit]
 Description=Recover a wedged RTL-SDR / readsb on jeff (usbreset + restart)
+# Ordering only, NOT Wants/Requires: a dependency would make systemd re-pull
+# readsb every time the timer fires this unit, which defeats the watchdog's
+# "2 consecutive deaf checks" debounce (readsb could never stay down long
+# enough to be recovered). The watchdog observes readsb; it must not want it.
 After=readsb.service
-Wants=readsb.service
 
 [Service]
 Type=oneshot
