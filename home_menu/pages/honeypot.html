@@ -10,300 +10,293 @@
     --panel: #26282b;
     --inset: #202224;
     --bezel: #38393c;
-    --bezel-lit: #4a4c4f;
     --ink: #eae7df;
     --ink-dim: #9ea1a5;
     --ink-faint: #909398;
-    --ok: #6fb98a;
-    --warn: #d7a24a;
-    --down: #c9584a;
-    --honey: #e0a44a;
+    --armed: #d99a3f;   /* set and waiting */
+    --sprung: #cf5a49;  /* something's inside */
     --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
     --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
 
   body {
     background: var(--chassis);
-    background-image:
-      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
     color: var(--ink);
     font-family: var(--font-plate);
+    line-height: 1.5;
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
   }
 
   a { color: inherit; }
+  :focus-visible { outline: 2px solid var(--armed); outline-offset: 2px; }
 
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
 
-  header.topbar {
-    display: flex; align-items: center; gap: 1.4rem;
-    padding: 0.9rem 1.6rem;
-    border-bottom: 1px solid var(--bezel);
-    background: linear-gradient(180deg, #222426, #1e2022);
-    position: sticky; top: 0; z-index: 50;
+  /* ── topbar ── */
+  .topbar {
+    display: flex; align-items: baseline; gap: 1.3rem;
+    padding: 0.9rem 1.5rem;
+    background: #1e2022;
   }
-  .home-link {
-    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
-    color: var(--ink-dim); text-decoration: none;
+  .back {
+    font-size: 0.72rem; letter-spacing: 0.06em;
+    color: var(--ink-faint); text-decoration: none;
   }
-  .home-link:hover { color: var(--ink); }
-  .plate-name {
-    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
-    color: var(--ink); text-transform: uppercase;
+  .back:hover { color: var(--ink); }
+  .mark {
+    font-weight: 700; font-size: 0.86rem; letter-spacing: 0.36em;
+    text-transform: uppercase;
   }
-  .status-led {
-    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
-    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
-    color: var(--ink-dim);
+  .state {
+    margin-left: auto; align-self: center;
+    display: flex; align-items: center; gap: 0.5rem;
+    font-size: 0.74rem; color: var(--ink-dim);
   }
-  .lamp {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--ink-faint); display: inline-block;
-    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4); flex-shrink: 0;
+  .bead {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--ink-faint); flex-shrink: 0;
   }
-  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
-  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
-  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
-  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  body.is-armed  .bead { background: var(--armed);  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--armed) 65%, transparent); }
+  body.is-sprung .bead { background: var(--sprung); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--sprung) 75%, transparent); animation: throb 1.5s ease-in-out infinite; }
+  @keyframes throb { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-  main.frame { max-width: 820px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+  /* the tripwire: one line whose colour is the whole story */
+  .wire { height: 2px; background: var(--bezel); transition: background 0.5s ease; }
+  body.is-armed  .wire { background: var(--armed); }
+  body.is-sprung .wire { background: var(--sprung); }
 
-  .eyebrow {
-    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
-    color: var(--ink-dim); margin-bottom: 0.9rem;
+  main { max-width: 34rem; margin: 0 auto; padding: 2.4rem 1.5rem 3rem; }
+
+  /* ── hero: the catch ── */
+  .hero { min-height: 6rem; }
+  .hero-wait { color: var(--ink-faint); }
+  .hero-head {
+    font-size: 1.55rem; font-weight: 700; line-height: 1.15;
+    letter-spacing: 0.005em;
+  }
+  body.is-sprung .hero-head { color: var(--sprung); }
+  .hero-id {
+    font-family: var(--font-mono); font-size: 1.9rem; font-weight: 600;
+    margin-top: 1rem; word-break: break-all;
+  }
+  .hero-line { color: var(--ink-dim); margin-top: 0.5rem; }
+  .hero-line .said {
+    font-family: var(--font-mono); color: var(--ink);
+    background: color-mix(in srgb, var(--armed) 16%, transparent);
+    padding: 0.05em 0.35em; border-radius: 3px;
+  }
+  body.is-sprung .hero-line .said { background: color-mix(in srgb, var(--sprung) 20%, transparent); }
+  .hero-when { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-faint); margin-top: 0.7rem; }
+  .flash { animation: flash 1.1s ease-out; }
+  @keyframes flash {
+    0% { background: color-mix(in srgb, var(--sprung) 26%, transparent); }
+    100% { background: transparent; }
   }
 
-  section { margin-bottom: 2.1rem; }
+  hr { border: 0; border-top: 1px solid var(--bezel); margin: 2rem 0; }
 
-  .card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1.2rem 1.4rem; }
+  /* ── summary sentence ── */
+  .tally { font-size: 1.05rem; }
+  .tally b { font-weight: 700; }
 
-  .advisory {
-    font-family: var(--font-mono); font-size: 0.7rem; color: var(--warn);
-    margin-bottom: 1.2rem;
+  /* ── service split ── */
+  .split { margin-top: 1.3rem; display: grid; gap: 0.55rem; }
+  .split-row {
+    display: grid; grid-template-columns: 4rem 1fr 1.6rem; align-items: center; gap: 0.8rem;
+    font-family: var(--font-mono); font-size: 0.8rem;
   }
-  .advisory.breach { color: var(--down); }
+  .split-row .svc { color: var(--ink); }
+  .split-row .meter { height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; }
+  .split-row .meter i { display: block; height: 100%; background: var(--armed); }
+  .split-row .cnt { text-align: right; color: var(--ink-dim); }
 
-  /* headline strip */
-  .verdict { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
-  .verdict .big { font-size: 2.4rem; font-weight: 700; line-height: 1; }
-  .verdict .big.hot { color: var(--down); }
-  .verdict .sub { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-dim); }
-
-  /* stat row */
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-top: 1.1rem; }
-  .stat { background: var(--inset); border: 1px solid var(--bezel); border-radius: 5px; padding: 0.7rem 0.8rem; text-align: center; }
-  .stat .n { font-size: 1.4rem; font-weight: 700; font-family: var(--font-mono); }
-  .stat .l { font-size: 0.58rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-top: 0.2rem; }
-  .stat.hot .n { color: var(--down); }
-
-  /* by-service + sources bars */
-  .bars { font-family: var(--font-mono); font-size: 0.78rem; }
-  .bars .bar {
-    display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center; gap: 0.7rem;
-    padding: 0.45rem 0; border-bottom: 1px solid var(--inset);
+  /* ── the log ── */
+  .log-lead { font-size: 0.8rem; color: var(--ink-faint); margin-bottom: 0.8rem; }
+  .log { font-family: var(--font-mono); font-size: 0.78rem; }
+  .log-row {
+    display: grid; grid-template-columns: 4.6rem 1fr; gap: 0.9rem;
+    padding: 0.5rem 0; border-top: 1px solid var(--inset);
   }
-  .bars .bar:last-child { border-bottom: none; }
-  .bars .k { color: var(--ink); text-transform: capitalize; }
-  .bars .track { height: 7px; border-radius: 4px; background: #2f3134; overflow: hidden; }
-  .bars .fill { height: 100%; background: var(--honey); }
-  .bars .v { color: var(--ink-dim); min-width: 1.6rem; text-align: right; }
-  .bars.src .k { text-transform: none; }
+  .log-row:first-child { border-top: 0; }
+  .log-row.hit { color: var(--sprung); }
+  .log-t { color: var(--ink-faint); }
+  .log-what b { color: var(--ink); font-weight: 600; }
+  .log-what .cred { color: var(--armed); }
+  .log-row.hit .log-what b { color: var(--sprung); }
 
-  /* recent events */
-  .events { display: flex; flex-direction: column; gap: 0.6rem; }
-  .ev {
-    background: var(--inset); border: 1px solid var(--bezel); border-left: 3px solid var(--bezel-lit);
-    border-radius: 5px; padding: 0.6rem 0.85rem;
-  }
-  .ev.login { border-left-color: var(--down); }
-  .ev-top { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-  .ev-time { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
-  .ev-badge {
-    font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase;
-    padding: 0.1rem 0.4rem; border-radius: 3px; background: #33363a; color: var(--ink-dim);
-  }
-  .ev.login .ev-badge { background: color-mix(in srgb, var(--down) 30%, #33363a); color: #f0d6d2; }
-  .ev-label { font-size: 0.9rem; }
-  .ev-meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); margin-top: 0.35rem; word-break: break-word; }
-  .ev-meta .cred { color: var(--honey); }
+  .void { color: var(--ink-faint); font-size: 0.85rem; }
 
-  .empty { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-faint); }
-
-  footer.updated {
-    max-width: 820px; margin: 0 auto; padding: 0 1.6rem 2rem;
-    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  footer {
+    max-width: 34rem; margin: 0 auto; padding: 0 1.5rem 2.5rem;
+    font-size: 0.8rem; color: var(--ink-faint);
   }
 </style>
   <script src="/auth.js"></script>
 </head>
 <body>
 
-<header class="topbar">
-  <a class="home-link" href="/">← HOME</a>
-  <div class="plate-name">HONEYPOT</div>
-  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
-</header>
+<div class="topbar" id="topbar">
+  <a class="back" href="/">← home</a>
+  <span class="mark">Honeypot</span>
+  <span class="state"><span class="bead"></span><span id="state-label">reading…</span></span>
+</div>
+<div class="wire" id="wire"></div>
 
-<main class="frame">
+<main>
+  <section class="hero" id="hero"><p class="hero-wait">Reading the log…</p></section>
 
-  <div class="advisory" id="advisory" style="display:none"></div>
+  <div id="body" hidden>
+    <hr id="hr-tally">
+    <p class="tally" id="tally"></p>
+    <div class="split" id="split"></div>
 
-  <section>
-    <div class="eyebrow">Last 24 hours</div>
-    <div class="card">
-      <div class="verdict">
-        <span class="big" id="v-big">—</span>
-        <span class="sub" id="v-sub"></span>
-      </div>
-      <div class="stats">
-        <div class="stat" id="s-attempts"><div class="n">—</div><div class="l">Attempts</div></div>
-        <div class="stat" id="s-logins"><div class="n">—</div><div class="l">Login tries</div></div>
-        <div class="stat" id="s-sources"><div class="n">—</div><div class="l">Sources</div></div>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <div class="eyebrow">By service</div>
-    <div class="card"><div class="bars" id="by-service"><div class="empty">—</div></div></div>
-  </section>
-
-  <section>
-    <div class="eyebrow">Top sources</div>
-    <div class="card"><div class="bars src" id="top-sources"><div class="empty">—</div></div></div>
-  </section>
-
-  <section>
-    <div class="eyebrow">Recent hits</div>
-    <div class="card"><div class="events" id="events"><div class="empty">—</div></div></div>
-  </section>
-
+    <hr id="hr-log">
+    <p class="log-lead" id="log-lead">Everything it has seen today</p>
+    <div class="log" id="log"></div>
+  </div>
 </main>
 
-<footer class="updated" id="updated"></footer>
+<footer id="footer"></footer>
 
 <script>
-  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+  const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC[c]);
 
-  const SVC_ICON = { ftp: '📁', http: '🌐', ssh: '🔑', telnet: '💻' };
+  const A = document.getElementById.bind(document);
+  let lastSeenTs = null;
 
-  function fmtAge(secs) {
-    if (secs == null) return '';
-    const s = Math.max(0, Math.round(secs));
-    if (s < 60) return s + 's ago';
-    if (s < 3600) return Math.round(s / 60) + 'm ago';
-    if (s < 86400) return Math.round(s / 3600) + 'h ago';
-    return Math.round(s / 86400) + 'd ago';
+  const ago = s => {
+    if (s == null) return '';
+    s = Math.max(0, Math.round(s));
+    if (s < 60) return s + ' seconds ago';
+    if (s < 5400) { const m = Math.round(s / 60); return m + (m === 1 ? ' minute ago' : ' minutes ago'); }
+    if (s < 172800) { const h = Math.round(s / 3600); return h + (h === 1 ? ' hour ago' : ' hours ago'); }
+    return Math.round(s / 86400) + ' days ago';
+  };
+  const clock = ts => new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  // "tried telnet with test / test" | "knocked on ssh"
+  function phrase(e) {
+    const verb = e.login ? 'tried' : 'knocked on';
+    if (e.login && (e.user || e.pw))
+      return `${verb} ${esc(e.service)} with <span class="said">${esc(e.user || '∅')} / ${esc(e.pw || '∅')}</span>`;
+    if (e.service === 'http' && e.ua)
+      return `hit ${esc(e.service)} as <span class="said">${esc(e.ua)}</span>`;
+    return `${verb} ${esc(e.service)}`;
   }
 
-  function fmtClock(ts) {
-    return new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  function setState(mode, label) {
+    document.body.className = mode;
+    A('state-label').textContent = label;
   }
 
-  function setStatus(cls, text) {
-    document.getElementById('status-lamp').className = 'lamp ' + cls;
-    document.getElementById('status-text').textContent = text;
-  }
-
-  function renderBars(el, entries, opts) {
-    if (!entries.length) { el.innerHTML = '<div class="empty">Nothing in the last 24 h</div>'; return; }
-    const max = Math.max(...entries.map(e => e[1]));
-    el.innerHTML = entries.map(([k, v]) => `
-      <div class="bar">
-        <span class="k">${opts.icon ? (SVC_ICON[k] || '•') + ' ' : ''}${esc(k)}</span>
-        <span class="track"><span class="fill" style="width:${max ? Math.round(v / max * 100) : 0}%"></span></span>
-        <span class="v">${v}</span>
-      </div>`).join('');
-  }
-
-  function renderEvents(list) {
-    const el = document.getElementById('events');
-    if (!list || !list.length) { el.innerHTML = '<div class="empty">No probes recorded in the last 24 h</div>'; return; }
-    el.innerHTML = list.map(e => {
-      const bits = [`from ${esc(e.src)}${e.port ? ':' + esc(e.port) : ''}`];
-      if (e.user || e.pw) bits.push(`<span class="cred">${esc(e.user || '∅')} / ${esc(e.pw || '∅')}</span>`);
-      if (e.ua) bits.push(esc(e.ua));
-      return `
-      <div class="ev ${e.login ? 'login' : ''}">
-        <div class="ev-top">
-          <span class="ev-time">${fmtClock(e.ts)}</span>
-          <span class="ev-badge">${esc(e.service)}</span>
-          <span class="ev-label">${esc(e.label)}</span>
-        </div>
-        <div class="ev-meta">${bits.join(' · ')}</div>
-      </div>`;
-    }).join('');
-  }
-
-  function render(d) {
-    const adv = document.getElementById('advisory');
+  function renderHero(d) {
+    const hero = A('hero');
+    const hit = (d.recent || []).find(e => e.login && (e.user || e.pw));
+    const last = (d.recent || [])[0];
 
     if (d.error) {
-      setStatus('down', 'LOG UNREADABLE');
-      adv.style.display = ''; adv.className = 'advisory breach';
-      adv.textContent = '⚠ ' + d.error;
-      document.getElementById('v-big').textContent = '—';
-      document.getElementById('v-big').className = 'big';
-      document.getElementById('v-sub').textContent = 'poller on steve could not reach weeny';
-      for (const id of ['s-attempts', 's-logins', 's-sources']) {
-        document.getElementById(id).querySelector('.n').textContent = '—';
-      }
-      renderBars(document.getElementById('by-service'), [], { icon: true });
-      renderBars(document.getElementById('top-sources'), [], {});
-      renderEvents([]);
-      document.getElementById('updated').textContent = 'weeny · 192.168.1.5 · opencanary cheap-NAS persona';
+      setState('is-sprung', 'blind');
+      hero.innerHTML = `
+        <div class="hero-head">Can't see the trap</div>
+        <p class="hero-line">The poller on steve couldn't read weeny's log. ${esc(d.error)}</p>`;
       return;
     }
 
-    const alert = (d.alerts || [])[0];
-    const crit = alert && alert.severity === 'critical';
-    if (crit)          setStatus('down', 'LOGIN HIT');
-    else if (alert)    setStatus('warn', 'PROBED');
-    else              setStatus('on', 'QUIET');
-
-    // advisories: breach first, then staleness
-    if (alert) {
-      adv.style.display = ''; adv.className = 'advisory' + (crit ? ' breach' : '');
-      adv.textContent = (crit ? '🚨 ' : '⚠ ') + alert.detail;
-    } else if (d._stale) {
-      adv.style.display = ''; adv.className = 'advisory';
-      adv.textContent = '⚠ Poller on steve hasn’t refreshed for ' + fmtAge(d._age_s) + ' — figures below may be stale.';
-    } else {
-      adv.style.display = 'none';
+    if (!last) {
+      setState('is-armed', 'armed');
+      hero.innerHTML = `
+        <div class="hero-head">The trap is set</div>
+        <div class="hero-id">weeny · 192.168.1.5</div>
+        <p class="hero-line">Nothing has touched it in 24 hours. No one has a reason to — so anything that does is worth a look.</p>`;
+      return;
     }
 
-    const n = d.attempts_24h || 0;
-    const big = document.getElementById('v-big');
-    big.textContent = n;
-    big.className = 'big' + (crit ? ' hot' : '');
-    document.getElementById('v-sub').textContent = n === 0
-      ? 'quiet for 24 h — no legitimate traffic ever reaches this address'
-      : (d.last_age != null ? 'last hit ' + fmtAge(d.last_age) : '');
+    const now = Date.now() / 1000;
+    const secsSince = e => e && e.ts ? now - e.ts : (d.last_age ?? null);
+    const lastRecent = secsSince(last) != null && secsSince(last) < 3600;
+    const hitRecent = hit && now - hit.ts < 3600;
+    const subject = hitRecent ? hit : last;
 
-    const stat = (id, val, hot) => {
-      const s = document.getElementById(id);
-      s.querySelector('.n').textContent = val;
-      s.classList.toggle('hot', !!hot);
-    };
-    stat('s-attempts', n, false);
-    stat('s-logins', d.logins_24h || 0, (d.logins_24h || 0) > 0);
-    stat('s-sources', d.sources_24h || 0, false);
+    setState(hitRecent ? 'is-sprung' : 'is-armed',
+      hitRecent ? 'caught a login' : lastRecent ? 'being probed' : 'armed');
 
-    renderBars(document.getElementById('by-service'),
-      Object.entries(d.by_service || {}).sort((a, b) => b[1] - a[1]), { icon: true });
-    renderBars(document.getElementById('top-sources'),
-      (d.top_sources || []).map(s => [s.ip, s.n]), {});
-    renderEvents(d.recent);
+    hero.innerHTML = `
+      <div class="hero-head">${subject.login ? 'Someone tried to log in' : 'Someone knocked'}</div>
+      <div class="hero-id">${esc(subject.src)}</div>
+      <p class="hero-line">${phrase(subject)}</p>
+      <p class="hero-when">${clock(subject.ts)} · ${ago(secsSince(subject))}</p>`;
 
-    const t = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('en-GB') : '—';
-    document.getElementById('updated').textContent =
-      'weeny · 192.168.1.5 · opencanary cheap-NAS persona · updated ' + t;
+    if (lastSeenTs !== null && subject.ts > lastSeenTs) {
+      A('hero').classList.remove('flash'); void A('hero').offsetWidth; A('hero').classList.add('flash');
+    }
+    lastSeenTs = subject.ts;
+  }
+
+  function renderTally(d) {
+    const n = d.attempts_24h || 0, src = d.sources_24h || 0;
+    const show = n > 0;
+    A('hr-tally').hidden = !show;
+    A('tally').hidden = !show;
+    if (!show) return;
+    const h = n === 1 ? '1 hit' : `${n} hits`;
+    const s = src === 1 ? '1 address' : `${src} addresses`;
+    const l = d.logins_24h ? `, ${d.logins_24h === 1 ? '1 of them a login attempt' : d.logins_24h + ' of them login attempts'}` : '';
+    A('tally').innerHTML = `<b>${h}</b> from <b>${s}</b> in the last 24 hours${l}.`;
+  }
+
+  function renderSplit(d) {
+    const box = A('split');
+    const rows = Object.entries(d.by_service || {}).sort((a, b) => b[1] - a[1]);
+    box.hidden = rows.length < 2;   // one service tells you nothing extra
+    if (box.hidden) return;
+    const max = Math.max(...rows.map(r => r[1]));
+    box.innerHTML = rows.map(([svc, c]) => `
+      <div class="split-row">
+        <span class="svc">${esc(svc)}</span>
+        <span class="meter"><i style="width:${Math.round(c / max * 100)}%"></i></span>
+        <span class="cnt">${c}</span>
+      </div>`).join('');
+  }
+
+  // one flat log line: 10:26:53   192.168.1.170   telnet login   test / test
+  function logLine(e) {
+    const act = e.login ? 'login' : 'connect';
+    const cred = (e.user || e.pw) ? ` <span class="cred">${esc(e.user || '∅')} / ${esc(e.pw || '∅')}</span>` : '';
+    return `${esc(e.src)}&nbsp;&nbsp;<b>${esc(e.service)} ${act}</b>${cred}`;
+  }
+
+  function renderLog(d) {
+    const list = d.recent || [];
+    const show = list.length > 0;
+    A('hr-log').hidden = !show;
+    A('log-lead').hidden = !show;
+    A('log').hidden = !show;
+    if (!show) return;
+    A('log').innerHTML = list.map(e => `
+      <div class="log-row ${e.login && (e.user || e.pw) ? 'hit' : ''}">
+        <span class="log-t">${clock(e.ts)}</span>
+        <span class="log-what">${logLine(e)}</span>
+      </div>`).join('');
+  }
+
+  function renderFooter(d) {
+    const t = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—';
+    A('footer').textContent =
+      `weeny is a decoy posing as a small NAS — FTP, telnet, HTTP and SSH are baited and nothing behind them is real. Updated ${t}.`;
+  }
+
+  function render(d) {
+    renderHero(d);
+    A('body').hidden = !!d.error;
+    if (!d.error) { renderTally(d); renderSplit(d); renderLog(d); }
+    renderFooter(d);
   }
 
   async function load() {
@@ -312,10 +305,12 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       render(await r.json());
     } catch (e) {
-      setStatus('down', 'OFFLINE');
-      const adv = document.getElementById('advisory');
-      adv.style.display = ''; adv.className = 'advisory breach';
-      adv.textContent = '⚠ status page can’t reach the dashboard API';
+      setState('is-sprung', 'offline');
+      A('hero').innerHTML = `
+        <div class="hero-head">Status page can't reach the dashboard</div>
+        <p class="hero-line">Retrying every 15 seconds.</p>`;
+      A('body').hidden = true;
+      A('footer').textContent = '';
     }
   }
 

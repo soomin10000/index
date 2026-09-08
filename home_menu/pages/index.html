@@ -298,8 +298,13 @@
     #c-wireless .subpanels { grid-template-columns: repeat(3, 1fr); }
     #c-wireless .subpanel { padding: 0.62rem 0.8rem 0.68rem; }
 
+    #c-honeypot .subpanels { grid-template-columns: repeat(3, 1fr); }
+    #c-honeypot .subpanel { padding: 0.62rem 0.8rem 0.68rem; }
+    #c-honeypot .subpanel .st { font-family: var(--font-mono); font-size: 0.82rem; }
+
     @media (max-width: 620px) {
-      #c-pihole .subpanels, #c-wireless .subpanels { grid-template-columns: 1fr; }
+      #c-pihole .subpanels, #c-wireless .subpanels,
+      #c-honeypot .subpanels { grid-template-columns: 1fr; }
     }
 
     /* ── Host strip-chart recorder ── */
@@ -970,36 +975,36 @@
   const honeypot = () => poll('honeypot', '/api/honeypot', d => {
     if (d.error) { setCard('honeypot', { val: 'No data', unit: '' }, true); return; }
     const n = d.attempts_24h || 0;
-    const crit = (d.alerts || []).some(a => a.severity === 'critical');
-    const warn = (d.alerts || []).length > 0;
-    const accent = crit ? 'var(--down)' : warn ? 'var(--warn)' : '#ef5350';
+    const cred = (d.recent || []).find(e => e.login && (e.user || e.pw));
+    const recent = d.last_age != null && d.last_age < 3600;
+    const sprung = recent && cred;                       // creds thrown in the last hour
     setCard('honeypot', {
       val: n, unit: n === 1 ? ' attempt' : ' attempts',
-      accent, lamp: crit ? 'down' : warn ? 'warn' : 'on',
+      accent: sprung ? 'var(--down)' : 'var(--warn)',    // amber = armed, red = caught
+      lamp: sprung ? 'down' : recent ? 'warn' : 'on',
     });
 
-    const last = (d.recent || [])[0];
     const foot = document.getElementById('hp-foot');
-    if (foot) foot.textContent = d.last_age == null
-      ? 'weeny · 192.168.1.5 · quiet for 24h'
-      : `weeny · 192.168.1.5 · last hit ${relTime(d.last_age)}`;
+    if (foot) foot.textContent = 'weeny · 192.168.1.5 · decoy NAS';
 
-    const svc = d.by_service || {};
-    const svcStr = Object.keys(svc).length
-      ? Object.entries(svc).map(([k, v]) => `${esc(k)} ${v}`).join(' · ') : 'none';
+    const last = (d.recent || [])[0];
+    const said = cred ? `${esc(cred.user || '∅')} / ${esc(cred.pw || '∅')}` : null;
 
     const box = document.getElementById('hp-panels');
     if (box) box.innerHTML =
-      subPanel('Last probe',
-        last ? esc(last.src) : 'None',
-        last ? esc(last.label) : 'nothing in 24h', last ? (crit ? 'down' : 'warn') : 'on') +
-      subPanel('Credentials tried', d.logins_24h || 'None',
-        last && last.login && last.user ? `${esc(last.user)} / ${esc(last.pw)}` : 'no logins',
-        d.logins_24h ? 'down' : 'on') +
-      subPanel('Sources', d.sources_24h || 'None',
-        (d.top_sources || []).map(s => esc(s.ip)).join(', ') || 'no probes',
-        d.sources_24h ? 'warn' : 'on') +
-      subPanel('Services', svcStr, 'ports touched', 'on');
+      subPanel('Last hit',
+        last ? esc(last.src) : 'Quiet',
+        last ? `${last.login ? 'tried' : 'knocked on'} ${esc(last.service)} · ${relTime(d.last_age)}`
+             : 'clear for 24h',
+        last ? (sprung ? 'down' : recent ? 'warn' : 'on') : 'on') +
+      subPanel('Credentials',
+        said || '—',
+        said ? 'thrown at the login' : (d.logins_24h ? `${d.logins_24h} tried, none captured` : 'none tried'),
+        said ? 'down' : 'on') +
+      subPanel('Sources',
+        d.sources_24h || '0',
+        (d.top_sources || []).map(s => esc(s.ip)).join(', ') || 'no one yet',
+        d.sources_24h ? 'warn' : 'on');
   });
 
   const steve = () => poll('steve', '/api/steve', d => {
