@@ -1422,6 +1422,7 @@ ROUTES_GET = {
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
     '/is-it-broken':         _page('is-it-broken.html'),
+    '/honeypot':             _page('honeypot.html'),
 
     # Static assets
     '/vis-network.min.js':   _absfile(STATIC / 'vis-network.min.js', 'application/javascript'),

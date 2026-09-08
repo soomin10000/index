@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Honeypot</title>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --honey: #e0a44a;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4); flex-shrink: 0;
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 820px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  .card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1.2rem 1.4rem; }
+
+  .advisory {
+    font-family: var(--font-mono); font-size: 0.7rem; color: var(--warn);
+    margin-bottom: 1.2rem;
+  }
+  .advisory.breach { color: var(--down); }
+
+  /* headline strip */
+  .verdict { display: flex; align-items: baseline; gap: 0.8rem; flex-wrap: wrap; }
+  .verdict .big { font-size: 2.4rem; font-weight: 700; line-height: 1; }
+  .verdict .big.hot { color: var(--down); }
+  .verdict .sub { font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-dim); }
+
+  /* stat row */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-top: 1.1rem; }
+  .stat { background: var(--inset); border: 1px solid var(--bezel); border-radius: 5px; padding: 0.7rem 0.8rem; text-align: center; }
+  .stat .n { font-size: 1.4rem; font-weight: 700; font-family: var(--font-mono); }
+  .stat .l { font-size: 0.58rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-top: 0.2rem; }
+  .stat.hot .n { color: var(--down); }
+
+  /* by-service + sources bars */
+  .bars { font-family: var(--font-mono); font-size: 0.78rem; }
+  .bars .bar {
+    display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: center; gap: 0.7rem;
+    padding: 0.45rem 0; border-bottom: 1px solid var(--inset);
+  }
+  .bars .bar:last-child { border-bottom: none; }
+  .bars .k { color: var(--ink); text-transform: capitalize; }
+  .bars .track { height: 7px; border-radius: 4px; background: #2f3134; overflow: hidden; }
+  .bars .fill { height: 100%; background: var(--honey); }
+  .bars .v { color: var(--ink-dim); min-width: 1.6rem; text-align: right; }
+  .bars.src .k { text-transform: none; }
+
+  /* recent events */
+  .events { display: flex; flex-direction: column; gap: 0.6rem; }
+  .ev {
+    background: var(--inset); border: 1px solid var(--bezel); border-left: 3px solid var(--bezel-lit);
+    border-radius: 5px; padding: 0.6rem 0.85rem;
+  }
+  .ev.login { border-left-color: var(--down); }
+  .ev-top { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .ev-time { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); }
+  .ev-badge {
+    font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 0.1rem 0.4rem; border-radius: 3px; background: #33363a; color: var(--ink-dim);
+  }
+  .ev.login .ev-badge { background: color-mix(in srgb, var(--down) 30%, #33363a); color: #f0d6d2; }
+  .ev-label { font-size: 0.9rem; }
+  .ev-meta { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); margin-top: 0.35rem; word-break: break-word; }
+  .ev-meta .cred { color: var(--honey); }
+
+  .empty { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-faint); }
+
+  footer.updated {
+    max-width: 820px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+  <script src="/auth.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">HONEYPOT</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <div class="advisory" id="advisory" style="display:none"></div>
+
+  <section>
+    <div class="eyebrow">Last 24 hours</div>
+    <div class="card">
+      <div class="verdict">
+        <span class="big" id="v-big">—</span>
+        <span class="sub" id="v-sub"></span>
+      </div>
+      <div class="stats">
+        <div class="stat" id="s-attempts"><div class="n">—</div><div class="l">Attempts</div></div>
+        <div class="stat" id="s-logins"><div class="n">—</div><div class="l">Login tries</div></div>
+        <div class="stat" id="s-sources"><div class="n">—</div><div class="l">Sources</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">By service</div>
+    <div class="card"><div class="bars" id="by-service"><div class="empty">—</div></div></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Top sources</div>
+    <div class="card"><div class="bars src" id="top-sources"><div class="empty">—</div></div></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Recent hits</div>
+    <div class="card"><div class="events" id="events"><div class="empty">—</div></div></div>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  const SVC_ICON = { ftp: '📁', http: '🌐', ssh: '🔑', telnet: '💻' };
+
+  function fmtAge(secs) {
+    if (secs == null) return '';
+    const s = Math.max(0, Math.round(secs));
+    if (s < 60) return s + 's ago';
+    if (s < 3600) return Math.round(s / 60) + 'm ago';
+    if (s < 86400) return Math.round(s / 3600) + 'h ago';
+    return Math.round(s / 86400) + 'd ago';
+  }
+
+  function fmtClock(ts) {
+    return new Date(ts * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function setStatus(cls, text) {
+    document.getElementById('status-lamp').className = 'lamp ' + cls;
+    document.getElementById('status-text').textContent = text;
+  }
+
+  function renderBars(el, entries, opts) {
+    if (!entries.length) { el.innerHTML = '<div class="empty">Nothing in the last 24 h</div>'; return; }
+    const max = Math.max(...entries.map(e => e[1]));
+    el.innerHTML = entries.map(([k, v]) => `
+      <div class="bar">
+        <span class="k">${opts.icon ? (SVC_ICON[k] || '•') + ' ' : ''}${esc(k)}</span>
+        <span class="track"><span class="fill" style="width:${max ? Math.round(v / max * 100) : 0}%"></span></span>
+        <span class="v">${v}</span>
+      </div>`).join('');
+  }
+
+  function renderEvents(list) {
+    const el = document.getElementById('events');
+    if (!list || !list.length) { el.innerHTML = '<div class="empty">No probes recorded in the last 24 h</div>'; return; }
+    el.innerHTML = list.map(e => {
+      const bits = [`from ${esc(e.src)}${e.port ? ':' + esc(e.port) : ''}`];
+      if (e.user || e.pw) bits.push(`<span class="cred">${esc(e.user || '∅')} / ${esc(e.pw || '∅')}</span>`);
+      if (e.ua) bits.push(esc(e.ua));
+      return `
+      <div class="ev ${e.login ? 'login' : ''}">
+        <div class="ev-top">
+          <span class="ev-time">${fmtClock(e.ts)}</span>
+          <span class="ev-badge">${esc(e.service)}</span>
+          <span class="ev-label">${esc(e.label)}</span>
+        </div>
+        <div class="ev-meta">${bits.join(' · ')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function render(d) {
+    const adv = document.getElementById('advisory');
+
+    if (d.error) {
+      setStatus('down', 'LOG UNREADABLE');
+      adv.style.display = ''; adv.className = 'advisory breach';
+      adv.textContent = '⚠ ' + d.error;
+      document.getElementById('v-big').textContent = '—';
+      document.getElementById('v-big').className = 'big';
+      document.getElementById('v-sub').textContent = 'poller on steve could not reach weeny';
+      for (const id of ['s-attempts', 's-logins', 's-sources']) {
+        document.getElementById(id).querySelector('.n').textContent = '—';
+      }
+      renderBars(document.getElementById('by-service'), [], { icon: true });
+      renderBars(document.getElementById('top-sources'), [], {});
+      renderEvents([]);
+      document.getElementById('updated').textContent = 'weeny · 192.168.1.5 · opencanary cheap-NAS persona';
+      return;
+    }
+
+    const alert = (d.alerts || [])[0];
+    const crit = alert && alert.severity === 'critical';
+    if (crit)          setStatus('down', 'LOGIN HIT');
+    else if (alert)    setStatus('warn', 'PROBED');
+    else              setStatus('on', 'QUIET');
+
+    // advisories: breach first, then staleness
+    if (alert) {
+      adv.style.display = ''; adv.className = 'advisory' + (crit ? ' breach' : '');
+      adv.textContent = (crit ? '🚨 ' : '⚠ ') + alert.detail;
+    } else if (d._stale) {
+      adv.style.display = ''; adv.className = 'advisory';
+      adv.textContent = '⚠ Poller on steve hasn’t refreshed for ' + fmtAge(d._age_s) + ' — figures below may be stale.';
+    } else {
+      adv.style.display = 'none';
+    }
+
+    const n = d.attempts_24h || 0;
+    const big = document.getElementById('v-big');
+    big.textContent = n;
+    big.className = 'big' + (crit ? ' hot' : '');
+    document.getElementById('v-sub').textContent = n === 0
+      ? 'quiet for 24 h — no legitimate traffic ever reaches this address'
+      : (d.last_age != null ? 'last hit ' + fmtAge(d.last_age) : '');
+
+    const stat = (id, val, hot) => {
+      const s = document.getElementById(id);
+      s.querySelector('.n').textContent = val;
+      s.classList.toggle('hot', !!hot);
+    };
+    stat('s-attempts', n, false);
+    stat('s-logins', d.logins_24h || 0, (d.logins_24h || 0) > 0);
+    stat('s-sources', d.sources_24h || 0, false);
+
+    renderBars(document.getElementById('by-service'),
+      Object.entries(d.by_service || {}).sort((a, b) => b[1] - a[1]), { icon: true });
+    renderBars(document.getElementById('top-sources'),
+      (d.top_sources || []).map(s => [s.ip, s.n]), {});
+    renderEvents(d.recent);
+
+    const t = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('en-GB') : '—';
+    document.getElementById('updated').textContent =
+      'weeny · 192.168.1.5 · opencanary cheap-NAS persona · updated ' + t;
+  }
+
+  async function load() {
+    try {
+      const r = await fetch('/api/honeypot');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      render(await r.json());
+    } catch (e) {
+      setStatus('down', 'OFFLINE');
+      const adv = document.getElementById('advisory');
+      adv.style.display = ''; adv.className = 'advisory breach';
+      adv.textContent = '⚠ status page can’t reach the dashboard API';
+    }
+  }
+
+  load();
+  setInterval(load, 15000);
+</script>
+</body>
+</html>
