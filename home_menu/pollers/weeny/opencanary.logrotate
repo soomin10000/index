@@ -1,0 +1,22 @@
+# weeny -- rotate the OpenCanary hit log.
+# Deploy: sudo install -m0644 opencanary.logrotate /etc/logrotate.d/opencanary
+#
+# Attacker-controlled volume: a scanner hammering the honeypot can write this
+# fast, and it's an SD card. `maxsize` caps a bad day; `rotate 14` keeps a
+# fortnight. The steve collector tails it over SSH as `simon`, who is in the
+# `canary` group -- hence 0640 (group-readable), not 0600.
+#
+# opencanary logs via logging.handlers.WatchedFileHandler, which reopens the
+# file when logrotate renames it -- so no `copytruncate`, no postrotate needed.
+
+/var/log/opencanary/opencanary.log {
+    daily
+    maxsize 20M
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    su canary canary
+    create 0640 canary canary
+}

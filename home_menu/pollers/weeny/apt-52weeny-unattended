@@ -1,0 +1,20 @@
+// weeny -- unattended-upgrades: Debian security pocket ONLY, never auto-reboot.
+// Deploy: sudo install -m0644 apt-52weeny-unattended \
+//             /etc/apt/apt.conf.d/52weeny-unattended-upgrades
+//
+// A headless box we rarely touch, so security patches should land on their own
+// -- but NOT feature updates (could drift the persona) and NOT reboots (a reboot
+// is the exact event that has bitten us; keep it a deliberate act).
+// `#clear` drops the packaged default list so only these origins apply.
+// archive.raspberrypi.com (kernel/firmware) stays manual on purpose.
+
+#clear "Unattended-Upgrade::Origins-Pattern";
+Unattended-Upgrade::Origins-Pattern {
+    "origin=Debian,codename=${distro_codename},label=Debian-Security";
+    "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
+
+Unattended-Upgrade::Automatic-Reboot "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::SyslogEnable "true";

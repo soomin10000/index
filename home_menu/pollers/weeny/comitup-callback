@@ -1,0 +1,33 @@
+#!/bin/bash
+# weeny -- comitup external_callback.
+# Deploy: sudo install -m0755 comitup-callback /usr/local/bin/comitup-callback
+#
+# comitup runs this (as root) on every state transition, passing one of:
+#   HOTSPOT | CONNECTING | CONNECTED
+#
+# Why: comitup-web binds 0.0.0.0:80 for its captive portal. Linux refuses a
+# wildcard bind on a port already held by a specific-address listener, and
+# OpenCanary holds 192.168.1.5:80. So while comitup is serving the portal
+# (HOTSPOT) the honeypot must be down; once back on a real network (CONNECTED)
+# it comes back. The flag file also gates opencanary.service directly via
+# ConditionPathExists=!/run/comitup-hotspot, so a race on boot can't start the
+# honeypot underneath the portal.
+#
+# /run is tmpfs -> the flag never survives a reboot. An explicit `systemctl
+# stop` does not trip opencanary's Restart=always (clean stop suppresses it).
+
+FLAG=/run/comitup-hotspot
+
+case "$1" in
+    HOTSPOT)
+        touch "$FLAG"
+        systemctl stop opencanary.service
+        ;;
+    CONNECTED)
+        rm -f "$FLAG"
+        systemctl start opencanary.service
+        ;;
+esac
+
+logger -t comitup-callback "state=$1"
+exit 0

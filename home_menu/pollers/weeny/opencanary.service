@@ -1,0 +1,43 @@
+# weeny -- OpenCanary honeypot (cheap-NAS persona, binds 192.168.1.5 only).
+# Deploy: sudo install -m0644 opencanary.service /etc/systemd/system/opencanary.service
+#         sudo systemctl daemon-reload && sudo systemctl enable --now opencanary
+#
+# This carries NO secret (it's the reason for the `!...opencanary.service` line
+# in the repo .gitignore). The persona lives in /etc/opencanaryd/opencanary.conf.
+#
+# Enabled in its own right -- do NOT let comitup own its lifecycle via
+# `web_service:` (that silently disabled this unit's enablement last time and
+# tied the honeypot's uptime to comitup's health). comitup instead drops
+# /run/comitup-hotspot via its external_callback while it needs 0.0.0.0:80 for
+# the captive portal, and the ConditionPathExists below keeps us out of its way.
+
+[Unit]
+Description=OpenCanary honeypot (weeny, cheap-NAS persona on 192.168.1.5)
+After=network-online.target nftables.service
+Wants=network-online.target
+ConditionPathExists=!/run/comitup-hotspot
+# A hotspot-mode start failure is expected and self-clears -- don't rate-limit.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=canary
+Group=canary
+WorkingDirectory=/var/lib/opencanary
+Environment=HOME=/var/lib/opencanary
+# opencanaryd --start/--dev wrap `sudo -E twistd ...` and assume cwd-relative
+# paths -- unusable as User=canary. Call twistd directly against the .tac.
+ExecStart=/opt/opencanary/bin/twistd --nodaemon --pidfile= --python /opt/opencanary/bin/opencanary.tac
+Restart=always
+RestartSec=30
+# Bind :21/:22/:23/:80 as a non-root user.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/log/opencanary /var/lib/opencanary
+
+[Install]
+WantedBy=multi-user.target

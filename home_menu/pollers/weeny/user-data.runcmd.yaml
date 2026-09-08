@@ -1,0 +1,21 @@
+# weeny -- the cloud-init first-boot hook.
+#
+# The Trixie Lite image is init_format "cloudinit-rpi": Raspberry Pi Imager
+# writes `user-data`, `network-config` and `meta-data` to the FAT boot partition.
+# Imager's `user-data` already contains a `runcmd:` list (it has at least
+# `- [ systemctl, enable, --now, ssh ]`). Add the ONE line below to the END of
+# that SAME list -- do NOT add a second top-level `runcmd:` key, that silently
+# replaces Imager's list and the SSH-enable with it.
+#
+# Result should look like:
+#
+#   runcmd:
+#     - [ systemctl, enable, --now, ssh ]          # Imager's line -- leave it
+#     - [ bash, /boot/firmware/weeny/provision.sh ] # <-- add this
+#
+# provision.sh runs as root in cloud-init's final stage (after
+# network-online.target). It does its own LAN + NTP wait, logs everything to
+# /boot/firmware/weeny/provision.log (readable on the Mac even if Wi-Fi never
+# comes up), and is idempotent -- safe to re-run over SSH with --force.
+
+  - [ bash, /boot/firmware/weeny/provision.sh ]

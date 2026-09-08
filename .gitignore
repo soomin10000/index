@@ -15,9 +15,13 @@ moisture.db
 moisture_alert_state.json
 
 # systemd units are installed copies; unifi-poller.service carries an API key
-# and this repo is PUBLIC, so ignore them all — except the secret-free menu unit.
+# and this repo is PUBLIC, so ignore them all — except the secret-free ones.
 *.service
 !home_menu/home-menu.service
+!home_menu/pollers/weeny/opencanary.service
+
+# weeny provisioning secret (Wi-Fi/hotspot key) — lives only on the SD card
+home_menu/pollers/weeny/secrets.env
 
 # scratch / one-off analysis files
 handoff.md

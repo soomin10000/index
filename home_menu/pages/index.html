@@ -540,6 +540,16 @@
         <div class="c-foot">kismet · wlx00c0cabaea2c</div>
       </a>
 
+      <a class="card is-loading span-row" id="c-honeypot" style="--a:#ef5350">
+        <div class="tape">Deception</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🍯</span><span class="c-name">Honeypot</span></div>
+        <div class="strip-row">
+          <div class="c-metric strip-verdict"><span class="c-val" id="hp-val">—</span><span class="c-unit" id="hp-unit"> attempts</span></div>
+          <div class="subpanels" id="hp-panels"></div>
+        </div>
+        <div class="c-foot" id="hp-foot">weeny · 192.168.1.5 · opencanary</div>
+      </a>
+
     </div>
   </section>
 
@@ -955,6 +965,43 @@
         'kismet uptime', 'on');
   });
 
+  // Honeypot: every field under `recent` is typed by whoever probed the box, so
+  // esc() is load-bearing here, not decoration.
+  const honeypot = () => poll('honeypot', '/api/honeypot', d => {
+    if (d.error) { setCard('honeypot', { val: 'No data', unit: '' }, true); return; }
+    const n = d.attempts_24h || 0;
+    const crit = (d.alerts || []).some(a => a.severity === 'critical');
+    const warn = (d.alerts || []).length > 0;
+    const accent = crit ? 'var(--down)' : warn ? 'var(--warn)' : '#ef5350';
+    setCard('honeypot', {
+      val: n, unit: n === 1 ? ' attempt' : ' attempts',
+      accent, lamp: crit ? 'down' : warn ? 'warn' : 'on',
+    });
+
+    const last = (d.recent || [])[0];
+    const foot = document.getElementById('hp-foot');
+    if (foot) foot.textContent = d.last_age == null
+      ? 'weeny · 192.168.1.5 · quiet for 24h'
+      : `weeny · 192.168.1.5 · last hit ${relTime(d.last_age)}`;
+
+    const svc = d.by_service || {};
+    const svcStr = Object.keys(svc).length
+      ? Object.entries(svc).map(([k, v]) => `${esc(k)} ${v}`).join(' · ') : 'none';
+
+    const box = document.getElementById('hp-panels');
+    if (box) box.innerHTML =
+      subPanel('Last probe',
+        last ? esc(last.src) : 'None',
+        last ? esc(last.label) : 'nothing in 24h', last ? (crit ? 'down' : 'warn') : 'on') +
+      subPanel('Credentials tried', d.logins_24h || 'None',
+        last && last.login && last.user ? `${esc(last.user)} / ${esc(last.pw)}` : 'no logins',
+        d.logins_24h ? 'down' : 'on') +
+      subPanel('Sources', d.sources_24h || 'None',
+        (d.top_sources || []).map(s => esc(s.ip)).join(', ') || 'no probes',
+        d.sources_24h ? 'warn' : 'on') +
+      subPanel('Services', svcStr, 'ports touched', 'on');
+  });
+
   const steve = () => poll('steve', '/api/steve', d => {
     if (d.error) { setCard('steve', { val: '?', unit: '' }, true); return; }
     const down = (d.services || []).filter(s => s.active !== 'active');
@@ -1240,7 +1287,7 @@
   function refresh() {
     harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
     steve(); wacky(); jeff(); bazza(); atlas(); uplink(); plants(); smoke();
-    eufy(); arr(); isItBroken(); hostTraces();
+    eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then summarise
     setTimeout(() => { updateRollup(); updateBandCounts(); }, 1200);
     setTimeout(() => { updateRollup(); updateBandCounts(); }, 4200);

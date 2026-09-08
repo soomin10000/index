@@ -1444,6 +1444,7 @@ ROUTES_GET = {
     '/api/jeff':             _jsonfile(JEFF_JSON),
     '/api/bazza':            _jsonfile(BAZZA_JSON),
     '/api/vpn':              _jsonfile(VPN_JSON),
+    '/api/honeypot':         _jsonfile(DATA / 'honeypot.json', max_age=1800),  # poller runs */10
     '/api/arr':              _jsonfile(ARR_JSON),
     '/api/eufy':             _jsonfile(EUFY_JSON),
     '/api/eufy/vacuum':      _jsonfile(EUFY_VACUUM_JSON),

@@ -1,0 +1,6 @@
+// weeny -- enable periodic apt update + unattended-upgrade.
+// Deploy: sudo install -m0644 apt-20auto-upgrades \
+//             /etc/apt/apt.conf.d/20auto-upgrades
+// Pairs with 52weeny-unattended-upgrades (security pocket only, no auto-reboot).
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
