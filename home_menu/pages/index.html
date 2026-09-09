@@ -582,6 +582,14 @@
         <div class="c-foot">plex box · :8888 · 300 s step</div>
       </a>
 
+      <a class="card is-loading" id="c-v6health" style="--a:#5b8def" href="/v6health">
+        <div class="tape">IPv6</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🧭</span><span class="c-name">IPv6 Path</span></div>
+        <div class="c-metric"><span class="c-val" id="v6-val">—</span><span class="c-unit" id="v6-unit"></span></div>
+        <div class="c-sub" id="v6-sub"></div>
+        <div class="c-foot">bazza + steve · icmp + dns · 5 min</div>
+      </a>
+
       <a class="card is-loading span-row" id="c-wireless" style="--a:#a78bfa" href="/kismet">
         <div class="tape">RF Recon</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">Wireless</span></div>
@@ -1211,6 +1219,25 @@
     });
   }, 'No data');
 
+  const v6health = () => poll('v6health', '/api/v6health', d => {
+    if (!d.targets && d.error) { setCard('v6health', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    registerAlerts('c-v6health', alerts);
+    const crit = alerts.some(a => a.level === 'critical');
+    const lamp = crit ? 'down' : alerts.length ? 'warn' : 'on';
+    const accent = crit ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#5b8def';
+    const V6 = ['gw_v6', 'cf_v6', 'goog_v6', 'quad9_v6', 'root_v6'];
+    const v6fail = V6.reduce((n, k) => n + ((d.targets?.[k]?.fail_events) || 0), 0);
+    const sub = alerts.length
+      ? `${dot('dot-red')}${esc(alerts[0].header)} · ${esc(alerts[0].text || '')}`
+      : `${dot('dot-on')}${esc(d.verdict || 'no v6 loss in 24h')}`;
+    setCard('v6health', {
+      val: alerts.length ? alerts.length : (v6fail || 'OK'),
+      unit: alerts.length ? ' alerts' : (v6fail ? ' fails/24h' : ''),
+      sub, accent, lamp,
+    });
+  }, 'No data');
+
   const eufy = () => poll('eufy', '/api/eufy', d => {
     const events = d.events || [];
     if (!events.length) { setCard('eufy', { val: '0', unit: ' today', sub: `${dot('dot-off')}No events yet`, lamp: 'on' }); return; }
@@ -1505,7 +1532,7 @@
   function refresh() {
     harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
     steve(); wacky(); jeff(); bazza(); atlas(); uplink(); plants(); smoke();
-    eufy(); arr(); isItBroken(); honeypot(); hostTraces();
+    v6health(); eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then pull acks + summarise (syncAlerts
     // repaints the tray and calls updateRollup / updateBandCounts itself)
     setTimeout(syncAlerts, 1200);

@@ -307,6 +307,7 @@ BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
+V6HEALTH_JSON = DATA / 'v6health.json'
 ALERT_ACKS_JSON = DATA / 'alert_acks.json'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
@@ -1511,6 +1512,7 @@ ROUTES_GET = {
     '/uplink':               _page('uplink.html'),
     '/moisture':             _page('moisture.html'),
     '/smokeping':            _page('smokeping.html'),
+    '/v6health':             _page('v6health.html'),
     '/steve':                _page('steve.html'),
     '/wacky':                _page('wacky.html'),
     '/jeff':                 _page('jeff.html'),
@@ -1537,6 +1539,7 @@ ROUTES_GET = {
     '/api/uplink':           _jsonfile(DATA / 'uplink.json', max_age=2400),  # poller runs */15
     '/api/smokeping':        _jsonfn(_smokeping_status),
     '/api/smokeping/rrd':    _absfile(DATA / 'smokeping_rrd.json', 'application/json'),
+    '/api/v6health':         _jsonfile(V6HEALTH_JSON, max_age=1500),  # poller runs */5
     '/api/steve':            _jsonfile(STEVE_JSON),
     '/api/wacky':            _jsonfile(WACKY_JSON),
     '/api/jeff':             _jsonfile(JEFF_JSON),
