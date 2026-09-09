@@ -7,86 +7,151 @@
   <script src="/chart.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #020a18; --card: rgba(6,18,36,0.92); --edge: #0d2c44;
+      --ink: #d6e8f2; --dim: #8fb4c8; --mute: #5f8aa6; --faint: #3f5f74;
+      --ok: #2fd39a; --warn: #ffb02e; --bad: #ff5d5d; --info: #5b9dff;
+      --bazza: #63b463; --steve: #e0975a; --isp: #f0a02e; --ww: #5b9dff;
+    }
     body {
-      background: #020a18;
-      font-family: 'DejaVu Sans Mono', 'Courier New', monospace;
-      color: #4a8aaa; min-height: 100vh;
+      background: var(--bg); color: var(--dim); min-height: 100vh;
+      font-family: ui-monospace, 'DejaVu Sans Mono', 'Courier New', monospace;
+      font-size: 13.5px; line-height: 1.5;
     }
     body::after {
       content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 100;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+      background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 4px);
     }
+    .sans { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+
     nav {
-      display: flex; align-items: center; gap: 1rem; padding: 0.55rem 1.2rem;
-      border-bottom: 1px solid #041828; background: rgba(2,10,24,0.95);
+      display: flex; align-items: center; gap: 1.1rem; padding: 0.6rem 1.3rem;
+      border-bottom: 1px solid var(--edge); background: rgba(2,10,24,0.96);
       backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 50;
     }
-    nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
-    nav a:hover { color: #00ffcc; }
-    .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #5a8fb8; }
-    #status { margin-left: auto; font-size: 0.62rem; color: #5a8fb8; letter-spacing: 0.08em; }
+    nav a { color: var(--mute); font-size: 0.72rem; text-decoration: none; letter-spacing: 0.1em; transition: color .15s; }
+    nav a:hover { color: var(--ok); }
+    nav .brand { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.22em; color: var(--dim); }
+    nav #status { margin-left: auto; font-size: 0.68rem; color: var(--mute); letter-spacing: 0.06em; }
 
-    .page { max-width: 1180px; margin: 0 auto; padding: 1.4rem 1.4rem 3rem; }
+    .page { max-width: 1080px; margin: 0 auto; padding: 1.6rem 1.3rem 4rem; }
+    .row { display: flex; gap: 0.9rem; flex-wrap: wrap; }
 
-    .verdict {
-      border: 1px solid #0a2a40; border-left: 3px solid #5b8def; border-radius: 12px;
-      background: rgba(4,14,30,0.9); padding: 0.95rem 1.2rem; margin-bottom: 1.2rem;
-      font-size: 0.82rem; color: #cde3f0; line-height: 1.5;
+    h2 {
+      font-size: 0.74rem; letter-spacing: 0.16em; color: var(--mute); font-weight: 400;
+      text-transform: uppercase; margin: 2.4rem 0 0.9rem;
+      padding-bottom: 0.4rem; border-bottom: 1px solid var(--edge);
+      display: flex; justify-content: space-between; align-items: baseline;
     }
-    .verdict.warn { border-left-color: #ffaa00; }
-    .verdict.down { border-left-color: #ff4444; color: #f8b4b4; }
+    h2:first-of-type { margin-top: 1.4rem; }
+    h2 .note { font-size: 0.66rem; letter-spacing: 0.05em; color: var(--faint); text-transform: none; }
 
-    .grid { display: grid; gap: 0.9rem; }
-    .g2 { grid-template-columns: repeat(2, 1fr); }
-    .g3 { grid-template-columns: repeat(3, 1fr); }
-    @media (max-width: 760px) { .g2, .g3 { grid-template-columns: 1fr; } }
-
-    .card {
-      background: rgba(4,14,30,0.9); border: 1px solid #0a2a40;
-      border-radius: 12px; padding: 1rem 1.1rem;
+    /* ── hero status ─────────────────────────────────────────── */
+    .hero {
+      border: 1px solid var(--edge); border-radius: 14px; background: var(--card);
+      padding: 1.2rem 1.4rem; display: flex; gap: 1.1rem; align-items: flex-start;
     }
-    .card h3 {
-      font-size: 0.58rem; letter-spacing: 0.14em; color: #5a8fb8;
-      margin-bottom: 0.5rem; font-weight: normal; text-transform: uppercase;
+    .hero .lamp {
+      width: 15px; height: 15px; border-radius: 50%; margin-top: 0.45rem; flex-shrink: 0;
+      background: var(--ok); box-shadow: 0 0 0 5px rgba(47,211,154,0.14);
     }
-    .big { font-size: 1.7rem; font-weight: bold; letter-spacing: -0.5px; color: #cde3f0; }
-    .kv { font-size: 0.68rem; color: #6a9ab8; line-height: 1.7; margin-top: 0.35rem; }
-    .kv b { color: #9ec7dd; font-weight: normal; }
-    .c-green { color: #00cc88; } .c-red { color: #ff5555; } .c-amber { color: #ffaa00; }
-
-    .section-title {
-      font-size: 0.62rem; letter-spacing: 0.2em; color: #5a8fb8;
-      margin: 1.8rem 0 0.6rem; text-transform: uppercase;
+    .hero.warn .lamp { background: var(--warn); box-shadow: 0 0 0 5px rgba(255,176,46,0.15); }
+    .hero.bad  .lamp { background: var(--bad);  box-shadow: 0 0 0 5px rgba(255,93,93,0.16); }
+    .hero .headline { font-size: 1.35rem; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
+    .hero.warn .headline { color: #ffd489; }
+    .hero.bad  .headline { color: #ffb3b3; }
+    .hero .say { margin-top: 0.3rem; font-size: 0.86rem; color: var(--dim); }
+    .hero .alerts { margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.4rem; }
+    .hero .al {
+      font-size: 0.78rem; padding: 0.4rem 0.7rem; border-radius: 8px;
+      border-left: 3px solid var(--warn); background: rgba(255,176,46,0.08); color: #ffd489;
     }
-    .section-sub { font-size: 0.66rem; color: #3a5a70; margin: -0.35rem 0 0.7rem; line-height: 1.5; }
+    .hero .al.crit { border-left-color: var(--bad); background: rgba(255,93,93,0.09); color: #ffb3b3; }
+    .hero .al b { font-weight: 700; }
 
-    .chart-card { background: rgba(4,14,30,0.9); border: 1px solid #0a2a40; border-radius: 12px; padding: 0.7rem 0.8rem 0.5rem; }
-    .chart-card .ct { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.25rem; }
-    .chart-card .nm { font-size: 0.66rem; letter-spacing: 0.1em; color: #9ec7dd; }
-    .chart-card .mt { font-size: 0.58rem; color: #5a8fb8; }
-    .chart-wrap { position: relative; height: 120px; }
-    .chart-wrap.tall { height: 150px; }
+    /* ── fault chain ─────────────────────────────────────────── */
+    .chain { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+    .seg {
+      flex: 1 1 0; min-width: 130px; border: 1px solid var(--edge); border-radius: 12px;
+      background: var(--card); padding: 0.75rem 0.85rem; position: relative;
+    }
+    .seg + .seg { margin-left: 26px; }
+    .seg + .seg::before {
+      content: '→'; position: absolute; left: -22px; top: 50%; transform: translateY(-50%);
+      color: var(--faint); font-size: 0.9rem;
+    }
+    .seg .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 0.45rem; background: var(--faint); }
+    .seg .nm { font-size: 0.78rem; color: var(--ink); }
+    .seg .mt { font-size: 0.66rem; color: var(--mute); margin-top: 0.25rem; }
+    .seg.ok    { border-color: rgba(47,211,154,0.4); }
+    .seg.ok    .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,211,154,0.15); }
+    .seg.warn  { border-color: rgba(255,176,46,0.45); background: rgba(255,176,46,0.05); }
+    .seg.warn  .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(255,176,46,0.15); }
+    .seg.fault { border-color: rgba(255,93,93,0.5); background: rgba(255,93,93,0.06); }
+    .seg.fault .dot { background: var(--bad); box-shadow: 0 0 0 3px rgba(255,93,93,0.18); }
+    .seg.none  { opacity: 0.65; }
+    .chain-say {
+      margin-top: 0.85rem; font-size: 0.82rem; color: var(--dim); padding: 0.55rem 0.2rem 0;
+    }
+    .chain-say b { color: var(--ink); }
+    .chain-say.fault b { color: #ffb3b3; }
+    .chain-in { margin-top: 0.35rem; font-size: 0.72rem; color: var(--mute); }
+    @media (max-width: 720px) {
+      .chain { flex-direction: column; }
+      .seg + .seg { margin-left: 0; margin-top: 20px; }
+      .seg + .seg::before { content: '↓'; left: 50%; top: -18px; transform: translateX(-50%); }
+    }
 
-    .legend { display: flex; gap: 1.1rem; font-size: 0.6rem; color: #5a8fb8; margin: 0.4rem 0 0.2rem; flex-wrap: wrap; }
-    .legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
-    .sw { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-    .sw.dot { width: 8px; height: 8px; border-radius: 50%; }
+    /* ── resolver panels ────────────────────────────────────── */
+    .panels { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.9rem; }
+    @media (max-width: 760px) { .panels { grid-template-columns: 1fr; } }
+    .panel { border: 1px solid var(--edge); border-radius: 12px; background: var(--card); padding: 0.85rem 0.95rem 0.6rem; }
+    .panel .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+    .panel .ph .pn { font-size: 0.82rem; color: var(--ink); letter-spacing: 0.03em; }
+    .panel .ph .ps { font-size: 0.68rem; }
+    .panel .plegend { font-size: 0.6rem; color: var(--mute); margin: 0.35rem 0 0.1rem; display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .panel .plegend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; vertical-align: middle; margin-right: 0.25rem; }
+    .panel .plegend i.d { width: 7px; height: 7px; border-radius: 50%; }
+    .chart-wrap { position: relative; height: 150px; margin-top: 0.3rem; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
-    .tbl-wrap { overflow-x: auto; border: 1px solid #0a2a40; border-radius: 12px; background: rgba(4,14,30,0.9); }
-    th { text-align: left; font-size: 0.56rem; letter-spacing: 0.14em; color: #5a8fb8; padding: 0.6rem 0.9rem; border-bottom: 1px solid #0a2a40; font-weight: normal; }
-    td { padding: 0.5rem 0.9rem; border-bottom: 1px solid #061c30; font-variant-numeric: tabular-nums; }
+    .pill { font-size: 0.62rem; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid currentColor; letter-spacing: 0.04em; }
+    .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .mute { color: var(--mute); }
+
+    /* ── stat strip ─────────────────────────────────────────── */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; }
+    .stat { border: 1px solid var(--edge); border-radius: 10px; background: var(--card); padding: 0.7rem 0.8rem; }
+    .stat .sl { font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); }
+    .stat .sv { font-size: 1.05rem; color: var(--ink); margin-top: 0.28rem; font-variant-numeric: tabular-nums; }
+    .stat .sx { font-size: 0.66rem; color: var(--faint); margin-top: 0.15rem; }
+
+    /* ── details / tables / logs ────────────────────────────── */
+    details { border: 1px solid var(--edge); border-radius: 10px; background: var(--card); margin-top: 0.7rem; }
+    details > summary {
+      cursor: pointer; list-style: none; padding: 0.7rem 0.95rem; font-size: 0.7rem;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '▸ '; color: var(--faint); }
+    details[open] > summary::before { content: '▾ '; }
+    details .body { padding: 0 0.95rem 0.95rem; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+    .tbl-wrap { overflow-x: auto; }
+    th { text-align: left; font-size: 0.58rem; letter-spacing: 0.12em; color: var(--mute); padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--edge); font-weight: 400; }
+    td { padding: 0.45rem 0.7rem; border-bottom: 1px solid #0a2236; font-variant-numeric: tabular-nums; }
     tr:last-child td { border-bottom: none; }
-    .tag { display: inline-block; padding: 0.08rem 0.5rem; border-radius: 999px; font-size: 0.56rem; letter-spacing: 0.08em; border: 1px solid currentColor; text-transform: uppercase; }
-    .tag.wide { color: #ff5555; } .tag.both { color: #ffaa00; } .tag.single { color: #5a9ab8; }
+    .tag { display: inline-block; padding: 0.06rem 0.45rem; border-radius: 999px; font-size: 0.58rem; letter-spacing: 0.06em; border: 1px solid currentColor; text-transform: uppercase; }
+    .tag.wide { color: var(--bad); } .tag.both { color: var(--warn); } .tag.single { color: var(--info); }
 
-    pre.detail {
-      background: #01060f; border: 1px solid #0a2a40; border-radius: 12px;
-      padding: 0.9rem 1rem; font-size: 0.64rem; color: #6a9ab8; line-height: 1.5;
-      overflow-x: auto; white-space: pre; max-height: 360px; overflow-y: auto;
+    pre.log {
+      background: #01060f; border: 1px solid var(--edge); border-radius: 8px; margin-top: 0.5rem;
+      padding: 0.8rem 0.9rem; font-size: 0.66rem; color: var(--dim); line-height: 1.5;
+      overflow: auto; white-space: pre; max-height: 340px;
     }
-    .err-banner { border: 1px solid #5a2a2a; background: rgba(58,26,26,0.4); color: #f87171; border-radius: 12px; padding: 0.9rem 1.2rem; font-size: 0.75rem; margin-bottom: 1.2rem; }
-    .foot { margin-top: 1.4rem; font-size: 0.62rem; color: #3a5a70; }
+    .kv { font-size: 0.72rem; color: var(--dim); line-height: 1.8; }
+    .kv b { color: var(--ink); font-weight: 400; }
+    .err-banner { border: 1px solid #5a2a2a; background: rgba(90,40,40,0.35); color: #f8a; border-radius: 10px; padding: 0.8rem 1.1rem; font-size: 0.78rem; margin-bottom: 1rem; }
+    .foot { margin-top: 2rem; font-size: 0.66rem; color: var(--faint); line-height: 1.7; }
   </style>
   <script src="/auth.js"></script>
 </head>
@@ -98,185 +163,356 @@
   <a href="/smokeping">SMOKEPING</a>
   <a href="/pihole">PI-HOLE</a>
   <a href="/bazza">BAZZA</a>
-  <span class="brand">&middot; IPv6 PATH &middot;</span>
-  <span id="status">LOADING...</span>
+  <span class="brand">IPv6 PATH</span>
+  <span id="status">LOADING…</span>
 </nav>
 
 <div class="page">
   <div id="banner"></div>
-  <div class="verdict" id="verdict">&hellip;</div>
 
-  <div class="section-title">PROBES</div>
-  <div class="section-sub">v6probe.sh runs on bazza and steve every 5 min — 10 ICMPv6 pings + a <code>. NS</code> DNS check to each target, a <code>. DNSKEY</code> fragmentation canary, plus the SLAAC address / default route / <code>Icmp6InDestUnreachs</code> counter each run.</div>
-  <div class="grid g2" id="hosts"></div>
-
-  <div class="section-title">IPv6 RESOLVERS &amp; FIRST HOP — 24H</div>
-  <div class="section-sub">Line = mean RTT per 15-min bucket (<span style="color:#6aab5b">bazza</span> / <span style="color:#b8875a">steve</span>); red dot = a bucket with ICMP loss or a DNS timeout. Flat and dot-free is healthy.</div>
-  <div class="legend">
-    <span><i class="sw" style="background:#6aab5b"></i> bazza RTT</span>
-    <span><i class="sw" style="background:#b8875a"></i> steve RTT</span>
-    <span><i class="sw dot" style="background:#ff5555"></i> loss / DNS fail in bucket</span>
-  </div>
-  <div class="grid g3" id="v6charts" style="margin-top:0.5rem"></div>
-
-  <div class="section-title">IPv4 CONTROLS — 24H</div>
-  <div class="section-sub">Same probes over IPv4. If a v6 target is lossy here <em>and</em> its v4 sibling is clean at the same time, the problem is IPv6-specific; if both break together it's the uplink.</div>
-  <div class="grid g3" id="v4charts" style="margin-top:0.5rem"></div>
-
-  <div class="section-title">STABILITY</div>
-  <div class="grid g3" id="stability"></div>
-
-  <div class="section-title">RECENT v6 FAILURE SAMPLES</div>
-  <div class="section-sub">Every 5-min run that saw v6 loss, a DNS timeout, a default-route flip or a prefix change — newest first. <span class="tag wide">uplink-wide</span> v4 broke too · <span class="tag both">both-hosts</span> bazza &amp; steve saw it · <span class="tag single">single-host</span> one box only.</div>
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr><th>TIME</th><th>HOST</th><th>TARGETS</th><th>SCOPE</th><th>KIND</th><th>NOTE</th></tr></thead>
-      <tbody id="events"><tr><td colspan="6" style="color:#3a5a70">no v6 failures recorded</td></tr></tbody>
-    </table>
+  <div class="hero" id="hero">
+    <div class="lamp"></div>
+    <div style="flex:1">
+      <div class="headline" id="headline">Checking…</div>
+      <div class="say sans" id="say">&hellip;</div>
+      <div class="alerts" id="hero-alerts"></div>
+    </div>
   </div>
 
-  <div class="section-title">FORENSIC LOG TAIL</div>
-  <div class="section-sub">Captured on each failure: <code>ip -6 route/neigh/addr</code>, a <code>tracepath -6</code> to the failed target, and the on-link RA dump (<code>rdisc6</code>) — for pinning ISP vs upstream vs local.</div>
-  <pre class="detail" id="detail">no captures yet</pre>
+  <h2>Where is the fault<span class="note sans">house probes vs RIPE&nbsp;Atlas — ISP peers &amp; worldwide</span></h2>
+  <div class="chain" id="chain"></div>
+  <div class="chain-say sans" id="chain-say">&hellip;</div>
+  <div class="chain-in sans" id="chain-in"></div>
 
-  <div class="foot" id="foot"></div>
+  <h2>Resolvers — last 24h<span class="note sans" id="panels-note"></span></h2>
+  <div class="panels" id="panels"></div>
+
+  <h2>Local health</h2>
+  <div class="stats" id="stats"></div>
+
+  <h2>Detail</h2>
+  <details id="d-events">
+    <summary>Recent v6 failure samples</summary>
+    <div class="body"><div class="tbl-wrap"><table>
+      <thead><tr><th>Time</th><th>Host</th><th>Targets</th><th>Scope</th><th>Kind</th><th>Note</th></tr></thead>
+      <tbody id="events"><tr><td colspan="6" class="mute">no v6 failures recorded in 24h</td></tr></tbody>
+    </table></div></div>
+  </details>
+  <details id="d-v4">
+    <summary>IPv4 controls — 24h</summary>
+    <div class="body">
+      <div class="kv" style="margin-bottom:.5rem">Same probes over IPv4. A v6 target lossy here while its v4 sibling is clean at the same time ⇒ IPv6-specific; both breaking together ⇒ the uplink.</div>
+      <div class="panels" id="v4panels"></div>
+    </div>
+  </details>
+  <details id="d-forensic">
+    <summary>Forensic captures (on failure)</summary>
+    <div class="body">
+      <div class="kv">Grabbed on every failing run: <code>ip -6 route/neigh/addr</code>, <code>tracepath -6</code> to the failed target, and the on-link RA dump (<code>rdisc6</code>).</div>
+      <pre class="log" id="detail">no captures yet</pre>
+    </div>
+  </details>
+  <details id="d-atlas-trace">
+    <summary>Atlas ISP-tier traceroutes</summary>
+    <div class="body"><pre class="log" id="atlas-trace">—</pre></div>
+  </details>
+  <details id="d-probes">
+    <summary>Probe internals</summary>
+    <div class="body"><div class="row" id="probe-internals"></div></div>
+  </details>
+
+  <div class="foot sans" id="foot"></div>
 </div>
 
 <script>
   const $ = s => document.querySelector(s);
-  const HCOL = { b: '#6aab5b', s: '#b8875a' };
   const charts = {};
-  let last = 0;
+  const C = { bazza: '#63b463', steve: '#e0975a', isp: '#f0a02e', ww: '#5b9dff',
+              loss: '#ff5d5d', ok: '#2fd39a', warn: '#ffb02e', bad: '#ff5d5d', grid: '#0c2438', tick: '#42627a' };
 
-  const relTime = s => s == null ? '—'
-    : s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + 'm ago'
-    : s < 172800 ? Math.round(s / 3600) + 'h ago' : Math.round(s / 86400) + 'd ago';
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const rel = s => s == null ? '—' : s < 90 ? 'just now' : s < 5400 ? Math.round(s / 60) + 'm ago'
+    : s < 172800 ? Math.round(s / 3600) + 'h ago' : Math.round(s / 86400) + 'd ago';
   const lft = s => !s ? 'forever' : s > 3600 ? (s / 3600).toFixed(1) + 'h' : Math.round(s / 60) + 'm';
+  const RES = [
+    ['gw_v6', 'Gateway (first hop)'], ['cf_v6', 'Cloudflare'], ['quad9_v6', 'Quad9'],
+    ['goog_v6', 'Google'], ['root_v6', 'k-root'],
+  ];
+  const V4 = [['gw_v4', 'Gateway v4'], ['cf_v4', 'Cloudflare v4'], ['goog_v4', 'Google v4']];
 
-  function hostTile(name, st) {
-    const age = st.age_s;
-    const cls = age == null || age > 1200 ? 'c-red' : age > 700 ? 'c-amber' : 'c-green';
-    return `<div class="card">
-      <h3>${esc(name)}</h3>
-      <div class="big ${cls}">${relTime(age)}</div>
-      <div class="kv">
-        <div>${st.samples_24h ?? 0} samples / 24h</div>
-        <div>gua <b>${esc(st.gua || '—')}</b></div>
-        <div>prefix lifetime <b>${lft(st.valid_lft)}</b></div>
-        <div>v6 gw <b>${esc(st.route6 || '—')}</b></div>
-        <div>NDP routers on link <b>${st.ra_routers ?? '—'}</b></div>
-      </div></div>`;
+  // ── hero ────────────────────────────────────────────────────
+  function hero(d) {
+    const al = d.alerts || [];
+    const crit = al.some(a => a.level === 'critical');
+    const cls = crit ? 'bad' : al.length ? 'warn' : '';
+    $('#hero').className = 'hero ' + cls;
+    $('#headline').textContent = crit ? 'IPv6 has a fault' : al.length ? 'IPv6 wobbling' : 'IPv6 healthy';
+    $('#say').textContent = d.verdict || '—';
+    $('#hero-alerts').innerHTML = al.map(a =>
+      `<div class="al ${a.level === 'critical' ? 'crit' : ''}"><b>${esc(a.header)}</b> — ${esc(a.text)}</div>`).join('');
   }
 
-  function miniChart(host, id, tgt) {
-    const wrap = document.createElement('div');
-    wrap.className = 'chart-card';
-    const worst = tgt.worst_loss > 0 ? `<span class="c-red">${tgt.worst_loss}% peak loss</span>`
-      : tgt.fail_events > 0 ? `<span class="c-amber">${tgt.fail_events} fails</span>`
-      : `<span class="c-green">clean</span>`;
-    wrap.innerHTML = `<div class="ct"><span class="nm">${esc(tgt.label)}</span>
-      <span class="mt">${tgt.avg_rtt != null ? tgt.avg_rtt + ' ms avg · ' : ''}${worst}</span></div>
-      <div class="chart-wrap"><canvas id="cv-${id}"></canvas></div>`;
-    host.appendChild(wrap);
+  // ── fault chain ─────────────────────────────────────────────
+  function chain(d) {
+    const now = d.ts;
+    const ev = (d.events || []).filter(e => e.t > now - 3600 && (e.targets || []).length);
+    const loc = d.localisation || {};
+    const locHas = v => Object.values(loc).some(x => x.verdict === v);
+    const ext = d.external && d.external.ok ? d.external : null;
+    const atlasMax = tier => {
+      if (!ext) return null;
+      let m = 0, seen = false;
+      for (const t of Object.values(ext.targets || {})) {
+        const s = t[tier]; if (s && s.probes) { seen = true; m = Math.max(m, s.worst_loss || 0); }
+      }
+      return seen ? m : null;
+    };
+    const band = (v, warnAt = 5, badAt = 20) => v == null ? 'none' : v >= badAt ? 'fault' : v >= warnAt ? 'warn' : 'ok';
+
+    // hosts segment
+    const hostStale = Object.values(d.hosts || {}).some(h => h.age_s == null || h.age_s > 1200);
+    const hostSeg = ev.length ? 'fault' : hostStale ? 'warn' : 'ok';
+    // line / CPE
+    const inb = ext && ext.inbound;
+    const inbBad = inb && inb.reached_pct != null && inb.rounds >= 3 && inb.reached_pct < 60;
+    const lineSeg = locHas('your-line') ? 'fault' : inbBad ? 'warn' : (ev.length && !ext ? 'warn' : 'ok');
+    // isp
+    const ispSeg = locHas('isp-network') ? 'fault' : band(atlasMax('isp'));
+    // internet / resolvers
+    const netSeg = locHas('resolver-or-internet') ? 'fault' : band(atlasMax('ww'));
+
+    const segs = [
+      [hostSeg, 'bazza · steve', 'our two probes'],
+      [lineSeg, 'Our line / CPE', 'UCG-Max · fibre drop'],
+      [ispSeg, 'Community Fibre', 'ISP · AS' + ((ext && ext.isp_asn) || '201838')],
+      [netSeg, 'v6 internet / resolvers', 'Cloudflare · Quad9 · roots'],
+    ];
+    $('#chain').innerHTML = segs.map(([st, nm, mt]) =>
+      `<div class="seg ${st}"><div><span class="dot"></span><span class="nm">${nm}</span></div><div class="mt">${mt}</div></div>`).join('');
+
+    // caption
+    const order = ['bazza · steve', 'Our line / CPE', 'Community Fibre', 'v6 internet / resolvers'];
+    const faultIdx = segs.findIndex(s => s[0] === 'fault');
+    const warnIdx = segs.findIndex(s => s[0] === 'warn');
+    const say = $('#chain-say');
+    if (faultIdx >= 0) {
+      const why = Object.values(loc).map(x => x.why).filter(Boolean)[0];
+      say.className = 'chain-say sans fault';
+      say.innerHTML = `Loss localised to <b>${order[faultIdx]}</b>${why ? ' — ' + esc(why) : ''}.`;
+    } else if (warnIdx >= 0) {
+      say.className = 'chain-say sans';
+      say.innerHTML = `Minor wobble around <b>${order[warnIdx]}</b> — watching.`;
+    } else {
+      say.className = 'chain-say sans';
+      const n = RES.filter(([k]) => d.targets && d.targets[k]).reduce((a, [k]) => a + (d.targets[k].samples || 0), 0);
+      say.innerHTML = `<b>End to end clear</b> — no v6 loss or DNS failure across ${n} samples in 24h.`;
+    }
+
+    const ci = $('#chain-in');
+    if (!ext) { ci.textContent = ''; return; }
+    if (inb && inb.reached_pct != null) {
+      const c = inb.reached_pct >= 80 ? C.ok : inb.reached_pct >= 60 ? C.warn : C.bad;
+      ci.innerHTML = `Inbound (internet → bazza): <span style="color:${c}">${inb.reached_pct}%</span> of ${inb.probes} worldwide probes reach the prefix`
+        + (inb.stuck_at && inb.reached_pct < 80 ? ` · stalls at <b style="color:${C.bad}">${esc(inb.stuck_at)}</b>` : '');
+    } else {
+      ci.textContent = 'Inbound: no Atlas traceroute rounds yet (runs every 2h).';
+    }
+  }
+
+  // ── resolver panel: one chart, house RTT + everyone's loss ──
+  function panel(mount, key, label, tgt, ext) {
+    const now = Math.floor(Date.now() / 1000);
+    const el = document.createElement('div');
+    el.className = 'panel';
+    const wl = tgt.worst_loss || 0;
+    const state = wl >= 20 ? `<span class="pill bad">${wl}% peak loss</span>`
+      : wl > 0 ? `<span class="pill warn">${wl}% peak loss</span>`
+      : tgt.fail_events > 0 ? `<span class="pill warn">${tgt.fail_events} blips</span>`
+      : `<span class="pill ok">clean</span>`;
+    const hasAtlas = ext && (ext.isp || ext.ww);
+    el.innerHTML = `<div class="ph"><span class="pn">${esc(label)}</span><span class="ps">${state}</span></div>
+      <div class="plegend">
+        <span><i style="background:${C.bazza}"></i>bazza</span>
+        <span><i style="background:${C.steve}"></i>steve</span>
+        <span><i class="d" style="background:${C.loss}"></i>our loss</span>
+        ${hasAtlas ? `<span><i style="background:${C.isp}"></i>ISP peers loss</span><span><i style="background:${C.ww}"></i>worldwide loss</span>` : ''}
+      </div>
+      <div class="chart-wrap"><canvas id="cv-${key}"></canvas></div>`;
+    mount.appendChild(el);
 
     const byHost = { b: [], s: [] };
     (tgt.series || []).forEach(p => (byHost[p.h] || (byHost[p.h] = [])).push(p));
     const ds = [];
-    for (const h of ['b', 's']) {
-      const pts = byHost[h] || [];
-      if (!pts.length) continue;
-      ds.push({
-        label: h === 'b' ? 'bazza' : 'steve',
-        data: pts.map(p => ({ x: p.t, y: p.r })),
-        borderColor: HCOL[h], borderWidth: 1.4, pointRadius: 0, tension: 0.25, spanGaps: true,
-      });
-      ds.push({
-        label: h + '-loss', data: pts.filter(p => p.l > 0).map(p => ({ x: p.t, y: p.r ?? 0 })),
-        borderColor: 'transparent', backgroundColor: '#ff5555',
-        pointRadius: 3, pointHoverRadius: 5, showLine: false,
+    for (const [hk, nm, col] of [['b', 'bazza', C.bazza], ['s', 'steve', C.steve]]) {
+      const pts = byHost[hk] || [];
+      if (pts.length) ds.push({
+        label: nm, yAxisID: 'ms', data: pts.map(p => ({ x: p.t, y: p.r })),
+        borderColor: col, borderWidth: 1.5, pointRadius: 0, tension: 0.25, spanGaps: true,
       });
     }
-    const now = Math.floor(Date.now() / 1000);
-    charts[id] = new Chart(document.getElementById('cv-' + id), {
-      type: 'line',
-      data: { datasets: ds },
+    const houseLoss = (tgt.series || []).filter(p => p.l > 0).map(p => ({ x: p.t, y: p.l }));
+    if (houseLoss.length) ds.push({
+      label: 'our loss', yAxisID: 'pct', data: houseLoss, showLine: false,
+      pointRadius: 3.5, pointHoverRadius: 5, backgroundColor: C.loss, borderColor: C.loss,
+    });
+    if (hasAtlas) {
+      for (const [tk, nm, col] of [['isp', 'ISP peers', C.isp], ['ww', 'worldwide', C.ww]]) {
+        const s = (ext[tk] || {}).series || [];
+        if (s.length) ds.push({
+          label: nm + ' loss', yAxisID: 'pct', data: s.map(p => ({ x: p.t, y: p.l })),
+          borderColor: col, borderWidth: 1.3, borderDash: [4, 3], pointRadius: 0, tension: 0.25, spanGaps: true,
+        });
+      }
+    }
+
+    charts[key] = new Chart(el.querySelector('canvas'), {
+      type: 'line', data: { datasets: ds },
       options: {
         animation: false, responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: {
-          callbacks: { title: i => hhmm(i[0].parsed.x),
-            label: c => c.dataset.label.includes('loss') ? 'loss / DNS fail in this bucket' : `${c.dataset.label}: ${c.parsed.y ?? '—'} ms` } } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: i => hhmm(i[0].parsed.x),
+              label: c => c.dataset.yAxisID === 'pct'
+                ? `${c.dataset.label}: ${c.parsed.y}%`
+                : `${c.dataset.label}: ${c.parsed.y ?? '—'} ms`,
+            },
+          },
+        },
         scales: {
-          x: { type: 'linear', min: now - 86400, max: now, grid: { color: '#08243a' },
-               ticks: { color: '#3a5a70', font: { size: 9 }, maxTicksLimit: 6, callback: v => hhmm(v) } },
-          y: { beginAtZero: true, grid: { color: '#08243a' },
-               ticks: { color: '#3a5a70', font: { size: 9 }, maxTicksLimit: 4 } },
+          x: { type: 'linear', min: now - 86400, max: now, grid: { color: C.grid },
+               ticks: { color: C.tick, font: { size: 9 }, maxTicksLimit: 6, callback: v => hhmm(v) } },
+          ms: { position: 'left', beginAtZero: true, grid: { color: C.grid },
+                ticks: { color: C.tick, font: { size: 9 }, maxTicksLimit: 4, callback: v => v + 'ms' } },
+          pct: { position: 'right', beginAtZero: true, suggestedMax: 10,
+                 grid: { drawOnChartArea: false },
+                 ticks: { color: C.tick, font: { size: 9 }, maxTicksLimit: 4, callback: v => v + '%' } },
         },
       },
     });
   }
 
-  function render(d) {
-    last = d.ts;
-    $('#status').textContent = 'UPDATED ' + hhmm(d.ts);
-    $('#banner').innerHTML = d.error && !d.targets
-      ? `<div class="err-banner">${esc(d.error)}</div>` : '';
+  function v4panel(mount, key, label, tgt) {
+    const now = Math.floor(Date.now() / 1000);
+    const el = document.createElement('div');
+    el.className = 'panel';
+    const wl = tgt.worst_loss || 0;
+    el.innerHTML = `<div class="ph"><span class="pn">${esc(label)}</span>
+      <span class="ps">${wl > 0 ? `<span class="pill warn">${wl}% peak</span>` : `<span class="pill ok">clean</span>`}</span></div>
+      <div class="chart-wrap" style="height:120px"><canvas id="cv-${key}"></canvas></div>`;
+    mount.appendChild(el);
+    const byHost = { b: [], s: [] };
+    (tgt.series || []).forEach(p => (byHost[p.h] || (byHost[p.h] = [])).push(p));
+    const ds = [];
+    for (const [hk, nm, col] of [['b', 'bazza', C.bazza], ['s', 'steve', C.steve]]) {
+      const pts = byHost[hk] || [];
+      if (pts.length) ds.push({ label: nm, data: pts.map(p => ({ x: p.t, y: p.r })), borderColor: col, borderWidth: 1.4, pointRadius: 0, tension: 0.25, spanGaps: true });
+      if (pts.length) ds.push({ label: nm + ' loss', data: pts.filter(p => p.l > 0).map(p => ({ x: p.t, y: p.r ?? 0 })), showLine: false, pointRadius: 3, backgroundColor: C.loss });
+    }
+    charts[key] = new Chart(el.querySelector('canvas'), {
+      type: 'line', data: { datasets: ds },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => hhmm(i[0].parsed.x), label: c => `${c.dataset.label}: ${c.parsed.y ?? '—'} ms` } } },
+        scales: {
+          x: { type: 'linear', min: now - 86400, max: now, grid: { color: C.grid }, ticks: { color: C.tick, font: { size: 9 }, maxTicksLimit: 6, callback: v => hhmm(v) } },
+          y: { beginAtZero: true, grid: { color: C.grid }, ticks: { color: C.tick, font: { size: 9 }, maxTicksLimit: 4 } },
+        },
+      },
+    });
+  }
 
-    const v = $('#verdict');
-    const crit = (d.alerts || []).some(a => a.level === 'critical');
-    const warn = (d.alerts || []).length > 0;
-    v.className = 'verdict' + (crit ? ' down' : warn ? ' warn' : '');
-    v.innerHTML = esc(d.verdict || '—')
-      + (d.alerts || []).map(a => `<div style="margin-top:.5rem;font-size:.72rem;color:${a.level === 'critical' ? '#ff8888' : '#ffcc88'}">▸ ${esc(a.header)} — ${esc(a.text)}</div>`).join('');
-
-    $('#hosts').innerHTML = Object.entries(d.hosts || {}).map(([n, s]) => hostTile(n, s)).join('');
-
-    const T = d.targets || {};
-    const v6 = ['gw_v6', 'cf_v6', 'goog_v6', 'quad9_v6', 'root_v6'];
-    const v4 = ['gw_v4', 'cf_v4', 'goog_v4'];
-    for (const c of Object.values(charts)) c.destroy();
-    $('#v6charts').innerHTML = ''; $('#v4charts').innerHTML = '';
-    v6.forEach(k => T[k] && miniChart($('#v6charts'), k, T[k]));
-    v4.forEach(k => T[k] && miniChart($('#v4charts'), k, T[k]));
-
+  // ── local health strip ─────────────────────────────────────
+  function stats(d) {
+    const box = $('#stats');
     const rate = d.snmp6_rate_per_hr || {};
     const flips = {}, renum = {};
     (d.events || []).forEach(e => {
       if (e.route_changed) flips[e.host] = (flips[e.host] || 0) + 1;
       if (e.gua_changed) renum[e.host] = (renum[e.host] || 0) + 1;
     });
-    const rrow = o => Object.entries(o).map(([h, n]) => `${h} ${n}`).join(' · ') || '0';
-    $('#stability').innerHTML = `
-      <div class="card"><h3>ICMPv6 unreachables /hr</h3>
-        <div class="big ${Object.values(rate).some(r => r > 600) ? 'c-amber' : 'c-green'}">${
-          Object.entries(rate).map(([h, r]) => `${h}: ${r == null ? '—' : Math.round(r)}`).join('  ')}</div>
-        <div class="kv">baseline &lt; 10/hr since the 09-09 unbound-only switch</div></div>
-      <div class="card"><h3>Default-route flips / 24h</h3>
-        <div class="big ${Object.keys(flips).length ? 'c-red' : 'c-green'}">${rrow(flips)}</div>
-        <div class="kv">a flip = the host switched v6 gateway — rogue RA or gateway lapse</div></div>
-      <div class="card"><h3>Prefix renumbers / 24h</h3>
-        <div class="big ${Object.keys(renum).length ? 'c-amber' : 'c-green'}">${rrow(renum)}</div>
-        <div class="kv">ISP rotated the delegated /64 — brief blackhole for live flows</div></div>`;
+    const gw = (d.targets || {}).gw_v6 || {};
+    const cards = [];
+
+    for (const [h, s] of Object.entries(d.hosts || {})) {
+      const fresh = s.age_s != null && s.age_s < 700;
+      cards.push(`<div class="stat"><div class="sl">${esc(h)} probe</div>
+        <div class="sv" style="color:${fresh ? C.ok : C.warn}">${rel(s.age_s)}</div>
+        <div class="sx">${s.samples_24h ?? 0} samples · prefix ${lft(s.valid_lft)}</div></div>`);
+    }
+    cards.push(`<div class="stat"><div class="sl">Gateway v6 first hop</div>
+      <div class="sv" style="color:${(gw.worst_loss || 0) > 0 ? C.warn : C.ok}">${gw.avg_rtt ?? '—'} ms</div>
+      <div class="sx">${(gw.worst_loss || 0) > 0 ? gw.worst_loss + '% peak loss' : '0% loss / 24h'}</div></div>`);
+    const duBad = Object.values(rate).some(r => r != null && r > 600);
+    cards.push(`<div class="stat"><div class="sl">ICMPv6 unreach / hr</div>
+      <div class="sv" style="color:${duBad ? C.warn : C.ok}">${Object.entries(rate).map(([h, r]) => `${h[0]}:${r == null ? '—' : Math.round(r)}`).join('  ') || '—'}</div>
+      <div class="sx">baseline &lt; 10/hr since 09-09</div></div>`);
+    cards.push(`<div class="stat"><div class="sl">Route flips / 24h</div>
+      <div class="sv" style="color:${Object.keys(flips).length ? C.bad : C.ok}">${Object.values(flips).reduce((a, b) => a + b, 0)}</div>
+      <div class="sx">v6 default gateway changes</div></div>`);
+    cards.push(`<div class="stat"><div class="sl">Prefix renumbers / 24h</div>
+      <div class="sv" style="color:${Object.keys(renum).length ? C.warn : C.ok}">${Object.values(renum).reduce((a, b) => a + b, 0)}</div>
+      <div class="sx">ISP rotated the /64</div></div>`);
+    box.innerHTML = cards.join('');
+  }
+
+  // ── render ─────────────────────────────────────────────────
+  function render(d) {
+    $('#status').textContent = 'updated ' + hhmm(d.ts);
+    $('#banner').innerHTML = d.error && !d.targets ? `<div class="err-banner">${esc(d.error)}</div>` : '';
+
+    for (const c of Object.values(charts)) c.destroy();
+    hero(d);
+    chain(d);
+    stats(d);
+
+    const T = d.targets || {};
+    const ext = d.external && d.external.ok ? (d.external.targets || {}) : {};
+    $('#panels').innerHTML = '';
+    RES.forEach(([k, lbl]) => T[k] && panel($('#panels'), k, lbl, T[k], ext[k]));
+    $('#v4panels').innerHTML = '';
+    V4.forEach(([k, lbl]) => T[k] && v4panel($('#v4panels'), k, lbl, T[k]));
+
+    const e = d.external || {};
+    $('#panels-note').textContent = e.ok
+      ? (e.stale ? 'Atlas cached — last refresh failed' : 'incl. RIPE Atlas · updated ' + hhmm(e.ts))
+      : 'Atlas: ' + (e.reason || 'off');
 
     const ev = d.events || [];
-    $('#events').innerHTML = ev.length ? ev.map(e => `<tr>
-      <td>${hhmm(e.t)}</td><td>${esc(e.host)}</td>
-      <td>${(e.targets || []).map(esc).join(', ') || (e.route_changed ? 'route flip' : e.gua_changed ? 'prefix change' : '—')}</td>
-      <td><span class="tag ${e.scope === 'uplink-wide' ? 'wide' : e.scope === 'both-hosts' ? 'both' : 'single'}">${esc(e.scope)}</span></td>
-      <td>${esc(e.kind || '—')}</td>
-      <td>${e.route_changed ? 'default route changed ' : ''}${e.gua_changed ? 'global addr changed' : ''}</td>
-    </tr>`).join('') : '<tr><td colspan="6" style="color:#3a5a70">no v6 failures recorded</td></tr>';
+    $('#events').innerHTML = ev.length ? ev.map(x => `<tr>
+      <td>${hhmm(x.t)}</td><td>${esc(x.host)}</td>
+      <td>${(x.targets || []).map(esc).join(', ') || (x.route_changed ? 'route flip' : x.gua_changed ? 'prefix change' : '—')}</td>
+      <td><span class="tag ${x.scope === 'uplink-wide' ? 'wide' : x.scope === 'both-hosts' ? 'both' : 'single'}">${esc(x.scope)}</span></td>
+      <td>${esc(x.kind || '—')}</td>
+      <td>${x.route_changed ? 'default route changed ' : ''}${x.gua_changed ? 'global addr changed' : ''}</td>
+    </tr>`).join('') : '<tr><td colspan="6" class="mute">no v6 failures recorded in 24h</td></tr>';
+    $('#d-events > summary').innerHTML = `Recent v6 failure samples${ev.length ? ` <span class="pill ${ev.some(x => x.scope === 'uplink-wide') ? 'bad' : 'warn'}">${ev.length}</span>` : ''}`;
 
     $('#detail').textContent = d.detail_tail || 'no captures yet';
-    $('#foot').innerHTML = `poller: pollers/v6health.py &middot; probes: ~/v6mon/v6probe.sh on bazza + steve &middot; window ${d.window_h || 24}h`;
+    $('#atlas-trace').textContent = e.ok
+      ? (Object.entries(e.trace_tail || {}).map(([k, t]) => `── ${k} ──\n${t}`).join('\n\n') || 'no traceroute rounds yet')
+      : '—';
+
+    $('#probe-internals').innerHTML = Object.entries(d.hosts || {}).map(([h, s]) => `
+      <div class="stat" style="flex:1;min-width:220px"><div class="sl">${esc(h)}</div><div class="kv" style="margin-top:.4rem">
+        <div>gua <b>${esc(s.gua || '—')}</b></div>
+        <div>prefix lifetime <b>${lft(s.valid_lft)}</b></div>
+        <div>v6 gateway <b>${esc(s.route6 || '—')}</b></div>
+        <div>NDP routers on link <b>${s.ra_routers ?? '—'}</b></div>
+      </div></div>`).join('');
+
+    $('#foot').innerHTML = `pollers/v6health.py rolls up <b>~/v6mon/v6probe.sh</b> on bazza + steve (every 5&nbsp;min) `
+      + `and the RIPE&nbsp;Atlas measurements from probe&nbsp;64460, AS201838 peers and worldwide. Window ${d.window_h || 24}h.`;
   }
 
   async function load() {
     try {
       const r = await fetch('/api/v6health', { cache: 'no-store' });
       render(await r.json());
-    } catch (e) { $('#status').textContent = 'FETCH FAILED'; }
+    } catch (e) { $('#status').textContent = 'fetch failed'; }
   }
   load();
   setInterval(load, 60000);

@@ -12,8 +12,41 @@ stays clean — and to localise it (ISP / upstream / local) if it doesn't.
 | file | runs on | cadence | does |
 |---|---|---|---|
 | `v6probe.sh` | bazza + steve (`~/v6mon/v6probe.sh`) | `*/5` cron | one sample → `~/v6mon/v6health.jsonl`; forensic block → `~/v6mon/v6health-detail.log` on any failure |
-| `../v6health.py` | steve | `2-59/5` cron | reads steve's jsonl locally + bazza's over SSH (`id_rsa_bazza`), rolls up 24h, classifies failures, writes `data/v6health.json` (+ `data/v6health_state.json` for alert onsets) |
-| `../../pages/v6health.html` | — | — | `/v6health` page: per-target 24h RTT/loss charts, stability tiles, failure table, forensic log tail |
+| `../v6health.py` | steve | `2-59/5` cron | reads steve's jsonl locally + bazza's over SSH (`id_rsa_bazza`), rolls up 24h, classifies failures, folds in the RIPE Atlas external vantage, writes `data/v6health.json` (+ `data/v6health_state.json` for alert onsets) |
+| `../../scripts/v6atlas_bootstrap.py` | steve (by hand) | once | creates the recurring Atlas ping/traceroute measurements, records ids in `data/v6atlas_state.json`. `--dry-run` to preview. Re-runnable. |
+| `../../pages/v6health.html` | — | — | `/v6health` page: per-target 24h RTT/loss charts, stability tiles, **external-vantage (Atlas) tiers + localisation**, failure table, forensic log tail |
+
+## External vantage — RIPE Atlas
+
+bazza and steve share one UCG-Max, one Community Fibre line and one delegated `/64`, so
+`both-hosts` still can't split *our line* from *our ISP* from *the resolver*.
+`v6atlas_bootstrap.py` creates seven recurring measurements (probe 64460 earns
+the credits; ids in `data/v6atlas_state.json`, never delete it):
+
+| desc | type | target | probes | interval |
+|---|---|---|---|---|
+| `v6health:ping:{cf,quad9}_v6:isp` | ping | resolver v6 | 64460 + 5× AS201838 | 30 min |
+| `v6health:ping:{cf,quad9}_v6:ww` | ping | resolver v6 | 6× worldwide | 30 min |
+| `v6health:trace:{cf,quad9}_v6:isp` | traceroute | resolver v6 | 5× AS201838 | 2 h |
+| `v6health:in:bazza` | traceroute | bazza GUA | 6× worldwide | 2 h |
+
+`v6health.py` reads the results (free), caches them in `data/v6atlas_cache.json`
+(refreshed at most every 25 min; a fetch failure serves the stale cache, never a
+top-level `error`), and for any target with a house-side failure in the last hour
+emits a **localisation**:
+
+- ISP peers **and** worldwide clean → `your-line` (our LAN / CPE)
+- ISP peers lossy, worldwide clean → `isp-network` (Community Fibre's v6)
+- worldwide lossy too → `resolver-or-internet`
+
+`in:bazza` reaching < 60 % of worldwide probes raises a **critical**
+`atlas_inbound_bazza` (our prefix is unreachable from outside — renumber, ISP
+blackhole, or CPE firewall; the last responding hop is in the alert).
+
+~25 k credits/day (balance was 151 M, income ~59 k/day). To stop it: delete the
+seven `v6health:*` measurements on atlas.ripe.net and remove
+`data/v6atlas_state.json`. bazza's GUA (`2a02:6b67:d7e0:2500:8aa2:9eff:fe76:6568`,
+EUI-64) is hardcoded in the bootstrap — re-run it if the ISP renumbers the /48.
 
 Card `c-v6health` sits in the **Network** band on the index; `/api/v6health`
 serves the JSON (`server.py`, stale after 25 min).

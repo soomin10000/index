@@ -129,6 +129,78 @@ class AtlasClient:
                              f"for {domain}: {detail}")
         return r.json()["measurements"][0]
 
+    # ── generic ping / traceroute (used by the v6health external vantage) ────
+    def _create(self, definition, probes):
+        payload = {"definitions": [definition], "probes": probes, "is_oneoff": False}
+        r = self.s.post(f"{BASE}/measurements/", json=payload, timeout=30)
+        if not r.ok:
+            try:
+                detail = r.json()
+            except ValueError:
+                detail = r.text[:500]
+            raise SystemExit(f"measurement create failed ({r.status_code}) "
+                             f"for {definition.get('description')}: {detail}")
+        return r.json()["measurements"][0]
+
+    @staticmethod
+    def probe_spec(items):
+        """[('probes', 64460, 1), ('asn', 201838, 5), ('area', 'WW', 6)]
+        -> the Atlas `probes` array."""
+        return [{"type": t, "value": str(v), "requested": int(n)} for t, v, n in items]
+
+    def create_ping(self, description, target, probes, af=6, interval=1800, packets=3):
+        return self._create({
+            "type": "ping", "af": af, "target": target, "packets": packets,
+            "description": description, "interval": interval,
+        }, probes)
+
+    def create_traceroute(self, description, target, probes, af=6, interval=7200,
+                          protocol="ICMP"):
+        return self._create({
+            "type": "traceroute", "af": af, "target": target, "protocol": protocol,
+            "packets": 3, "first_hop": 1, "max_hops": 32, "response_timeout": 4000,
+            "description": description, "interval": interval,
+        }, probes)
+
+    def list_measurements(self, prefix):
+        """description prefix -> {suffix: id} for our recurring measurements.
+        403 (key lacks the list grant) -> {}: caller falls back to its state file."""
+        try:
+            r = self._get("measurements/my/", search=prefix.rstrip(":"),
+                          status__in="0,1,2", page_size=200)
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 403:
+                return {}
+            raise
+        out = {}
+        for m in r.get("results", []):
+            desc = m.get("description") or ""
+            if desc.startswith(prefix):
+                out[desc[len(prefix):]] = m["id"]
+        return out
+
+    def latest(self, msm_id):
+        """Raw latest-round result list for a measurement."""
+        return self._get(f"measurements/{msm_id}/latest/")
+
+    def results_window(self, msm_id, start, stop=None):
+        """All result rounds for a measurement from `start` (epoch) onward."""
+        p = {"start": int(start), "format": "json"}
+        if stop:
+            p["stop"] = int(stop)
+        return self._get(f"measurements/{msm_id}/results/", **p)
+
+    def probes_meta(self, ids):
+        """{prb_id: {'asn_v6', 'cc'}} — probes/ GET is allowed on this key."""
+        ids = [str(i) for i in ids if i]
+        out = {}
+        for i in range(0, len(ids), 100):
+            r = self._get("probes/", id__in=",".join(ids[i:i + 100]),
+                          fields="id,asn_v6,country_code", page_size=100)
+            for p in r.get("results", []):
+                out[p["id"]] = {"asn_v6": p.get("asn_v6"), "cc": p.get("country_code")}
+        return out
+
     def latest_results(self, msm_id):
         """[{prb_id, ips}] from the latest round; A records only."""
         out = []
