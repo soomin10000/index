@@ -109,6 +109,51 @@
     .bb-right a:hover { color: var(--ink); border-bottom-color: var(--ink-dim); }
     .bb-sep { opacity: 0.4; }
 
+    /* ── Alert tray: acknowledge an alert and it drops off the index ── */
+    .alert-tray {
+      display: flex; flex-direction: column;
+      background: var(--card); border: 1px solid var(--border);
+      border-left: 3px solid var(--warn); border-radius: 3px;
+      font-family: var(--font-mono); margin-top: -1rem;
+    }
+    .alert-tray.has-down { border-left-color: var(--down); }
+    .at-row {
+      display: flex; align-items: center; gap: 0.55rem;
+      padding: 0.5rem 0.85rem; border-top: 1px solid var(--border);
+      font-size: 0.72rem;
+    }
+    .at-row:first-child { border-top: none; }
+    .at-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: var(--warn); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--warn) 55%, transparent);
+    }
+    .at-row.lv-critical .at-dot, .at-row.lv-down .at-dot {
+      background: var(--down); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--down) 60%, transparent);
+    }
+    .at-src {
+      flex-shrink: 0; min-width: 4rem;
+      font-size: 0.56rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .at-head { color: var(--ink); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .at-head .at-text { color: var(--ink-faint); }
+    .at-ack {
+      flex-shrink: 0; cursor: pointer; font-family: inherit;
+      font-size: 0.56rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ink-dim); background: transparent;
+      border: 1px solid var(--border-lit); border-radius: 3px; padding: 0.25rem 0.6rem;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .at-ack:hover { color: var(--ink); border-color: var(--ink-dim); }
+    .at-row.is-acked { opacity: 0.65; }
+    .at-row.is-acked .at-head { text-decoration: line-through; color: var(--ink-faint); }
+    .at-foot {
+      padding: 0.42rem 0.85rem; border-top: 1px solid var(--border);
+      font-size: 0.56rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--ink-faint); cursor: pointer; user-select: none;
+    }
+    .at-foot:hover { color: var(--ink-dim); }
+
     /* ── Bands ── */
     main {
       max-width: 1120px; margin: 0 auto;
@@ -414,6 +459,8 @@
     <div class="bb-right" id="bb-right"></div>
   </div>
 
+  <div class="alert-tray" id="alert-tray" hidden></div>
+
   <section class="band">
     <div class="band-label">Hosts <span class="bl-count" id="bl-hosts"></span></div>
     <div class="band-grid hosts">
@@ -656,6 +703,17 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return await r.json();
     } finally { clearTimeout(t); }
+  }
+
+  async function postJSON(path, body) {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (r.status === 401) { location.href = '/login'; throw new Error('unauth'); }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
   }
 
   async function poll(id, path, handler, offlineText = 'Offline') {
@@ -1026,6 +1084,7 @@
   const wacky = () => poll('wacky', '/api/wacky', d => {
     if (d.error) { setCard('wacky', { val: '?', unit: '' }, true); return; }
     const alerts = d.alerts || [];
+    registerAlerts('c-wacky', alerts);
     const critical = alerts.filter(a => a.level === 'critical').length;
     const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#4db6ac';
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
@@ -1042,6 +1101,7 @@
   const jeff = () => poll('jeff', '/api/jeff', d => {
     if (d.error) { setCard('jeff', { val: '?', unit: '' }, true); return; }
     const alerts = d.alerts || [];
+    registerAlerts('c-jeff', alerts);
     const critical = alerts.filter(a => a.level === 'critical').length;
     const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#b57edc';
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
@@ -1060,6 +1120,7 @@
   const bazza = () => poll('bazza', '/api/bazza', d => {
     if (d.error) { setCard('bazza', { val: '?', unit: '' }, true); return; }
     const alerts = d.alerts || [];
+    registerAlerts('c-bazza', alerts);
     const critical = alerts.filter(a => a.level === 'critical').length;
     const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#6aab5b';
     const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
@@ -1220,9 +1281,160 @@
   // or the band tallies (kismet noise, a quiet plant sensor).
   const ROLLUP_MUTE = new Set(['c-wireless', 'c-plants']);
 
+  // ── Alert tray: list the live alerts, let each be acknowledged ────────────
+  //  An acked alert drops out of the tray AND stops its card escalating the
+  //  bus-bar / band tallies (via MUTED_CARDS). Acks live server-side, keyed by
+  //  <source>|<id>|<sig>: sig is the alert's onset ts for the host/kismet-style
+  //  structured alerts, or a hash of the card's status text for a lamp-only
+  //  card — so a condition that clears and re-fires gets a fresh key and the
+  //  ack no longer covers it. Stale acks (alert gone, card recovered) are
+  //  garbage-collected here on the next paint.
+  const US = '\u001f';
+  const AL_REG = {};                 // cardId -> [{id, sig, level, header, text}]
+  let ACKED = {};                    // key -> {header, source, level, ts, by}
+  let MUTED_CARDS = new Set();
+  let SHOW_ACKED = false;
+
+  const alHash = s => {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  };
+
+  function registerAlerts(cardId, alerts) {
+    AL_REG[cardId] = (alerts || []).map(a => ({
+      id: String(a.id ?? 'alert'),
+      sig: String(a.ts ?? ''),
+      level: a.level || 'warn',
+      header: a.header || '(alert)',
+      text: a.text || '',
+    }));
+  }
+
+  // Every live alert across the cards, structured where a poller gives us one,
+  // synthesised from the lamp + status line where it doesn't.
+  function collectAlerts() {
+    const out = [];
+    for (const c of document.querySelectorAll('main .card')) {
+      if (ROLLUP_MUTE.has(c.id) || c.classList.contains('is-loading')) continue;
+      const source = c.id.replace(/^c-/, '');
+      const name = (c.querySelector('.c-name')?.textContent || source).trim();
+      const l = c.querySelector('.lamp');
+      const lamp = (c.classList.contains('is-offline') || l?.classList.contains('down')) ? 'down'
+        : l?.classList.contains('warn') ? 'warn' : 'ok';
+      let items = lamp === 'ok' ? [] : (AL_REG[c.id] || []);
+      if (!items.length && lamp !== 'ok') {
+        const sub = (c.querySelector('.c-sub')?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+        items = [{
+          id: 'status', sig: alHash(name + '|' + sub),
+          level: lamp === 'down' ? 'critical' : 'warn',
+          header: name + (lamp === 'down' ? ' — down' : ' — warning'),
+          text: sub,
+        }];
+      }
+      for (const it of items) {
+        out.push({ ...it, source, cardId: c.id, name, lamp,
+                   key: source + US + it.id + US + it.sig });
+      }
+    }
+    return out;
+  }
+
+  function paintAlerts() {
+    const all = collectAlerts();
+    const liveKeys = new Set(all.map(a => a.key));
+    const unacked = all.filter(a => !ACKED[a.key]);
+    const ackedLive = all.filter(a => ACKED[a.key]);
+
+    // a card is muted once every alert it's raising has been acked
+    MUTED_CARDS = new Set();
+    const byCard = {};
+    all.forEach(a => { (byCard[a.cardId] = byCard[a.cardId] || []).push(a); });
+    for (const [cid, list] of Object.entries(byCard))
+      if (list.every(a => ACKED[a.key])) MUTED_CARDS.add(cid);
+
+    // GC: ack whose alert is gone and whose card has recovered (or vanished)
+    const stale = Object.keys(ACKED).filter(k => {
+      if (liveKeys.has(k)) return false;
+      const card = document.getElementById('c-' + (ACKED[k].source || ''));
+      if (!card) return true;
+      if (card.classList.contains('is-loading')) return false;   // wait it out
+      const cl = card.querySelector('.lamp');
+      return !card.classList.contains('is-offline')
+        && !cl?.classList.contains('down') && !cl?.classList.contains('warn');
+    });
+    if (stale.length) {
+      stale.forEach(k => delete ACKED[k]);
+      postJSON('/api/alerts/unack', { keys: stale }).catch(() => {});
+    }
+
+    renderTray(unacked, ackedLive);
+  }
+
+  function renderTray(unacked, ackedLive) {
+    const tray = document.getElementById('alert-tray');
+    if (!unacked.length && !ackedLive.length) { tray.hidden = true; tray.innerHTML = ''; return; }
+    tray.hidden = false;
+    tray.classList.toggle('has-down', unacked.some(a => a.lamp === 'down'));
+
+    const row = (a, acked) =>
+      `<div class="at-row lv-${a.lamp}${acked ? ' is-acked' : ''}" data-key="${esc(a.key)}">` +
+        `<span class="at-dot"></span>` +
+        `<span class="at-src">${esc(a.source)}</span>` +
+        `<span class="at-head">${esc(a.header)}` +
+          (a.text && !acked ? ` <span class="at-text">· ${esc(a.text)}</span>` : '') +
+        `</span>` +
+        `<button class="at-ack" data-act="${acked ? 'unack' : 'ack'}">${acked ? '↩ unack' : '✓ ack'}</button>` +
+      `</div>`;
+
+    let html = unacked.map(a => row(a, false)).join('');
+    if (ackedLive.length) {
+      html += `<div class="at-foot" id="at-foot">${SHOW_ACKED ? '▾' : '▸'} ${ackedLive.length} acknowledged</div>`;
+      if (SHOW_ACKED) html += ackedLive.map(a => row(a, true)).join('');
+    }
+    tray.innerHTML = html;
+
+    tray.querySelectorAll('.at-ack').forEach(btn => btn.addEventListener('click', () => {
+      const key = btn.closest('.at-row').dataset.key;
+      if (btn.dataset.act === 'ack') {
+        const a = unacked.find(x => x.key === key) || {};
+        ackAlert(key, { header: a.header || '', source: a.source || '', level: a.level || '' });
+      } else {
+        unackAlert(key);
+      }
+    }));
+    const foot = document.getElementById('at-foot');
+    if (foot) foot.addEventListener('click', () => { SHOW_ACKED = !SHOW_ACKED; paintAlerts(); });
+  }
+
+  function repaint() { paintAlerts(); updateRollup(); updateBandCounts(); }
+
+  function ackAlert(key, meta) {
+    ACKED[key] = { ...meta, ts: Math.floor(Date.now() / 1000) };
+    repaint();
+    postJSON('/api/alerts/ack', { key, ...meta })
+      .then(r => { ACKED = r.acked || ACKED; repaint(); })
+      .catch(() => { delete ACKED[key]; repaint(); });
+  }
+
+  function unackAlert(key) {
+    const kept = ACKED[key];
+    delete ACKED[key];
+    repaint();
+    postJSON('/api/alerts/unack', { key })
+      .then(r => { ACKED = r.acked || ACKED; repaint(); })
+      .catch(() => { if (kept) ACKED[key] = kept; repaint(); });
+  }
+
+  async function syncAlerts() {
+    try { const r = await get('/api/alerts/acks'); ACKED = r.acked || {}; } catch {}
+    repaint();
+  }
+
   // ── Overall rollup — reads every card's lamp/offline state after a refresh ──
   function updateRollup() {
-    const cards = [...document.querySelectorAll('main .card')].filter(c => !ROLLUP_MUTE.has(c.id));
+    const cards = [...document.querySelectorAll('main .card')]
+      .filter(c => !ROLLUP_MUTE.has(c.id) && !MUTED_CARDS.has(c.id));
     const entry = c => ({
       name: (c.querySelector('.c-name')?.textContent || c.id.replace('c-', '')).trim(),
       href: c.getAttribute('href') || '#',
@@ -1269,7 +1481,8 @@
   // per-band counts in the section labels
   function updateBandCounts() {
     const tally = grid => {
-      const cs = [...grid.querySelectorAll('.card')].filter(c => !ROLLUP_MUTE.has(c.id));
+      const cs = [...grid.querySelectorAll('.card')]
+        .filter(c => !ROLLUP_MUTE.has(c.id) && !MUTED_CARDS.has(c.id));
       const bad = cs.filter(c => c.classList.contains('is-offline') || c.querySelector('.lamp')?.classList.contains('down')).length;
       const w = cs.filter(c => c.querySelector('.lamp')?.classList.contains('warn')).length;
       return bad ? `${bad} down` : w ? `${w} warn` : `${cs.length} ok`;
@@ -1293,9 +1506,10 @@
     harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
     steve(); wacky(); jeff(); bazza(); atlas(); uplink(); plants(); smoke();
     eufy(); arr(); isItBroken(); honeypot(); hostTraces();
-    // give the polls a beat to land, then summarise
-    setTimeout(() => { updateRollup(); updateBandCounts(); }, 1200);
-    setTimeout(() => { updateRollup(); updateBandCounts(); }, 4200);
+    // give the polls a beat to land, then pull acks + summarise (syncAlerts
+    // repaints the tray and calls updateRollup / updateBandCounts itself)
+    setTimeout(syncAlerts, 1200);
+    setTimeout(syncAlerts, 4200);
   }
   refresh();
   setInterval(refresh, 30000);

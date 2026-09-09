@@ -307,6 +307,7 @@ BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
+ALERT_ACKS_JSON = DATA / 'alert_acks.json'
 DEVICES_JSON = UNIFI_DATA / 'devices.json'
 MOISTURE_DB  = Path.home() / 'projects' / 'moisture.db'  # written by moisture_endpoint.py (:8082)
 # Retired sensors whose old readings are still in the DB — hidden from the
@@ -356,6 +357,74 @@ def _trigger_gravity():
 
     threading.Thread(target=run, daemon=True).start()
     return {'ok': True, 'started': True}
+
+
+# ── Alert acknowledgements ───────────────────────────────────────────────────
+# The index page lets you tick off an alert so it drops out of the top-of-page
+# tray and stops escalating its card on the status bus-bar. Acks are keyed by an
+# opaque client-built string that folds in the alert's onset timestamp (or, for
+# a lamp-only card, a hash of its status text) — so when a condition clears and
+# later re-fires the key changes and the alert comes back un-acked on its own.
+# `data/alert_acks.json` is the only copy; a backstop TTL sweep stops it growing
+# without bound if the client-side GC never gets to a row.
+ALERT_ACK_TTL   = 45 * 86400
+ALERT_ACK_MAX   = 250
+_alert_ack_lock = threading.Lock()
+
+
+def _valid_ack_key(key):
+    return isinstance(key, str) and 0 < len(key) <= 300
+
+
+def _load_alert_acks(path=None):
+    try:
+        d = json.loads((path or ALERT_ACKS_JSON).read_text())
+        return d if isinstance(d, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def _prune_alert_acks(acks, now):
+    """New dict with malformed rows and anything past the backstop TTL dropped."""
+    return {k: v for k, v in acks.items()
+            if _valid_ack_key(k) and isinstance(v, dict)
+            and now - int(v.get('ts', 0) or 0) < ALERT_ACK_TTL}
+
+
+def _save_alert_acks(acks, path=None):
+    p = path or ALERT_ACKS_JSON
+    tmp = p.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(acks, indent=1, sort_keys=True))
+    tmp.replace(p)
+
+
+def _alert_ack_add(key, meta, user, now, path=None):
+    with _alert_ack_lock:
+        acks = _prune_alert_acks(_load_alert_acks(path), now)
+        if key not in acks:                       # a re-POST keeps the original ack time
+            acks[key] = {
+                'header': str(meta.get('header', ''))[:200],
+                'source': str(meta.get('source', ''))[:40],
+                'level':  str(meta.get('level', ''))[:16],
+                'ts': now,
+                'by': user or '',
+            }
+        if len(acks) > ALERT_ACK_MAX:             # oldest out first
+            drop = sorted(acks, key=lambda k: acks[k].get('ts', 0))[:len(acks) - ALERT_ACK_MAX]
+            for k in drop:
+                del acks[k]
+        _save_alert_acks(acks, path)
+        return acks
+
+
+def _alert_ack_remove(keys, now, path=None):
+    with _alert_ack_lock:
+        acks = _prune_alert_acks(_load_alert_acks(path), now)
+        for k in keys:
+            acks.pop(k, None)
+        _save_alert_acks(acks, path)
+        return acks
+
 
 # ── Dashboard auth ───────────────────────────────────────────────────────────
 # The whole dashboard sits behind a form login + signed session cookie, except
@@ -1319,6 +1388,34 @@ class Handler(BaseHTTPRequestHandler):
     def _res_jeff_readsb_restart(self):
         self._json(_jeff_readsb_recover())
 
+    def _res_alert_acks(self):
+        now = int(time.time())
+        with _alert_ack_lock:
+            acks = _load_alert_acks()
+            pruned = _prune_alert_acks(acks, now)
+            if len(pruned) != len(acks):
+                _save_alert_acks(pruned)
+        self._json({'acked': pruned})
+
+    def _res_alert_ack(self):
+        body = self._body_json()
+        key = body.get('key')
+        if not _valid_ack_key(key):
+            self.send_error(400, 'bad or missing key')
+            return
+        user = _session_user(self.headers.get('Cookie')) or ''
+        acks = _alert_ack_add(key, body, user, int(time.time()))
+        self._json({'ok': True, 'acked': acks})
+
+    def _res_alert_unack(self):
+        body = self._body_json()
+        keys = [body['key']] if _valid_ack_key(body.get('key')) else body.get('keys')
+        if not isinstance(keys, list) or not keys or not all(_valid_ack_key(k) for k in keys):
+            self.send_error(400, 'bad or missing key(s)')
+            return
+        acks = _alert_ack_remove(keys, int(time.time()))
+        self._json({'ok': True, 'acked': acks})
+
     def _res_capture(self):
         mac = self._body_json().get('mac', '')
         result, err = _capture_traffic(mac)
@@ -1461,6 +1558,7 @@ ROUTES_GET = {
     '/api/bazza/history':    _jsonfn(_bazza_history),
     '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref),
+    '/api/alerts/acks':      Route(Handler._res_alert_acks),
 
     # Request-specific (parse the query string / stream raw bytes)
     '/api/kismet':           Route(Handler._res_kismet),
@@ -1484,6 +1582,8 @@ ROUTES_POST = {
     '/api/steve/restart':     Route(Handler._res_steve_restart, json_ct=True),
     '/api/jeff/readsb-restart': Route(Handler._res_jeff_readsb_restart, json_ct=True),
     '/api/capture':           Route(Handler._res_capture, json_ct=True),
+    '/api/alerts/ack':        Route(Handler._res_alert_ack, json_ct=True),
+    '/api/alerts/unack':      Route(Handler._res_alert_unack, json_ct=True),
 }
 
 
