@@ -22,8 +22,10 @@ and the only reliable fix is `usbreset 0bda:2838` + `systemctl restart readsb`.
 
 Both log to `/var/log/readsb-watchdog.log` and rewrite
 `/var/lib/readsb-watchdog/state.json` (`last_fire`, `last_result`,
-`last_trigger`, `fires_24h`) which `pollers/jeff.py` reads back onto the card.
-Each run also sends one ntfy push to steve's server (topic `steve_updates`).
+`last_trigger`, `fires_24h`, `fires_48h`) which `pollers/jeff.py` reads back onto
+the card. The append-only `fires` epoch log is kept 72h; the `/jeff` SDR panel
+buckets its last 48h into a failure strip. Each run also sends one ntfy push to
+steve's server (topic `steve_updates`).
 
 ## Install / update (run on jeff)
 

@@ -20,7 +20,9 @@ DONGLE="0bda:2838"
 LOG="/var/log/readsb-watchdog.log"
 STATE_DIR="/var/lib/readsb-watchdog"
 STATE="$STATE_DIR/state.json"
-FIRES="$STATE_DIR/fires"                 # append-only epoch-per-fire, for the 24h count
+FIRES="$STATE_DIR/fires"                 # append-only epoch-per-fire; kept 72h, the
+                                        # /jeff panel reports the last 48h off it
+FIRES_RETAIN=259200                     # 72h — headroom over the 48h reporting window
 NTFY_URL="${READSB_NTFY_URL:-http://192.168.1.183:8197}"   # steve's ntfy, LAN
 NTFY_TOPIC="${READSB_NTFY_TOPIC:-steve_updates}"           # phones already subscribed
 
@@ -59,20 +61,23 @@ for i in $(seq 1 15); do
 done
 [ "$RESULT" = "still-deaf" ] && log "still deaf after 30s"
 
-# 4. bookkeeping -- fires in the last 24h, from the append-only epoch log
+# 4. bookkeeping -- append this fire, trim the log to FIRES_RETAIN, then count
+#    the genuine last-24h window (the file now holds more than 24h of history).
 NOW=$(date +%s)
-CUTOFF=$((NOW - 86400))
 echo "$NOW" >> "$FIRES"
 if [ -f "$FIRES" ]; then
-    awk -v c="$CUTOFF" '$1 >= c' "$FIRES" > "$FIRES.tmp" 2>/dev/null && mv "$FIRES.tmp" "$FIRES"
+    awk -v c="$((NOW - FIRES_RETAIN))" '$1 >= c' "$FIRES" > "$FIRES.tmp" 2>/dev/null && mv "$FIRES.tmp" "$FIRES"
 fi
-FIRES_24H=$(wc -l < "$FIRES" 2>/dev/null | tr -d ' ')
+FIRES_24H=$(awk -v c="$((NOW - 86400))"  '$1 >= c' "$FIRES" 2>/dev/null | wc -l | tr -d ' ')
+FIRES_48H=$(awk -v c="$((NOW - 172800))" '$1 >= c' "$FIRES" 2>/dev/null | wc -l | tr -d ' ')
 FIRES_24H=${FIRES_24H:-1}
+FIRES_48H=${FIRES_48H:-1}
 
-jq -n --argjson lf "$NOW" --arg lr "$RESULT" --arg lt "$TRIGGER" --argjson f "$FIRES_24H" \
-   '{last_fire: $lf, last_result: $lr, last_trigger: $lt, fires_24h: $f}' > "$STATE" 2>/dev/null \
-   || printf '{"last_fire":%s,"last_result":"%s","last_trigger":"%s","fires_24h":%s}\n' \
-        "$NOW" "$RESULT" "$TRIGGER" "$FIRES_24H" > "$STATE"
+jq -n --argjson lf "$NOW" --arg lr "$RESULT" --arg lt "$TRIGGER" \
+      --argjson f "$FIRES_24H" --argjson f48 "$FIRES_48H" \
+   '{last_fire: $lf, last_result: $lr, last_trigger: $lt, fires_24h: $f, fires_48h: $f48}' > "$STATE" 2>/dev/null \
+   || printf '{"last_fire":%s,"last_result":"%s","last_trigger":"%s","fires_24h":%s,"fires_48h":%s}\n' \
+        "$NOW" "$RESULT" "$TRIGGER" "$FIRES_24H" "$FIRES_48H" > "$STATE"
 
 # 5. one ntfy push per run (non-fatal if ntfy is down)
 if [ "$RESULT" = "recovered" ]; then

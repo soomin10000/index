@@ -66,6 +66,14 @@
   }
   .chip.none { color: var(--ink-faint); border-style: dashed; }
   .sdr-note { font-family: var(--font-mono); font-size: 0.68rem; color: var(--warn); }
+  .fail-strip { display: inline-flex; gap: 2px; align-items: stretch; height: 15px; }
+  .fail-cell {
+    width: 6px; border-radius: 1px;
+    background: var(--inset); border: 1px solid var(--bezel);
+  }
+  .fail-cell[data-n="1"] { background: var(--sdr); border-color: var(--sdr); opacity: 0.45; }
+  .fail-cell[data-n="2"] { background: var(--sdr); border-color: var(--sdr); opacity: 0.75; }
+  .fail-cell[data-n="3"] { background: var(--warn); border-color: var(--warn); }
   .sdr-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
   .sdr-btn {
     font-family: var(--font-mono); font-size: 0.66rem; font-weight: 600;
@@ -184,6 +192,14 @@
     return `${Math.round(sec / 86400)}d ago`;
   }
 
+  // epoch seconds -> "HH:MM", prefixed with the weekday when it isn't today
+  function fmtClock(sec) {
+    const d = new Date(sec * 1000);
+    const t = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return d.toDateString() === new Date().toDateString()
+      ? t : `${d.toLocaleDateString('en-GB', { weekday: 'short' })} ${t}`;
+  }
+
   function renderSdr(sdr, adsb, wd) {
     const card = document.getElementById('sdr-card');
     if (!sdr) { card.innerHTML = '<span class="chip none">no data</span>'; return; }
@@ -208,6 +224,39 @@
     } else if (wd) {
       healRow = `<div class="sdr-row"><span class="k">Auto-heal</span><span class="chip none">standing by</span></div>`;
     }
+
+    // last-48h failure timeline — one cell per 2h bucket, oldest → the bucket ending
+    // now; hovering a cell lists the wall-clock time of each usbreset in it
+    let failRow = '';
+    if (wd && (wd.bucket_epochs || wd.fails_by_bucket)) {
+      const step = wd.fail_bucket_h || 2;
+      const be = wd.bucket_epochs || null;
+      const counts = wd.fails_by_bucket || be.map(b => b.length);
+      const win = wd.fail_window_h || counts.length * step;
+      const cells = counts.map((n, i) => {
+        const hi = win - i * step, lo = hi - step;   // this cell spans hi..lo hours ago
+        const lvl = n === 0 ? 0 : Math.min(n, 3);
+        const times = (be && be[i].length) ? ` · ${be[i].map(fmtClock).join(', ')}` : '';
+        const title = n === 0
+          ? `no resets · ${hi}–${lo}h ago`
+          : `${n} reset${n === 1 ? '' : 's'} · ${hi}–${lo}h ago${times}`;
+        return `<span class="fail-cell" data-n="${lvl}" title="${esc(title)}"></span>`;
+      }).join('');
+      const tot = wd.fails_recent || 0;
+      failRow = `<div class="sdr-row"><span class="k">Fails ${win}h</span>
+        <span class="fail-strip">${cells}</span>
+        <span class="chip${tot ? '' : ' none'}">${tot} total</span></div>`;
+    }
+
+    // the individual usbresets behind those counts (readsb-recover fires), newest first
+    let resetRow = '';
+    if (wd && wd.recent_fires && wd.recent_fires.length) {
+      const shown = wd.recent_fires.map(s => `<span class="chip">${fmtAgo(s)}</span>`).join('');
+      const more = (wd.fails_recent || 0) - wd.recent_fires.length;
+      resetRow = `<div class="sdr-row"><span class="k">usbresets</span>${shown}` +
+        (more > 0 ? `<span class="chip none">+${more} older</span>` : '') + `</div>`;
+    }
+
     const flapNote = (wd && wd.fires_24h >= 4)
       ? `<div class="sdr-note">⚠ auto-heal has usbreset the dongle ${wd.fires_24h}× in 24h — the £30 stick is failing, reseat or swap it</div>`
       : '';
@@ -234,6 +283,8 @@
       <div class="sdr-row"><span class="k">Tools</span>${chips(sdr.tools, 'none installed')}</div>
       <div class="sdr-row"><span class="k">Services</span>${chips(sdr.services, 'none running')}</div>
       ${healRow}
+      ${failRow}
+      ${resetRow}
       ${actions}
     `;
 

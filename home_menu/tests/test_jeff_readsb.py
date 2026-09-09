@@ -124,6 +124,59 @@ def test_parse_watchdog_clock_skew_clamps_age_to_zero():
     assert w["last_fire_age"] == 0
 
 
+# ── _parse_watchdog: last-48h failure timeline (fires epoch log) ────────
+def test_parse_watchdog_fails_by_bucket():
+    now = 500_000
+    win = jeff.WATCHDOG_FAIL_WINDOW_H          # 48
+    nb = jeff.WATCHDOG_FAIL_BUCKETS            # 24  -> 2h per bucket
+    # fires at ~0.5h, ~2.5h and ~3.5h ago (both in the 2h..4h bucket), plus one
+    # just outside the 48h window
+    fires = "\n".join(str(now - s) for s in (1800, 9000, 12600, win * 3600 + 60))
+    w = jeff._parse_watchdog("{}", str(now), fires)
+    assert w["fail_window_h"] == win and w["fail_bucket_h"] == win // nb
+    assert w["fails_recent"] == 3                     # the out-of-window one dropped
+    assert w["fires_48h"] == 3                        # falls back to fails_recent
+    assert len(w["fails_by_bucket"]) == nb
+    assert w["fails_by_bucket"][-1] == 1              # 0h..2h ago
+    assert w["fails_by_bucket"][-2] == 2              # 2h..4h ago
+    assert sum(w["fails_by_bucket"]) == 3
+    # the individual usbresets, newest first, as ages in seconds
+    assert w["recent_fires"] == [1800, 9000, 12600]
+    # per-bucket absolute epochs drive the hover tooltip ("time of reset")
+    assert len(w["bucket_epochs"]) == nb
+    assert w["bucket_epochs"][-1] == [now - 1800]
+    assert w["bucket_epochs"][-2] == [now - 12600, now - 9000]     # sorted ascending
+    assert [len(b) for b in w["bucket_epochs"]] == w["fails_by_bucket"]
+
+
+def test_parse_watchdog_recent_fires_capped_and_windowed():
+    now = 1_000_000
+    older = now - jeff.WATCHDOG_FAIL_WINDOW_H * 3600 - 5      # outside the 48h window
+    fires = "\n".join(str(now - 60 * i) for i in range(1, 20)) + f"\n{older}\n"
+    w = jeff._parse_watchdog("{}", str(now), fires)
+    assert len(w["recent_fires"]) == jeff.RECENT_FIRE_MAX     # capped
+    assert w["recent_fires"] == sorted(w["recent_fires"])     # newest (smallest age) first
+    assert w["recent_fires"][0] == 60
+    assert w["fails_recent"] == 19                            # the out-of-window one excluded
+
+
+def test_parse_watchdog_fires_48h_from_state_preferred():
+    w = jeff._parse_watchdog('{"fires_24h":2,"fires_48h":7}', "100000", "")
+    assert w["fires_24h"] == 2 and w["fires_48h"] == 7
+
+
+def test_parse_watchdog_fails_timeline_none_without_remote_now():
+    w = jeff._parse_watchdog("{}", "", "123\n456")
+    assert w["fails_by_bucket"] is None and w["fails_recent"] is None
+    assert w["recent_fires"] is None and w["bucket_epochs"] is None
+
+
+def test_parse_watchdog_fails_timeline_ignores_junk_lines():
+    now = 500_000
+    w = jeff._parse_watchdog("{}", str(now), f"\n\n{now - 60}\ngarbage\n{now - 120}\n")
+    assert w["fails_recent"] == 2
+
+
 # ── _extra_alerts: readsb_flapping (auto-heal firing too often) ───────────
 def _data_wd(fires_24h):
     d = _data(adsb={"aircraft": 25, "msgs_per_sec": 140.0, "stale": False, "feed_age": 3})

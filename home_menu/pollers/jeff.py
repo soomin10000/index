@@ -82,6 +82,7 @@ echo '===NOW==='; date +%s
 echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0)}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
 echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
 echo '===WATCHDOG==='; cat /var/lib/readsb-watchdog/state.json 2>/dev/null || echo '{}'
+echo '===FIRES==='; cat /var/lib/readsb-watchdog/fires 2>/dev/null || true
 """
 
 
@@ -141,11 +142,24 @@ def _parse_adsb(adsb_block, stats_block, remote_now=None):
     }
 
 
-def _parse_watchdog(block, now=None):
+# The /jeff SDR panel reports the last 48h of auto-heal fires as a strip of
+# WATCHDOG_FAIL_BUCKETS equal columns (48 / 24 = 2h each), plus the age of the
+# most recent RECENT_FIRE_MAX usbresets as a list.
+WATCHDOG_FAIL_WINDOW_H = 48
+WATCHDOG_FAIL_BUCKETS = 24
+RECENT_FIRE_MAX = 8
+
+
+def _parse_watchdog(block, now=None, fires_block=""):
     """State written by jeff's `readsb-recover` script (pollers/jeff/) each time
     it runs — the auto-heal that usbresets the wedged dongle and restarts readsb.
     `{}` when the watchdog has never fired (or isn't installed). None-safe; never
-    raises — the poll's real job is writing jeff.json."""
+    raises — the poll's real job is writing jeff.json.
+
+    `fires_block` is the append-only epoch-per-fire log
+    (`/var/lib/readsb-watchdog/fires`, one line per auto-heal, kept 72h by
+    readsb-recover); its last 48h are bucketed here into `WATCHDOG_FAIL_BUCKETS`
+    equal columns for the panel strip."""
     try:
         w = json.loads(block.strip() or "{}")
     except Exception:
@@ -157,23 +171,68 @@ def _parse_watchdog(block, now=None):
         last_fire = int(last_fire) if last_fire is not None else None
     except (TypeError, ValueError):
         last_fire = None
-    try:
-        fires_24h = int(w.get("fires_24h") or 0)
-    except (TypeError, ValueError):
-        fires_24h = 0
-    age = None
-    if last_fire is not None and now:
+    def _int(v):
         try:
-            age = max(int(float(now) - last_fire), 0)
+            return int(v or 0)
         except (TypeError, ValueError):
-            age = None
+            return 0
+    fires_24h = _int(w.get("fires_24h"))
+    fires_48h = _int(w.get("fires_48h")) or None
+    try:
+        now_i = int(float(now)) if now not in (None, "") else None
+    except (TypeError, ValueError):
+        now_i = None
+    age = None
+    if last_fire is not None and now_i is not None:
+        age = max(now_i - last_fire, 0)
+
+    # Last-48h failure timeline, oldest bucket first — bucket i spans
+    # (window - i*step) .. (window - (i+1)*step) hours ago; the final bucket ends
+    # "now". None when we have no remote clock to bucket against.
+    window_h = WATCHDOG_FAIL_WINDOW_H
+    n_buckets = WATCHDOG_FAIL_BUCKETS
+    bucket_s = window_h * 3600 // n_buckets      # seconds per column (2h)
+    fails_recent = None
+    fails_by_bucket = None
+    bucket_epochs = None                         # per-bucket list of usbreset epochs (s)
+    recent_fires = None                          # age (s) of each usbreset, newest first
+    if now_i is not None:
+        cutoff = now_i - window_h * 3600
+        epochs = []
+        by_bucket = [[] for _ in range(n_buckets)]
+        for tok in (fires_block or "").split():
+            try:
+                e = int(tok)
+            except ValueError:
+                continue
+            if not (cutoff < e <= now_i):
+                continue
+            epochs.append(e)
+            idx = n_buckets - 1 - (now_i - e) // bucket_s
+            if 0 <= idx < n_buckets:
+                by_bucket[idx].append(e)
+        epochs.sort()
+        for b in by_bucket:
+            b.sort()
+        fails_recent = len(epochs)
+        fails_by_bucket = [len(b) for b in by_bucket]
+        bucket_epochs = by_bucket
+        recent_fires = [now_i - e for e in epochs[::-1][:RECENT_FIRE_MAX]]
+
     return {
         "installed": last_fire is not None,
         "last_fire": last_fire,
         "last_fire_age": age,
         "fires_24h": fires_24h,
+        "fires_48h": fires_48h if fires_48h is not None else fails_recent,
         "last_result": w.get("last_result"),
         "last_trigger": w.get("last_trigger"),
+        "fail_window_h": window_h,
+        "fail_bucket_h": bucket_s // 3600,
+        "fails_recent": fails_recent,
+        "fails_by_bucket": fails_by_bucket,
+        "bucket_epochs": bucket_epochs,
+        "recent_fires": recent_fires,
     }
 
 
@@ -311,7 +370,7 @@ def fetch_and_write():
         sdr = _parse_sdr(s["USB"], s["RTLMODS"], s["RTLTOOLS"], s["SDRSVC"])
         remote_now = s.get("NOW", "").strip()
         adsb = _parse_adsb(s.get("ADSB", ""), s.get("ADSBSTATS", ""), remote_now)
-        watchdog = _parse_watchdog(s.get("WATCHDOG", ""), remote_now)
+        watchdog = _parse_watchdog(s.get("WATCHDOG", ""), remote_now, s.get("FIRES", ""))
     except Exception as e:
         OUT.write_text(json.dumps({"ts": ts, "error": str(e)}))
         print(f"jeff poll failed: {e}")
