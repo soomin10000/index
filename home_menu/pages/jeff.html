@@ -227,7 +227,7 @@
           adsb.max_range_km != null ? ` · ${adsb.max_range_km} km max` : ''}</span>
       </div>` : '';
 
-    // strongest-signal flights overhead, with adsb.lol origin/destination when known
+    // strongest-signal flights overhead, with adsbdb.com origin/destination when known
     const fmtAlt = a => {
       if (a == null) return '';
       if (a === 'ground') return 'GND';

@@ -1,64 +1,73 @@
 """Callsign -> flight-route lookup for the /jeff ADS-B panel.
 
 readsb's aircraft.json gives a callsign but no route, so origin / destination
-airports come from adsb.lol's free `routeset` API — the same service tar1090
-uses for its route overlay. Results are cached to `data/jeff_routes.json`: a
-route is fixed for the life of a flight number, so a hit is good for CACHE_TTL;
-callsigns the API doesn't know (general aviation, military, positioning flights)
-are remembered as misses for a shorter NEGATIVE_TTL so they're retried
-occasionally instead of on every poll.
+airports come from adsbdb.com's free per-callsign API. Results are cached to
+`data/jeff_routes.json`: a route is fixed for the life of a flight number, so a
+hit is good for CACHE_TTL; callsigns the API doesn't know (general aviation,
+military, positioning flights) are remembered as misses for a shorter
+NEGATIVE_TTL so they're retried occasionally instead of on every poll.
 
 Nothing here raises out of `resolve()` — a lookup that fails just leaves the
 flights without a route; it never breaks the jeff poll or stales the card.
+
+(adsb.lol's batched `routeset` endpoint was tried first but returns empty 201s
+as of 2026-09-10; adsbdb is one GET per callsign, which the cache keeps cheap.)
 """
 
 import json
 import os
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
-API_URL = "https://api.adsb.lol/api/0/routeset"
-HTTP_TIMEOUT = 6
+API_URL = "https://api.adsbdb.com/v0/callsign/"
+HTTP_TIMEOUT = 4
 USER_AGENT = "home-menu/jeff-card (+homelab dashboard)"
 
 CACHE_TTL = 24 * 3600        # a known route is stable for the life of the flight number
 NEGATIVE_TTL = 3 * 3600      # re-ask about unknown callsigns every few hours
-MAX_LOOKUP = 12             # callsigns resolved per poll (one batched request)
+MAX_LOOKUP = 8              # callsigns resolved per poll (one GET each)
 PRUNE_AFTER = CACHE_TTL * 7  # drop cache entries untouched for this long
 
 
 def _airport(a):
-    """Compact one adsb.lol `_airports` entry down to what the card shows."""
+    """Compact one adsbdb origin/destination object down to what the card shows."""
     return {
-        "iata": a.get("iata") or "",
-        "icao": a.get("icao") or "",
-        "city": a.get("location") or "",
-        "country": a.get("countryiso2") or a.get("country") or "",
+        "iata": a.get("iata_code") or "",
+        "icao": a.get("icao_code") or "",
+        "city": a.get("municipality") or "",
+        "country": a.get("country_iso_name") or "",
         "name": a.get("name") or "",
     }
 
 
-def _route_from_plane(p):
-    """adsb.lol plane record -> {origin, dest, via} or None when unknown.
-
-    `_airports` is the ordered leg list: [0] is the origin, [-1] the
-    destination, anything between is a stopover. One or zero airports means the
-    route couldn't be pinned down — treat it as a miss."""
-    aps = [_airport(a) for a in (p.get("_airports") or []) if isinstance(a, dict)]
-    if len(aps) < 2:
+def _route_from_response(resp):
+    """adsbdb `/v0/callsign` payload -> {origin, dest, via} or None when unknown."""
+    fr = (resp or {}).get("response")
+    fr = fr.get("flightroute") if isinstance(fr, dict) else None
+    if not isinstance(fr, dict):
         return None
-    via = [a["iata"] or a["icao"] for a in aps[1:-1] if a["iata"] or a["icao"]]
-    return {"origin": aps[0], "dest": aps[-1], "via": via}
+    o, d = fr.get("origin"), fr.get("destination")
+    if not isinstance(o, dict) or not isinstance(d, dict):
+        return None
+    return {"origin": _airport(o), "dest": _airport(d), "via": []}
 
 
-def _fetch(planes, *, url=API_URL, timeout=HTTP_TIMEOUT):
-    """POST the batch to adsb.lol. Raises on any transport / decode error."""
-    body = json.dumps({"planes": planes}).encode()
+def _fetch(callsign, *, timeout=HTTP_TIMEOUT):
+    """GET one callsign from adsbdb. Returns the decoded JSON dict, or None when
+    adsbdb says it doesn't know the callsign (HTTP 404). Raises on any other
+    transport / decode error so the caller can leave it uncached and retry."""
     req = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+        API_URL + urllib.parse.quote(callsign, safe=""),
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
 
 
 def _fresh(entry, now):
@@ -96,9 +105,9 @@ def resolve(flights, cache, now=None, fetch=None):
     Returns (routes, dirty): `routes` maps upper-cased callsign -> {origin, dest,
     via} for every callsign we now have a known route for; `dirty` is True when
     `cache` was changed and should be written back. Only callsigns missing or
-    expired from the cache are looked up, at most MAX_LOOKUP per call, in one
-    batched request. A failed request is swallowed — the flights just go without
-    a route this poll."""
+    expired from the cache are looked up, at most MAX_LOOKUP per call. A lookup
+    that raises is swallowed and left uncached (retried next poll); a definitive
+    "unknown callsign" is negative-cached."""
     now = int(now if now is not None else time.time())
     fetch = fetch or _fetch
     if not isinstance(cache, dict):
@@ -112,31 +121,18 @@ def resolve(flights, cache, now=None, fetch=None):
         seen.add(cs)
         if _fresh(cache.get(cs), now):
             continue
-        lat, lon = (f or {}).get("lat"), (f or {}).get("lon")
-        if lat is None or lon is None:
-            continue
         if len(want) < MAX_LOOKUP:
-            want.append({"callsign": cs, "lat": lat, "lng": lon})
+            want.append(cs)
 
     dirty = False
-    if want:
+    for cs in want:
         try:
-            resp = fetch(want)
+            resp = fetch(cs)
         except Exception:
-            resp = None
-        if resp is not None:
-            planes = resp.get("planes", []) if isinstance(resp, dict) else resp
-            got = {}
-            for p in planes or []:
-                if not isinstance(p, dict):
-                    continue
-                cs = str(p.get("callsign") or "").strip().upper()
-                if cs:
-                    got[cs] = _route_from_plane(p)
-            for w in want:
-                route = got.get(w["callsign"])
-                cache[w["callsign"]] = {"fetched": now, "ok": bool(route), **(route or {})}
-                dirty = True
+            continue
+        route = _route_from_response(resp)
+        cache[cs] = {"fetched": now, "ok": bool(route), **(route or {})}
+        dirty = True
 
     routes = {}
     for cs in seen:

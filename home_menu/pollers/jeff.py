@@ -401,7 +401,7 @@ def fetch_and_write():
         print(f"jeff poll failed: {e}")
         return
 
-    # Best-effort origin/destination for the aircraft overhead (adsb.lol, cached).
+    # Best-effort origin/destination for the aircraft overhead (adsbdb.com, cached).
     # Isolated so a route-API blip can't fail the poll or stale the card.
     if adsb and adsb.get("flights"):
         try:
