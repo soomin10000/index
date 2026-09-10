@@ -249,7 +249,7 @@ def _is_it_broken_status():
     up, up_fresh = _freshness(DATA / 'uplink.json')
     if not up_fresh or not (up or {}).get('probe', {}).get('connected'):
         checks['internet'] = {'state': 'down', 'detail': "Can't reach the internet right now."}
-    elif (up.get('bgp') or {}).get('status') != 'ok':
+    elif (up.get('bgp') or {}).get('status') == 'alert':
         checks['internet'] = {'state': 'warn', 'detail': "Online, but something's off with the connection."}
     else:
         checks['internet'] = {'state': 'ok', 'detail': 'Internet is up.'}
