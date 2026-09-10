@@ -54,6 +54,20 @@
   .adsb-big { font-family: var(--font-mono); font-size: 1.1rem; color: var(--ink); }
   .adsb-big b { color: var(--sdr); font-size: 1.5rem; font-weight: 700; }
   .adsb-sub { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
+  .adsb-flights {
+    border: 1px solid var(--bezel); border-radius: 4px; overflow: hidden;
+  }
+  .adsb-flight {
+    display: flex; align-items: baseline; gap: 0.6rem;
+    font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim);
+    padding: 0.32rem 0.9rem; border-top: 1px solid var(--inset);
+  }
+  .adsb-flight:first-child { border-top: 0; }
+  .adsb-flight .cs { color: var(--ink); font-weight: 600; min-width: 4.6rem; flex-shrink: 0; }
+  .adsb-flight .rt { color: var(--sdr); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .adsb-flight .rt .arr { color: var(--ink-faint); }
+  .adsb-flight .rt.unknown { color: var(--ink-faint); }
+  .adsb-flight .alt { margin-left: auto; color: var(--ink-faint); flex-shrink: 0; }
   .sdr-row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.7rem; align-items: baseline; }
   .sdr-row .k {
     font-size: 0.58rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
@@ -213,6 +227,34 @@
           adsb.max_range_km != null ? ` · ${adsb.max_range_km} km max` : ''}</span>
       </div>` : '';
 
+    // strongest-signal flights overhead, with adsb.lol origin/destination when known
+    const fmtAlt = a => {
+      if (a == null) return '';
+      if (a === 'ground') return 'GND';
+      return a >= 18000 ? `FL${Math.round(a / 100)}` : `${a.toLocaleString()} ft`;
+    };
+    const routeCell = f => {
+      const r = f.route;
+      if (!r) return '<span class="rt unknown">route unknown</span>';
+      const code = ap => esc((ap && (ap.iata || ap.icao)) || '??');
+      const via = (r.via && r.via.length)
+        ? ` <span class="arr">via</span> ${r.via.map(esc).join(', ')}` : '';
+      return `<span class="rt">${code(r.origin)} <span class="arr">→</span> ${code(r.dest)}${via}</span>`;
+    };
+    const flightTitle = f => {
+      const r = f.route;
+      if (!r) return f.cs;
+      const name = ap => (ap && (ap.name || ap.city)) || '';
+      return `${f.cs}   ${name(r.origin)}  →  ${name(r.dest)}`.trim();
+    };
+    const flightRows = (adsb && adsb.flights && adsb.flights.length) ? `
+      <div class="adsb-flights">${adsb.flights.slice(0, 6).map(f => `
+        <div class="adsb-flight" title="${esc(flightTitle(f))}">
+          <span class="cs">${esc(f.cs)}</span>
+          ${routeCell(f)}
+          <span class="alt">${esc(fmtAlt(f.alt))}</span>
+        </div>`).join('')}</div>` : '';
+
     // auto-heal status (readsb-recover on jeff — usbreset + restart on a wedge)
     let healRow = '';
     if (wd && wd.installed) {
@@ -274,6 +316,7 @@
           ${present && sdr.dongle_name ? `<small>${esc(sdr.dongle_name)}</small>` : ''}</span>
       </div>
       ${adsbStrip}
+      ${flightRows}
       ${squat ? `<div class="sdr-note">⚠ dvb_usb_rtl28xxu is holding the dongle — blacklist it so librtlsdr can use it</div>` : ''}
       ${flapNote}
       <div class="sdr-row"><span class="k">Driver</span>${

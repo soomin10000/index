@@ -31,6 +31,22 @@ def test_parse_adsb_no_remote_now():
     assert a["feed_age"] is None and a["stale"] is False
 
 
+def test_parse_adsb_flights_absent_is_empty_list():
+    a = jeff._parse_adsb(_adsb_block(), _STATS_BLOCK, "1010")
+    assert a["flights"] == []
+
+
+def test_parse_adsb_flights_parsed_and_trimmed():
+    block = ('{"total":3,"pos":2,"file_ts":1000,"flights":['
+             '{"cs":"BAW123 ","hex":"400a1b","alt":37000,"gs":450,"trk":270,"lat":51.4,"lon":-0.4},'
+             '{"cs":"  ","hex":"xxx","lat":1,"lon":2},'
+             '{"cs":"RYR4KP","alt":"ground","lat":53.4,"lon":-2.2}]}')
+    a = jeff._parse_adsb(block, _STATS_BLOCK, "1010")
+    assert [f["cs"] for f in a["flights"]] == ["BAW123", "RYR4KP"]   # blank dropped, trimmed
+    assert a["flights"][0]["track"] == 270 and a["flights"][0]["alt"] == 37000
+    assert a["flights"][1]["alt"] == "ground"
+
+
 # ── _extra_alerts: the three deaf shapes ──────────────────────────────────
 def _data(services=("readsb.service", "piaware.service"), dongle=True, adsb=None):
     return {
