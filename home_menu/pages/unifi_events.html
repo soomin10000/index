@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Event Log</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,7 +22,7 @@
     }
 
     nav {
-      display: flex; align-items: center; gap: 1rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.35rem;
       padding: 0.55rem 1.2rem;
       border-bottom: 1px solid #041828;
       background: rgba(2,10,24,0.95);
@@ -32,7 +33,8 @@
     nav a:hover { color: #00ffcc; }
     .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
     #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
-    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; flex-wrap: wrap; }
+    @media (max-width: 640px) { .subnav { width: 100%; margin-left: 0; } }
     .subnav-item {
       font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
       padding: 0.25rem 0.75rem; border-radius: 999px;
@@ -42,7 +44,7 @@
     .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
 
     #filters {
-      display: flex; align-items: center; gap: 0.6rem;
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; row-gap: 0.5rem;
       padding: 0.6rem 1.4rem; border-bottom: 1px solid #040e20;
       background: rgba(2,8,20,0.8); flex-shrink: 0;
     }
@@ -54,7 +56,7 @@
     .filter-btn.active, .filter-btn:hover { color: #00ffcc; border-color: #00ffcc; }
     #updated { margin-left: auto; font-size: 0.6rem; color: #2a5570; }
 
-    #feed { flex: 1; overflow: auto; padding: 1.2rem 1.4rem 3rem; }
+    #feed { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 1.2rem 1.4rem 3rem; }
 
     .event {
       display: flex; gap: 1.2rem; align-items: flex-start;
@@ -67,6 +69,12 @@
       flex-shrink: 0; width: 90px;
       font-size: 0.68rem; color: #2a5570; line-height: 1.5;
       text-align: right; padding-top: 0.15rem;
+    }
+    @media (max-width: 420px) {
+      .event { gap: 0.7rem; }
+      .event:hover { margin: 0 -1rem; padding: 0.8rem 1rem; }
+      .event-time { width: 60px; }
+      .event-time .date { display: none; }
     }
     .event-time .date { display: block; font-size: 0.58rem; color: #1a3a50; }
 

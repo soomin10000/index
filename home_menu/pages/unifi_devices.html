@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Device Inventory</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,7 +24,7 @@
     }
 
     nav {
-      display: flex; align-items: center; gap: 1rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.35rem;
       padding: 0.55rem 1.2rem;
       border-bottom: 1px solid #041828;
       background: rgba(2,10,24,0.95);
@@ -35,7 +36,8 @@
     nav a:hover { color: #00ffcc; }
     .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
     #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
-    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; flex-wrap: wrap; }
+    @media (max-width: 640px) { .subnav { width: 100%; margin-left: 0; } }
     .subnav-item {
       font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
       padding: 0.25rem 0.75rem; border-radius: 999px;
@@ -45,7 +47,7 @@
     .subnav-item.active { color: #00ffcc; background: rgba(0,255,204,0.06); border-color: #006644; }
 
     #filters {
-      display: flex; align-items: center; gap: 0.8rem;
+      display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; row-gap: 0.5rem;
       padding: 0.6rem 1.2rem;
       border-bottom: 1px solid #040e20;
       background: rgba(2,8,20,0.8);
@@ -54,7 +56,7 @@
     #search {
       background: #040e20; border: 1px solid #1a4060; color: #4a8aaa;
       font-family: inherit; font-size: 0.68rem; padding: 0.3rem 0.7rem;
-      border-radius: 4px; width: 220px; outline: none;
+      border-radius: 4px; width: 220px; max-width: 100%; outline: none;
       letter-spacing: 0.05em;
     }
     #search:focus { border-color: #00ffcc; }
@@ -76,7 +78,7 @@
       border-radius: 4px; outline: none; cursor: pointer;
     }
 
-    #table-wrap { flex: 1; overflow: auto; padding: 0.8rem 1.2rem 2rem; }
+    #table-wrap { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 0.8rem 1.2rem 2rem; }
 
     table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 1rem; }
 
@@ -159,7 +161,7 @@
 
     /* Detail panel */
     #detail {
-      position: fixed; top: 0; right: -420px; width: 400px; height: 100vh;
+      position: fixed; top: 0; right: -420px; width: 400px; max-width: 92vw; height: 100vh;
       background: #030c1e; border-left: 1px solid #0d3060;
       z-index: 200; display: flex; flex-direction: column;
       transition: right .25s cubic-bezier(.4,0,.2,1);

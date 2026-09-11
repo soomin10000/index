@@ -18,7 +18,7 @@
 
     .content { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; }
 
-    header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.3rem; margin-bottom: 1.5rem; }
     header a { color: #444; text-decoration: none; font-size: 0.8rem; }
     header a:hover { color: #888; }
     h1 { font-size: 1.4rem; font-weight: 800; color: var(--a); }
@@ -37,7 +37,8 @@
     .alert-text { font-size: 0.72rem; color: #888; margin-top: 0.2rem; line-height: 1.5; }
     .alert-meta { font-size: 0.62rem; color: #333; margin-top: 0.3rem; font-family: monospace; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+    .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -0.2rem; }
+    table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.75rem; }
     th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #333; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
     td { padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.03); color: #bbb; white-space: nowrap; }
     tr:hover td { background: rgba(255,255,255,0.02); }
@@ -100,15 +101,17 @@
       <label class="stale-toggle"><input type="checkbox" id="show-stale"> Show inactive (30m+)</label>
     </div>
     <div class="row-count" id="row-count"></div>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th><th>Host</th><th>MAC</th><th>SSID / Name</th><th>Vendor</th>
-          <th>Security</th><th>Signal</th><th>Ch</th><th>Last seen</th><th>Probing for</th>
-        </tr>
-      </thead>
-      <tbody id="devices"></tbody>
-    </table>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th><th>Host</th><th>MAC</th><th>SSID / Name</th><th>Vendor</th>
+            <th>Security</th><th>Signal</th><th>Ch</th><th>Last seen</th><th>Probing for</th>
+          </tr>
+        </thead>
+        <tbody id="devices"></tbody>
+      </table>
+    </div>
   </div>
 
 </div>

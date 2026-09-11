@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Speed Test History</title>
   <script src="/chart.min.js"></script>
   <style>
@@ -17,14 +18,15 @@
       pointer-events: none; z-index: 100;
     }
     nav {
-      display: flex; align-items: center; gap: 1rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.35rem;
       padding: 0.55rem 1.2rem; border-bottom: 1px solid #041828;
       background: rgba(2,10,24,0.95); backdrop-filter: blur(8px);
       position: sticky; top: 0; z-index: 50;
     }
     nav a { color: #5a9ab8; font-size: 0.68rem; text-decoration: none; letter-spacing: 0.12em; transition: color .2s; }
     nav a:hover { color: #00ffcc; }
-    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; flex-wrap: wrap; }
+    @media (max-width: 640px) { .subnav { width: 100%; margin-left: 0; } }
     .subnav-item {
       font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
       padding: 0.25rem 0.75rem; border-radius: 999px;

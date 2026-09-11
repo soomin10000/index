@@ -284,6 +284,14 @@
     }
     .strip-verdict { flex-shrink: 0; align-self: center; margin-bottom: 0; }
     .subpanels { display: grid; gap: 0.6rem; flex: 1; min-width: 0; }
+    /* Below ~560px the verdict and the kv/subpanels no longer have room side by side —
+       .kv's min-width:0 lets it shrink to near-nothing instead of wrapping, which crushes
+       the value column unreadable. Stack them instead of letting flex fight over the width. */
+    @media (max-width: 560px) {
+      .strip-row { flex-direction: column; align-items: stretch; gap: 0.9rem; }
+      .strip-verdict { align-self: flex-start; }
+      .kv, .subpanels { width: 100%; }
+    }
     .subpanel {
       display: flex; flex-direction: column; min-width: 0;
       background: #191b1d;                    /* deeper than the card + --inset */

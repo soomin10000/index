@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Network Map</title>
   <script src="/vis-network.min.js"></script>
   <style>
@@ -34,7 +35,7 @@
     }
 
     nav {
-      display: flex; align-items: center; gap: 1rem;
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.35rem;
       padding: 0.55rem 1.2rem;
       border-bottom: 1px solid #041828;
       flex-shrink: 0;
@@ -46,7 +47,8 @@
     nav a:hover { color: #00ffcc; }
     .brand { font-size: 0.78rem; font-weight: bold; letter-spacing: 0.25em; color: #3a7090; }
     #status { font-size: 0.62rem; color: #3a7090; letter-spacing: 0.08em; }
-    .subnav { display: flex; gap: 0.4rem; margin-left: auto; }
+    .subnav { display: flex; gap: 0.4rem; margin-left: auto; flex-wrap: wrap; }
+    @media (max-width: 640px) { .subnav { width: 100%; margin-left: 0; } }
     .subnav-item {
       font-size: 0.62rem; text-decoration: none; letter-spacing: 0.1em;
       padding: 0.25rem 0.75rem; border-radius: 999px;
