@@ -228,7 +228,8 @@
   const $ = s => document.querySelector(s);
   const charts = {};
   const C = { bazza: '#63b463', steve: '#e0975a', isp: '#f0a02e', ww: '#5b9dff',
-              loss: '#ff5d5d', ok: '#2fd39a', warn: '#ffb02e', bad: '#ff5d5d', grid: '#0c2438', tick: '#42627a' };
+              loss: '#ff5d5d', ok: '#2fd39a', warn: '#ffb02e', bad: '#ff5d5d', mute: '#5f8aa6',
+              grid: '#0c2438', tick: '#42627a' };
 
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const hhmm = t => new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -260,11 +261,13 @@
     const loc = d.localisation || {};
     const locHas = v => Object.values(loc).some(x => x.verdict === v);
     const ext = d.external && d.external.ok ? d.external : null;
-    const atlasMax = tier => {
+    // sustained mean loss across a tier's probes (dead probes already dropped by
+    // the poller) — not worst_loss, so one probe's transient blip can't red it
+    const atlasLoss = tier => {
       if (!ext) return null;
       let m = 0, seen = false;
       for (const t of Object.values(ext.targets || {})) {
-        const s = t[tier]; if (s && s.probes) { seen = true; m = Math.max(m, s.worst_loss || 0); }
+        const s = t[tier]; if (s && s.probes) { seen = true; m = Math.max(m, s.loss_pct || 0); }
       }
       return seen ? m : null;
     };
@@ -273,14 +276,14 @@
     // hosts segment
     const hostStale = Object.values(d.hosts || {}).some(h => h.age_s == null || h.age_s > 1200);
     const hostSeg = ev.length ? 'fault' : hostStale ? 'warn' : 'ok';
-    // line / CPE
+    // line / CPE — inbound ICMPv6 to bazza is deliberately blocked at the
+    // UCG-Max, so a low Atlas reached-% is expected and never a fault here
     const inb = ext && ext.inbound;
-    const inbBad = inb && inb.reached_pct != null && inb.rounds >= 3 && inb.reached_pct < 60;
-    const lineSeg = locHas('your-line') ? 'fault' : inbBad ? 'warn' : (ev.length && !ext ? 'warn' : 'ok');
+    const lineSeg = locHas('your-line') ? 'fault' : (ev.length && !ext ? 'warn' : 'ok');
     // isp
-    const ispSeg = locHas('isp-network') ? 'fault' : band(atlasMax('isp'));
+    const ispSeg = locHas('isp-network') ? 'fault' : band(atlasLoss('isp'));
     // internet / resolvers
-    const netSeg = locHas('resolver-or-internet') ? 'fault' : band(atlasMax('ww'));
+    const netSeg = locHas('resolver-or-internet') ? 'fault' : band(atlasLoss('ww'));
 
     const segs = [
       [hostSeg, 'bazza · steve', 'our two probes'],
@@ -312,9 +315,8 @@
     const ci = $('#chain-in');
     if (!ext) { ci.textContent = ''; return; }
     if (inb && inb.reached_pct != null) {
-      const c = inb.reached_pct >= 80 ? C.ok : inb.reached_pct >= 60 ? C.warn : C.bad;
-      ci.innerHTML = `Inbound (internet → bazza): <span style="color:${c}">${inb.reached_pct}%</span> of ${inb.probes} worldwide probes reach the prefix`
-        + (inb.stuck_at && inb.reached_pct < 80 ? ` · stalls at <b style="color:${C.bad}">${esc(inb.stuck_at)}</b>` : '');
+      ci.innerHTML = `Inbound (internet → bazza): <span style="color:${C.mute}">${inb.reached_pct}%</span> of ${inb.probes} worldwide probes reach the prefix`
+        + ` · <span style="color:${C.mute}">inbound ICMPv6 blocked at the UCG-Max by design</span>`;
     } else {
       ci.textContent = 'Inbound: no Atlas traceroute rounds yet (runs every 2h).';
     }

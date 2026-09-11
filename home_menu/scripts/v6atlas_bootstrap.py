@@ -50,8 +50,11 @@ def main():
     at = AtlasClient()
     print(f"probe {at.probe_id}   credits {at.credits()}")
 
-    isp = at.probe_spec([("probes", OWN_PROBE, 1), ("asn", ISP_ASN, 5)])
-    ww = at.probe_spec([("area", "WW", 6)])
+    # require probes whose IPv6 is known-working — a probe with dead v6 to the
+    # target is a fixed slice of "loss" that never clears and reds the fault chain
+    V6OK = ["system-ipv6-works"]
+    isp = at.probe_spec([("probes", OWN_PROBE, 1), ("asn", ISP_ASN, 6, V6OK)])
+    ww = at.probe_spec([("area", "WW", 8, V6OK)])
 
     # suffix -> zero-arg callable that creates it (description filled in below)
     want = {}

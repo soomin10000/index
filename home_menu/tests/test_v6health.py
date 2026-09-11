@@ -236,6 +236,21 @@ def test_ping_tier_parse_splits_own_probe():
     assert t['probes'] == 2 and t['worst_loss'] > 50 and t['series']
 
 
+def test_ping_tier_drops_fully_dead_probe():
+    # a probe that is 100% lost for the whole window has no working v6 path and
+    # must not count toward the tier's loss (would red the fault chain forever)
+    now = int(time.time())
+    rounds = []
+    for i in range(6):
+        ts = now - 300 - i * 1800
+        rounds.append({'timestamp': ts, 'prb_id': 777, 'sent': 3, 'rcvd': 3, 'avg': 5.0})
+        rounds.append({'timestamp': ts, 'prb_id': 999, 'sent': 3, 'rcvd': 0})
+    t = v6health._atlas_ping_tier(rounds, now, None)
+    assert t['dead'] == 1
+    assert t['probes'] == 1
+    assert t['loss_pct'] == 0.0 and t['worst_loss'] == 0.0
+
+
 def test_atlas_inbound_reached_and_stuck():
     now = int(time.time())
     gua = '2a02:6b67:d7e0:2500::1'
@@ -251,30 +266,15 @@ def test_atlas_inbound_reached_and_stuck():
     assert r['rounds'] == 2 and r['reached_pct'] == 50 and r['stuck_at'] == '2a02:6b60::2a'
 
 
-def test_alerts_inbound_unreachable_is_critical_once_seen_ok():
+def test_alerts_inbound_never_alerts():
+    # Inbound ICMPv6 to bazza is blocked at the UCG-Max by design — a low Atlas
+    # reached-% must never raise an alert (2026-09-10).
     now = int(time.time())
-    alerts, _ = v6health.build_alerts(
-        _summary_clean(now), [], {'steve': {'age_s': 60}}, {}, now,
-        {'inbound_ever_ok': True}, external=_ext(inbound_pct=10))
-    assert any(a['id'] == 'atlas_inbound_bazza' and a['level'] == 'critical' for a in alerts)
-
-
-def test_alerts_inbound_cold_start_is_only_warn():
-    now = int(time.time())
-    alerts, _ = v6health.build_alerts(
-        _summary_clean(now), [], {'steve': {'age_s': 60}}, {}, now, {},
-        external=_ext(inbound_pct=10))
-    ids = {a['id']: a['level'] for a in alerts}
-    assert ids.get('atlas_inbound_cold') == 'warn'
-    assert 'atlas_inbound_bazza' not in ids
-
-
-def test_alerts_inbound_ok_no_alert():
-    now = int(time.time())
-    alerts, _ = v6health.build_alerts(
-        _summary_clean(now), [], {'steve': {'age_s': 60}}, {}, now, {},
-        external=_ext(inbound_pct=100))
-    assert not any(a['id'] == 'atlas_inbound_bazza' for a in alerts)
+    for pct, prev in ((10, {}), (10, {'inbound_ever_ok': True}), (100, {})):
+        alerts, _ = v6health.build_alerts(
+            _summary_clean(now), [], {'steve': {'age_s': 60}}, {}, now, prev,
+            external=_ext(inbound_pct=pct))
+        assert not any(a['id'].startswith('atlas_inbound') for a in alerts)
 
 
 def test_atlas_external_serves_fresh_cache(tmp_path, monkeypatch):

@@ -145,8 +145,16 @@ class AtlasClient:
     @staticmethod
     def probe_spec(items):
         """[('probes', 64460, 1), ('asn', 201838, 5), ('area', 'WW', 6)]
-        -> the Atlas `probes` array."""
-        return [{"type": t, "value": str(v), "requested": int(n)} for t, v, n in items]
+        -> the Atlas `probes` array. A 4th tuple element is a list of tags the
+        probe must carry, e.g. ('area', 'WW', 6, ['system-ipv6-works'])."""
+        out = []
+        for it in items:
+            t, v, n = it[0], it[1], it[2]
+            spec = {"type": t, "value": str(v), "requested": int(n)}
+            if len(it) > 3 and it[3]:
+                spec["tags"] = {"include": list(it[3]), "exclude": []}
+            out.append(spec)
+        return out
 
     def create_ping(self, description, target, probes, af=6, interval=1800, packets=3):
         return self._create({
@@ -189,6 +197,23 @@ class AtlasClient:
         if stop:
             p["stop"] = int(stop)
         return self._get(f"measurements/{msm_id}/results/", **p)
+
+    def stop_measurement(self, msm_id):
+        """Stop a recurring measurement (needs the key's `measurements.stop` grant)."""
+        r = self.s.delete(f"{BASE}/measurements/{msm_id}/", timeout=30)
+        if not r.ok:
+            try:
+                detail = r.json()
+            except ValueError:
+                detail = r.text[:500]
+            raise SystemExit(f"stop failed ({r.status_code}) on msm {msm_id}: {detail}")
+        return True
+
+    def measurement_detail(self, msm_id):
+        """Full measurement object — status, probes_scheduled, probes[], etc.
+        (participation-requests / probe edits on a running measurement 403 on
+        this key, so the v6health probe fix is stop + recreate instead.)"""
+        return self._get(f"measurements/{msm_id}/")
 
     def probes_meta(self, ids):
         """{prb_id: {'asn_v6', 'cc'}} — probes/ GET is allowed on this key."""

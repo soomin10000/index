@@ -218,7 +218,6 @@ V6ATLAS_STATE = DATA / 'v6atlas_state.json'
 V6ATLAS_CACHE = DATA / 'v6atlas_cache.json'
 ATLAS_REFRESH_S = 25 * 60          # don't hit the API more often than this
 ATLAS_LOSS_BAD = 20               # tier worst-loss % that counts as "this tier sees it too"
-ATLAS_INBOUND_WARN = 60          # min % of worldwide probes that must still reach bazza
 
 
 def _atlas_client():
@@ -235,10 +234,17 @@ def _atlas_bucket(now, ts):
     return now - ((now - ts) // BUCKET_S) * BUCKET_S
 
 
+DEAD_PROBE_LOSS = 95.0    # a probe this lossy for the whole window has no working
+DEAD_PROBE_MIN_ROUNDS = 3  # v6 path to the target — it's a broken probe, not a signal
+
+
 def _atlas_ping_tier(rounds, now, own_id):
-    """Atlas ping rounds -> {probes, loss_pct, worst_loss, rtt_p50, series,
-    mine:{loss_pct,rtt}|None}. `own_id` (when given) is pulled out as `mine`."""
-    by_bucket, all_loss, rtts, seen = {}, [], [], set()
+    """Atlas ping rounds -> {probes, dead, loss_pct, worst_loss, rtt_p50, series,
+    mine:{loss_pct,rtt}|None}. `own_id` (when given) is pulled out as `mine`.
+    Probes that are ~100% lost across the whole window are dropped from every
+    aggregate — otherwise one broken probe in a small set is a fixed slice of
+    "loss" that never clears and reds the /v6health fault chain."""
+    per_probe = {}          # pid -> list[(ts, loss, rtt)]
     mine = None
     for r in rounds:
         ts = r.get('timestamp')
@@ -251,17 +257,29 @@ def _atlas_ping_tier(rounds, now, own_id):
         avg = r.get('avg')
         rtt = round(avg, 1) if isinstance(avg, (int, float)) and avg > 0 else None
         pid = r.get('prb_id')
-        seen.add(pid)
         if own_id and pid == own_id:
             mine = {'loss_pct': round(loss, 1), 'rtt': rtt}
             continue
-        all_loss.append(loss)
-        if rtt is not None:
-            rtts.append(rtt)
-        by_bucket.setdefault(_atlas_bucket(now, ts), []).append(loss)
+        per_probe.setdefault(pid, []).append((ts, loss, rtt))
+
+    def is_dead(samples):
+        return (len(samples) >= DEAD_PROBE_MIN_ROUNDS
+                and min(s[1] for s in samples) >= DEAD_PROBE_LOSS)
+
+    dead = {pid for pid, s in per_probe.items() if is_dead(s)}
+    by_bucket, all_loss, rtts = {}, [], []
+    for pid, samples in per_probe.items():
+        if pid in dead:
+            continue
+        for ts, loss, rtt in samples:
+            all_loss.append(loss)
+            if rtt is not None:
+                rtts.append(rtt)
+            by_bucket.setdefault(_atlas_bucket(now, ts), []).append(loss)
     rtts.sort()
     return {
-        'probes': len(seen - ({own_id} if own_id else set())),
+        'probes': len(per_probe) - len(dead),
+        'dead': len(dead),
         'loss_pct': round(sum(all_loss) / len(all_loss), 1) if all_loss else 0.0,
         'worst_loss': round(max(all_loss), 1) if all_loss else 0.0,
         'rtt_p50': rtts[len(rtts) // 2] if rtts else None,
@@ -458,20 +476,9 @@ def build_alerts(summary, events, hoststat, snmp_rate, now, prev,
                 'warn', f'{s["label"]} flaky',
                 f'{s["fail_events"]} failed samples in 24h (worst loss {s["worst_loss"]}%)' + atlas)
 
-    inb = (external or {}).get('inbound') or {}
-    if inb.get('reached_pct') is not None and inb.get('rounds', 0) >= 3 \
-            and inb['reached_pct'] < ATLAS_INBOUND_WARN:
-        stall = f'; stalling at {inb["stuck_at"]}' if inb.get('stuck_at') else ''
-        if (prev or {}).get('inbound_ever_ok'):
-            cands['atlas_inbound_bazza'] = (
-                'critical', 'Home IPv6 prefix unreachable from outside',
-                f"only {inb['reached_pct']}% of worldwide Atlas probes reached "
-                f"bazza's GUA (was reachable before){stall}")
-        else:
-            cands['atlas_inbound_cold'] = (
-                'warn', 'Inbound IPv6 to bazza not answering',
-                f"{inb['reached_pct']}% of worldwide Atlas probes reach bazza's GUA — "
-                f"likely the UCG-Max blocks inbound ICMPv6 to it{stall}")
+    # Inbound ICMPv6 to bazza's GUA is deliberately dropped at the UCG-Max and
+    # won't be unblocked, so we don't alert on it — the /v6health page still
+    # shows the Atlas reached-% as an informational line.
 
     for h, rate in snmp_rate.items():
         if rate and rate > DU_RATE_WARN:
@@ -564,9 +571,7 @@ def main():
     if not ok:
         data['error'] = 'no probe samples from either host yet'
     OUT.write_text(json.dumps(data, indent=2))
-    reached = ((external or {}).get('inbound') or {}).get('reached_pct')
-    ever_ok = bool(prev.get('inbound_ever_ok') or (reached is not None and reached >= 80))
-    STATE.write_text(json.dumps({'ts': now, 'active': active, 'inbound_ever_ok': ever_ok}))
+    STATE.write_text(json.dumps({'ts': now, 'active': active}))
 
     v6fail = sum(summary[n]['fail_events'] for n in V6_TARGETS)
     ax = 'ok' if external.get('ok') else external.get('reason', 'off')
