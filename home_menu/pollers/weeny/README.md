@@ -119,8 +119,8 @@ it without extra software, which is why salvage was dropped.)*
    # ~2 min: weeny.localdomain answers ping / shows in Pi-hole
    ssh weeny tail -f /boot/firmware/weeny/provision.log      # port 22 until stage 10
    ```
-   Timeline: LAN ~2 min → sshd on **:22** ~3 min → provisioning ~25–35 min → an
-   ntfy push to `steve_updates` → auto-reboot 60 s later → sshd on **:2222**.
+   Timeline: LAN ~2 min → sshd on **:22** ~3 min → provisioning ~25–35 min →
+   auto-reboot 60 s later → sshd on **:2222**.
    If the network never appears: pull the card, read
    `/Volumes/bootfs/weeny/provision.log` on the Mac.
 
@@ -194,7 +194,7 @@ ssh -p 2222 weeny 'sudo nmcli con down couldbe'    # or block the SSID at the AP
 Within ~2 min a WPA2 SSID `weeny-<nnnn>` appears — join it from a phone,
 `http://10.41.0.1/` should load (proves comitup-web got `:80`). On weeny:
 `/run/comitup-hotspot` exists, `systemctl status opencanary` = inactive
-(condition), **no ntfy storm**. Reconnect (`sudo nmcli con up couldbe` or pick
+(condition). Reconnect (`sudo nmcli con up couldbe` or pick
 `couldbe` on the phone) → flag gone, opencanary active, `192.168.1.5` back
 (dispatcher). `journalctl -t comitup-callback -t honeypot-ip` shows the events.
 

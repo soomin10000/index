@@ -10,11 +10,9 @@ Metrics history goes to jeff_history.db (5-column schema, with cpu_temp).
 """
 
 import json
-import os
 import re
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -33,18 +31,9 @@ TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
 
 # readsb (ADS-B) has wedged repeatedly on a flaky USB/dongle link (2026-09-01/02/04).
-# The `/jeff` card already shows a "deaf" alert; this also fires a phone push via
-# the self-hosted ntfy on steve so it doesn't only land on a dashboard nobody's
-# looking at. Reuses the `steve_updates` topic the SDR driver-check already pushes
-# to (phones are subscribed). All overridable from the crontab env.
+# The `/jeff` card shows a "deaf" alert for this — no phone push (removed 2026-09-17
+# along with every other ntfy push in home_menu, per Simon).
 #
-# NB since 2026-09-04 jeff also runs its own `readsb-watchdog` timer (see
-# pollers/jeff/) that usbresets the dongle and restarts readsb within ~4 min of a
-# wedge — under the leaky-bucket HI below (~6 min), so this push now mostly fires
-# only for wedges the auto-heal couldn't clear. The watchdog sends its own
-# (lower-priority) push per heal.
-NTFY_URL   = os.environ.get("JEFF_NTFY_URL", "http://localhost:8197")
-NTFY_TOPIC = os.environ.get("JEFF_NTFY_TOPIC", "steve_updates")
 # readsb's feed files count as stale (i.e. readsb hung / crashed) past this age.
 ADSB_STALE_SEC = 120
 # A half-wedged dongle doesn't go silent — it dribbles the odd frame, enough to
@@ -52,14 +41,6 @@ ADSB_STALE_SEC = 120
 # "hearing (almost) nothing"; healthy jeff runs 100-300 msg/s, so a single
 # genuinely-received aircraft still clears it comfortably.
 DEAF_MSGS_PER_SEC = 10
-# That flapping means one good/bad poll says little, so score it as a leaky
-# bucket: +1 every poll the deaf alert is up, -1 every poll it's clear, clamped
-# to [0, CAP]. Push once when it climbs to HI (a sustained outage, not a blip),
-# push again only when it drains back to 0 (a sustained recovery, not one lucky
-# poll). At the 2-min cadence HI=3 is ~6 min of net-deaf; a full drain from CAP
-# is ~12 min of clean polls.
-DEAF_SCORE_HI  = 3
-DEAF_SCORE_CAP = 6
 
 # RTL2832U-based dongles (incl. the R820T2 stick jeff is for) enumerate under
 # Realtek vendor 0bda, product 2832 or 2838.
@@ -271,8 +252,8 @@ def _other_sdr_mode_active(svcs):
     """True if jeff's dongle is intentionally running a non-planes SDR mode right
     now (rtl_433/ISM, acarsdec/ACARS, or openwebrx/waterfall — see the /sdr mode
     switcher in server.py, which stops readsb entirely for these). readsb being
-    down in that case is expected, not a fault — the deaf/down alert (and its ntfy
-    push) must not fire just because the mode switcher parked it on purpose."""
+    down in that case is expected, not a fault — the deaf/down alert must not
+    fire just because the mode switcher parked it on purpose."""
     return any(any(x in s for x in ("rtl_433", "acarsdec", "openwebrx")) for s in svcs)
 
 
@@ -328,78 +309,6 @@ def _extra_alerts(data):
             "24h — reseat or swap it if this keeps happening")
 
     return extra
-
-
-def _ntfy(title, message, priority=4, tags=("satellite",)):
-    body = json.dumps({
-        "topic": NTFY_TOPIC, "title": title, "message": message,
-        "priority": priority, "tags": list(tags),
-    }).encode()
-    req = urllib.request.Request(
-        NTFY_URL, data=body, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=5) as r:
-        r.read()
-
-
-def notify_readsb(alerts, now, prev, state_out, frozen=False):
-    """Push to ntfy once when readsb goes (and stays) deaf, and once more when it
-    recovers, riding out the heavy flapping a half-wedged USB dongle produces.
-
-    A leaky-bucket score (`readsb_deaf_score`) rises while the deaf alert is
-    active and falls while it's clear; the deaf push fires when it crosses
-    DEAF_SCORE_HI and the recovery push when it drains back to 0. `readsb_notified`
-    latches between the two so a sustained outage is a single push, not one per
-    poll, and a one-poll blip mid-outage can't fake a recovery. On the very first
-    run (no prior state) it only seeds the baseline — latched if already deaf —
-    so a fresh state file can't replay an old outage. Never raises: the poll's
-    real job is writing jeff.json.
-
-    `frozen=True` (another /sdr mode is intentionally active, so readsb is
-    deliberately stopped) carries the prior score/notified watermarks forward
-    untouched and pushes nothing — without this, the score would decay toward 0
-    every poll readsb is parked and fire a bogus "recovered" push the moment
-    another mode switch stops it mid-outage, even though nothing was fixed.
-
-    `state_out` is the dict about to be saved as the new state; this adds the
-    `readsb_deaf_score` / `readsb_notified` watermarks to it.
-    """
-    deaf = next((a for a in alerts if a["id"] == "readsb_deaf"), None)
-    prev = prev or {}
-
-    if frozen:
-        state_out["readsb_deaf_score"] = prev.get("readsb_deaf_score", 0)
-        state_out["readsb_notified"] = bool(prev.get("readsb_notified"))
-        return
-
-    if "readsb_notified" not in prev and "readsb_deaf_score" not in prev:
-        if deaf:
-            print("readsb notifier: seeding baseline (deaf on first run, not pushing)")
-        state_out["readsb_deaf_score"] = DEAF_SCORE_CAP if deaf else 0
-        state_out["readsb_notified"] = bool(deaf)
-        return
-
-    score = prev.get("readsb_deaf_score", 0)
-    score = min(score + 1, DEAF_SCORE_CAP) if deaf else max(score - 1, 0)
-    notified = bool(prev.get("readsb_notified"))
-
-    try:
-        if deaf and not notified and score >= DEAF_SCORE_HI:
-            _ntfy(f"📡 jeff — {deaf['header']}",
-                  f"{deaf['text']}\n\nDeaf across ~{score * 2}+ min of polling.",
-                  priority=4, tags=("warning", "satellite"))
-            print(f"readsb notifier: pushed deaf alert ({deaf['header']})")
-            notified = True
-        elif notified and score == 0:
-            _ntfy("📡 jeff — readsb recovered",
-                  "readsb is hearing planes again.",
-                  priority=3, tags=("white_check_mark", "satellite"))
-            print("readsb notifier: pushed recovery")
-            notified = False
-    except Exception as e:  # ntfy down / network blip — retry on the next poll
-        print(f"readsb notifier: ntfy push failed: {e}")
-
-    state_out["readsb_deaf_score"] = score
-    state_out["readsb_notified"] = notified
 
 
 def fetch_and_write():
@@ -472,7 +381,6 @@ def fetch_and_write():
     data["alerts"] = alerts
 
     new_state = {"active_alerts": active_alerts}
-    notify_readsb(alerts, ts, prev, new_state, frozen=_other_sdr_mode_active(sdr["services"]))
 
     OUT.write_text(json.dumps(data, indent=2))
     hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)

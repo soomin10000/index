@@ -61,8 +61,6 @@ info() { printf '%s     %s\n'   "$(date -Is)" "$*"; }
 if [ -r "$SRC/secrets.env" ]; then
     set -a; . "$SRC/secrets.env"; set +a
 fi
-NTFY_URL="${WEENY_NTFY_URL:-http://192.168.1.183:8197}"
-NTFY_TOPIC="${WEENY_NTFY_TOPIC:-steve_updates}"
 
 # ---- stage runner ------------------------------------------------------------
 declare -A RESULT
@@ -85,14 +83,6 @@ retry() {  # retry <n> <sleep> -- <cmd...>
         sleep "$s"
     done
     return 1
-}
-
-ntfy() {  # ntfy <title> <message> <priority>
-    local body
-    body=$(python3 -c 'import json,sys; print(json.dumps({"topic":sys.argv[1],"title":sys.argv[2],"message":sys.argv[3],"priority":int(sys.argv[4])}))' \
-        "$NTFY_TOPIC" "$1" "$2" "${3:-3}" 2>/dev/null) || return 0
-    curl -sf -m 10 -H 'Content-Type: application/json' -d "$body" "$NTFY_URL" >/dev/null 2>&1 \
-        || info "ntfy push failed (non-fatal)"
 }
 
 # ===========================================================================
@@ -435,9 +425,9 @@ done
 } > "$MARK"
 
 if [ "$fail" -eq 0 ]; then
-    ntfy "weeny provisioned" "All stages OK. $summary" 3
+    say "weeny provisioned: All stages OK. $summary"
 else
-    ntfy "weeny provisioning FAILED" "$summary" 4
+    say "weeny provisioning FAILED: $summary"
 fi
 
 if [ "$REBOOT" -eq 1 ]; then

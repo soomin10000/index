@@ -24,8 +24,7 @@ Both log to `/var/log/readsb-watchdog.log` and rewrite
 `/var/lib/readsb-watchdog/state.json` (`last_fire`, `last_result`,
 `last_trigger`, `fires_24h`, `fires_48h`) which `pollers/jeff.py` reads back onto
 the card. The append-only `fires` epoch log is kept 72h; the `/jeff` SDR panel
-buckets its last 48h into a failure strip. Each run also sends one ntfy push to
-steve's server (topic `steve_updates`).
+buckets its last 48h into a failure strip.
 
 ## Install / update (run on jeff)
 
@@ -53,7 +52,7 @@ sudo systemctl enable --now readsb-watchdog.timer
 # healthy -> no fire
 sudo /usr/local/bin/readsb-watchdog; tail -n2 /var/log/readsb-watchdog.log
 
-# force a wedge -> timer heals it within ~4 min, one ntfy on the phone
+# force a wedge -> timer heals it within ~4 min
 sudo systemctl stop readsb
 systemctl list-timers readsb-watchdog.timer
 # ...wait...

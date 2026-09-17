@@ -22,8 +22,6 @@ LOG="$LOG_DIR/weekly_update.log"
 RTL_SRC="/home/simon/rtl8812au"
 RTL_FIX="/home/simon/projects/home_menu/scripts/install_rtl_fix.sh"
 GOOD_SRCVERSION="BD79D617C3C5F1491C7C408"
-NTFY_URL="http://localhost:8197"
-NTFY_TOPIC="steve_updates"
 
 mkdir -p "$LOG_DIR"
 exec >>"$LOG" 2>&1
@@ -33,14 +31,6 @@ if [[ $EUID -ne 0 ]]; then
     echo "Must run as root" >&2
     exit 1
 fi
-
-notify() {
-    # $1=title $2=message $3=priority (default 3)
-    curl -s -m 5 -H 'Content-Type: application/json' \
-        -d "$(python3 -c 'import json,sys; print(json.dumps({"topic": sys.argv[1], "title": sys.argv[2], "message": sys.argv[3], "priority": int(sys.argv[4])}))' \
-            "$NTFY_TOPIC" "$1" "$2" "${3:-3}")" \
-        "$NTFY_URL" >/dev/null || echo "ntfy push failed"
-}
 
 BEFORE_KERNEL="$(uname -r)"
 
@@ -73,9 +63,5 @@ fi
 AFTER_KERNEL="$(uname -r)"
 MSG="Kernel $BEFORE_KERNEL -> $AFTER_KERNEL. $UPGRADED package(s) upgraded.${REBOOT_NOTE}${DRIVER_NOTE}"
 echo "$MSG"
-
-PRIORITY=3
-[[ -n "$DRIVER_NOTE" ]] && PRIORITY=4
-notify "steve weekly update" "$MSG" "$PRIORITY"
 
 echo "===== done ====="

@@ -23,8 +23,6 @@ STATE="$STATE_DIR/state.json"
 FIRES="$STATE_DIR/fires"                 # append-only epoch-per-fire; kept 72h, the
                                         # /jeff panel reports the last 48h off it
 FIRES_RETAIN=259200                     # 72h — headroom over the 48h reporting window
-NTFY_URL="${READSB_NTFY_URL:-http://192.168.1.183:8197}"   # steve's ntfy, LAN
-NTFY_TOPIC="${READSB_NTFY_TOPIC:-steve_updates}"           # phones already subscribed
 
 mkdir -p "$STATE_DIR"
 log() { printf '%s recover[%s] %s\n' "$(date -Is)" "$TRIGGER" "$*" >> "$LOG"; }
@@ -78,21 +76,6 @@ jq -n --argjson lf "$NOW" --arg lr "$RESULT" --arg lt "$TRIGGER" \
    '{last_fire: $lf, last_result: $lr, last_trigger: $lt, fires_24h: $f, fires_48h: $f48}' > "$STATE" 2>/dev/null \
    || printf '{"last_fire":%s,"last_result":"%s","last_trigger":"%s","fires_24h":%s,"fires_48h":%s}\n' \
         "$NOW" "$RESULT" "$TRIGGER" "$FIRES_24H" "$FIRES_48H" > "$STATE"
-
-# 5. one ntfy push per run (non-fatal if ntfy is down)
-if [ "$RESULT" = "recovered" ]; then
-    TITLE="📡 jeff — readsb auto-healed"
-    MSG="usbreset + restart cleared a deaf SDR ($TRIGGER trigger). ${FIRES_24H} heal(s) in the last 24h."
-    PRIO=2; TAGS='["satellite"]'
-else
-    TITLE="📡 jeff — readsb heal FAILED"
-    MSG="usbreset + restart did NOT clear the deaf SDR ($TRIGGER trigger). Dongle may be dead — reseat or swap the NESDR. ${FIRES_24H} attempt(s) in the last 24h."
-    PRIO=4; TAGS='["warning","satellite"]'
-fi
-BODY=$(jq -nc --arg t "$NTFY_TOPIC" --arg ti "$TITLE" --arg m "$MSG" --argjson p "$PRIO" --argjson tg "$TAGS" \
-    '{topic:$t, title:$ti, message:$m, priority:$p, tags:$tg}' 2>/dev/null)
-curl -sf -m 5 -H 'Content-Type: application/json' -d "$BODY" "$NTFY_URL" >>"$LOG" 2>&1 \
-    || log "ntfy push failed (non-fatal)"
 
 log "done ($RESULT)"
 if [ "$RESULT" = "recovered" ]; then
