@@ -174,7 +174,24 @@
       gap: 0.85rem;
       align-items: start;
     }
-    .band-grid.hosts { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: stretch; }
+    /* Hosts + House each hold exactly 5 plain cards. auto-fit's continuous
+       column count (like the default .band-grid above) always has some width
+       range that lands on 4 columns, stranding the 5th alone in an otherwise
+       empty row — minmax alone only moves that dead zone around, it can't
+       remove it. Fixed breakpoints that jump straight from 3 columns to 5
+       (skipping 4) mean a lone last-row card never has more than one empty
+       slot beside it, at any width. */
+    .band-grid.hosts, .band-grid.house { grid-template-columns: 1fr; }
+    @media (min-width: 480px) {
+      .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 760px) {
+      .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 1060px) {
+      .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(5, 1fr); }
+    }
+    .band-grid.hosts { align-items: stretch; }
     .span-2 { grid-column: span 2; }
     .span-row { grid-column: 1 / -1; }
     @media (max-width: 560px) { .span-2 { grid-column: span 1; } }
@@ -633,7 +650,7 @@
 
   <section class="band">
     <div class="band-label">House <span class="bl-count" id="bl-house"></span></div>
-    <div class="band-grid">
+    <div class="band-grid house">
 
       <a class="card is-loading" id="c-eufy" style="--a:#5c9fd8" href="/eufy">
         <div class="tape">Security</div>
@@ -668,14 +685,6 @@
         <div class="c-foot">:8192</div>
       </a>
 
-      <a class="card is-loading" id="c-timers" style="--a:#f2a03d" href="http://192.168.1.183:8196">
-        <div class="tape">Kitchen</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">⏲️</span><span class="c-name">Watched Pot</span></div>
-        <div class="c-metric"><span class="c-val" id="tm-val">—</span><span class="c-unit" id="tm-unit"></span></div>
-        <div class="c-sub" id="tm-sub"></div>
-        <div class="c-foot">:8196</div>
-      </a>
-
       <a class="card is-loading" id="c-plants" style="--a:#8bc34a" href="/moisture">
         <div class="tape">Greenhouse</div>
         <div class="c-head"><span class="lamp"></span><span class="c-icon">🪴</span><span class="c-name">Plants</span></div>
@@ -684,12 +693,12 @@
         <div class="c-foot">soil moisture · esp32c6 · :8082</div>
       </a>
 
-      <a class="card is-loading" id="c-darren" style="--a:#26c6da" href="http://192.168.1.183:8193">
-        <div class="tape">Kitchen</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">🍽️</span><span class="c-name">What's Darren Doing?</span></div>
-        <div class="c-metric"><span class="c-val" id="d-val">—</span></div>
-        <div class="c-sub" id="d-sub"></div>
-        <div class="c-foot">:8193</div>
+      <a class="card is-loading" id="c-rtl433" style="--a:#ab7bd6" href="/rtl433">
+        <div class="tape">ISM sniff</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📻</span><span class="c-name">rtl_433</span></div>
+        <div class="c-metric"><span class="c-val" id="r433-val">—</span><span class="c-unit">devices</span></div>
+        <div class="c-sub" id="r433-sub"></div>
+        <div class="c-foot">jeff · 433/868 MHz · plane tracking parked</div>
       </a>
 
       <a class="card span-row" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
@@ -774,7 +783,6 @@
   }
 
   const compassDir = d => ['N','NE','E','SE','S','SW','W','NW'][Math.round(d/45)%8];
-  const mins = s => !s||s<=0 ? null : Math.round(s/60)===1 ? '1 min' : `${Math.round(s/60)} mins`;
   const dot  = cls => `<span class="dot ${cls}"></span>`;
   const relTime = s => s < 90 ? 'just now' : s < 5400 ? Math.round(s/60)+'m ago'
     : s < 172800 ? Math.round(s/3600)+'h ago' : Math.round(s/86400)+'d ago';
@@ -906,36 +914,6 @@
       sub: `${dot(onTime ? 'dot-on' : 'dot-off')}${dest}${status ? ' · '+status : ''}${plat}`,
       lamp: onTime ? 'on' : 'warn',
     });
-  });
-
-  const darren = () => poll('darren', '/api/darren', d => {
-    const state = d.operation_state ?? 'Unknown';
-    const rem = mins(d.remaining_seconds);
-    const parts = [esc(d.program), d.program_phase !== 'None' ? esc(d.program_phase) : null, rem ? rem+' left' : null, d.door_state === 'Open' ? 'Door open' : null].filter(Boolean);
-    const accent = { Run:'#26c6da', Finished:'var(--ok)', Error:'var(--down)', Ready:'var(--ink-dim)', Inactive:'var(--ink-faint)' }[state] ?? 'var(--ink-dim)';
-    const lamp   = { Run:'on', Finished:'on', Error:'down' }[state];
-    setCard('darren', { val: state, sub: parts.join(' · ') || '—', accent, lamp });
-  });
-
-  const timers = () => poll('timers', '/api/timers', d => {
-    if (d.ringing > 0) {
-      setCard('timers', {
-        val: 'Ready!', unit: '',
-        sub: `${dot('dot-off')}${d.ringing === 1 ? 'A pot needs taking off' : d.ringing + ' pots need taking off'}`,
-        accent: '#e4553a', lamp: 'warn',
-      });
-    } else if (d.next) {
-      const r = Math.max(0, Math.round(d.next.remaining));
-      const h = Math.floor(r / 3600), m = Math.floor(r % 3600 / 60), s = r % 60;
-      const val = h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
-      setCard('timers', {
-        val, unit: '',
-        sub: `${dot('dot-on')}${d.next.emoji} ${esc(d.next.name)} · ${d.active}/${d.max} burners`,
-        accent: '#f2a03d', lamp: 'on',
-      });
-    } else {
-      setCard('timers', { val: 'Idle', unit: '', sub: 'No pots on' });
-    }
   });
 
   const weather = () => poll('weather', '/api/weather', j => {
@@ -1205,6 +1183,16 @@
     const lamp = worst === 'ok' ? 'on' : worst === 'warn' ? 'warn' : 'down';
     setCard('plants', { val: driest, unit: '%', sub, accent, lamp });
   });
+
+  const rtl433 = () => poll('rtl433', '/api/rtl433', d => {
+    if (d.error) { setCard('rtl433', { val: '?', unit: 'devices' }, true); return; }
+    if (!d.service_active) { setCard('rtl433', { val: 'Down', unit: '' }, true); return; }
+    const devs = d.devices || [];
+    const sub = devs.length
+      ? devs.slice(0, 4).map(dv => `${dot('dot-on')}${esc(dv.model)} #${esc(dv.id)}`).join('<br>')
+      : `${dot('dot-off')}listening, nothing decoded yet`;
+    setCard('rtl433', { val: d.device_count, unit: ' devices', sub, accent: '#ab7bd6', lamp: 'on' });
+  }, 'No data');
 
   const uplink = () => poll('uplink', '/api/uplink', d => {
     if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
@@ -1564,8 +1552,8 @@
   }
 
   function refresh() {
-    harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
-    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); smoke();
+    harold(); train(); weather(); unifi(); pihole(); wireless();
+    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); rtl433(); smoke();
     v6health(); eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then pull acks + summarise (syncAlerts
     // repaints the tray and calls updateRollup / updateBandCounts itself)

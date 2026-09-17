@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SDR mode</title>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; row-gap: 0.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 920px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  .note {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 0.9rem 1.2rem; font-family: var(--font-mono); font-size: 0.7rem;
+    color: var(--ink-dim); margin-bottom: 1.6rem; line-height: 1.5;
+  }
+  .note b { color: var(--ink); }
+
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 680px) { .modes { grid-template-columns: 1fr; } }
+
+  .mode-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 8px;
+    padding: 1.5rem 1.5rem 1.3rem;
+    display: flex; flex-direction: column; gap: 0.9rem;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .mode-card.active {
+    border-color: var(--ok);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok) 35%, transparent), 0 0 20px -6px color-mix(in srgb, var(--ok) 50%, transparent);
+  }
+  .mode-head { display: flex; align-items: center; gap: 0.6rem; }
+  .mode-icon { font-size: 1.5rem; }
+  .mode-name { font-size: 0.98rem; font-weight: 700; letter-spacing: 0.03em; }
+  .mode-state {
+    margin-left: auto; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-faint); display: flex; align-items: center; gap: 0.4rem;
+  }
+  .mode-desc { font-size: 0.76rem; color: var(--ink-dim); line-height: 1.5; }
+  .mode-link {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--copper); text-decoration: none;
+    align-self: flex-start;
+  }
+  .mode-link:hover { text-decoration: underline; }
+  .mode-btn {
+    margin-top: auto; padding: 0.65rem 1rem; border-radius: 5px; border: 1px solid var(--bezel-lit);
+    font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase;
+    cursor: pointer; transition: border-color 0.2s, background 0.2s;
+  }
+  .mode-btn:hover:not(:disabled) { border-color: var(--copper); background: rgba(184,135,90,0.08); }
+  .mode-btn:disabled { opacity: 0.4; cursor: default; }
+  .mode-btn.active-btn { border-color: var(--ok); color: var(--ok); cursor: default; }
+
+  .switch-log {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-faint);
+    margin-top: 1.2rem; white-space: pre-wrap; line-height: 1.5;
+  }
+  .switch-log.err { color: var(--down); }
+
+  footer.updated {
+    max-width: 920px; margin: 0 auto; padding: 1.4rem 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+  <script src="/auth.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">SDR MODE</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <div class="note">
+    jeff has one RTL-SDR dongle (RTL-SDR Blog V3) — it can feed <b>either</b> plane tracking
+    <b>or</b> the ISM-band sniffer, never both. Switching stops the current service and starts
+    the other; the dongle is free again within a few seconds.
+  </div>
+
+  <div class="modes">
+    <div class="mode-card" id="card-planes">
+      <div class="mode-head">
+        <span class="mode-icon">✈️</span>
+        <span class="mode-name">Plane tracking</span>
+        <span class="mode-state" id="state-planes"><span class="lamp"></span>—</span>
+      </div>
+      <div class="mode-desc">readsb + tar1090 — live ADS-B map, aircraft overhead, routes &amp; owners.</div>
+      <a class="mode-link" href="/jeff">→ open the jeff / plane card</a>
+      <button class="mode-btn" id="btn-planes" data-mode="planes">Switch to plane tracking</button>
+    </div>
+
+    <div class="mode-card" id="card-ism">
+      <div class="mode-head">
+        <span class="mode-icon">📻</span>
+        <span class="mode-name">ISM sniffer</span>
+        <span class="mode-state" id="state-ism"><span class="lamp"></span>—</span>
+      </div>
+      <div class="mode-desc">rtl_433 — passive 433/868 MHz inventory (weather sensors, TPMS, doorbells).</div>
+      <a class="mode-link" href="/rtl433">→ open the rtl_433 card</a>
+      <button class="mode-btn" id="btn-ism" data-mode="ism">Switch to ISM sniffer</button>
+    </div>
+  </div>
+
+  <div class="switch-log" id="switch-log"></div>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  let busy = false;
+
+  function render(d) {
+    const lamp = document.getElementById('status-lamp');
+    const statusText = document.getElementById('status-text');
+
+    if (d.error) {
+      statusText.textContent = 'OFFLINE';
+      lamp.className = 'lamp down';
+      return;
+    }
+
+    lamp.className = 'lamp on';
+    statusText.textContent = d.mode === 'planes' ? 'PLANE TRACKING'
+      : d.mode === 'ism' ? 'ISM SNIFFER'
+      : 'BOTH OFF';
+
+    const cfg = {
+      planes: { state: d.readsb, cardId: 'card-planes', stateId: 'state-planes', btnId: 'btn-planes' },
+      ism:    { state: d.rtl433, cardId: 'card-ism',    stateId: 'state-ism',    btnId: 'btn-ism' },
+    };
+    for (const [mode, c] of Object.entries(cfg)) {
+      const card = document.getElementById(c.cardId);
+      const stateEl = document.getElementById(c.stateId);
+      const btn = document.getElementById(c.btnId);
+      const active = c.state === 'active';
+      card.classList.toggle('active', active);
+      stateEl.innerHTML = `<span class="lamp ${active ? 'on' : ''}"></span>${(c.state || 'unknown').toUpperCase()}`;
+      btn.disabled = busy;
+      if (active) {
+        btn.textContent = 'Currently active';
+        btn.classList.add('active-btn');
+      } else {
+        btn.textContent = busy ? 'Switching…' : `Switch to ${mode === 'planes' ? 'plane tracking' : 'ISM sniffer'}`;
+        btn.classList.remove('active-btn');
+      }
+    }
+
+    document.getElementById('updated').textContent = 'Checked ' + new Date().toLocaleTimeString('en-GB');
+  }
+
+  async function loadStatus() {
+    try {
+      const r = await fetch('/api/sdr/status');
+      const d = await r.json();
+      render(d);
+    } catch {
+      render({ error: true });
+    }
+  }
+
+  async function switchMode(mode) {
+    if (busy) return;
+    busy = true;
+    const log = document.getElementById('switch-log');
+    log.className = 'switch-log';
+    log.textContent = `Switching to ${mode}…`;
+    document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
+    try {
+      const r = await fetch('/api/sdr/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        log.textContent = `Switched to ${mode === 'planes' ? 'plane tracking' : 'ISM sniffer'}.`;
+      } else {
+        log.className = 'switch-log err';
+        log.textContent = 'Switch failed:\n' + (d.error || 'unknown error');
+      }
+      render(d);
+    } catch (e) {
+      log.className = 'switch-log err';
+      log.textContent = 'Switch request failed — server unreachable.';
+    } finally {
+      busy = false;
+      loadStatus();
+    }
+  }
+
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+  });
+
+  loadStatus();
+  setInterval(loadStatus, 20000);
+</script>
+</body>
+</html>

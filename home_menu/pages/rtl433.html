@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rtl_433</title>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; row-gap: 0.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.warn { background: var(--warn); box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  .note {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 0.9rem 1.2rem; font-family: var(--font-mono); font-size: 0.7rem;
+    color: var(--ink-dim); margin-bottom: 1.4rem; line-height: 1.5;
+  }
+  .note b { color: var(--ink); }
+
+  .devices { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.1rem; }
+  .device {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.1rem 1.3rem 1rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .device-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .device-model { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
+  .device-id { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-faint); }
+  .device-fields { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+  .field { font-family: var(--font-mono); }
+  .field .k { font-size: 0.58rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); display: block; }
+  .field .v { font-size: 1.05rem; font-weight: 600; }
+  .device-sub { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); letter-spacing: 0.03em; }
+  .device-sub .bad { color: var(--down); }
+
+  .none-yet {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.6rem; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-dim);
+  }
+
+  .feed-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1rem 1.3rem;
+  }
+  table.feed { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.68rem; }
+  table.feed th {
+    text-align: left; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--bezel);
+  }
+  table.feed td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--inset); color: var(--ink-dim); }
+  table.feed tr:last-child td { border-bottom: none; }
+  table.feed td.model { color: var(--ink); }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+  <script src="/auth.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">RTL_433</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <div class="note">
+    Passive ISM-band inventory off jeff's RTL-SDR dongle (433.92 / 868.3 MHz, hopped every 60s).
+    Picks up nearby weather stations, TPMS, doorbells and similar consumer gear — including
+    neighbours' devices, not just yours. <b>ADS-B / plane tracking is parked</b> while this runs;
+    the dongle can't do both at once. <a href="/sdr" style="color:var(--copper)">Switch modes →</a>
+  </div>
+
+  <section>
+    <div class="eyebrow">📻 DEVICES SEEN</div>
+    <div class="devices" id="devices"></div>
+  </section>
+
+  <section class="feed-card">
+    <div class="eyebrow" style="margin-bottom:0.6rem">RECENT DECODES</div>
+    <table class="feed">
+      <thead><tr><th>Time</th><th>Model</th><th>ID</th><th>Ch</th><th>Fields</th></tr></thead>
+      <tbody id="feed"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  const STALE_S = 3 * 3600;   // sensors like this post every 30-60s; an hour+ silent is stale
+
+  function fmtAge(s) {
+    if (s < 90) return `${s}s ago`;
+    if (s < 5400) return `${Math.round(s / 60)}m ago`;
+    if (s < 129600) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86400)}d ago`;
+  }
+
+  function fmtFields(fields) {
+    return Object.entries(fields || {}).map(([k, v]) => {
+      if (k === 'temperature_C' && typeof v === 'number') return `<span class="field"><span class="k">temp</span><span class="v">${v.toFixed(1)}°C</span></span>`;
+      if (k === 'humidity') return `<span class="field"><span class="k">humidity</span><span class="v">${esc(v)}%</span></span>`;
+      if (k === 'battery_ok') return `<span class="field"><span class="k">battery</span><span class="v">${v ? 'OK' : 'LOW'}</span></span>`;
+      return `<span class="field"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></span>`;
+    }).join('');
+  }
+
+  function fmtFieldsInline(fields) {
+    return Object.entries(fields || {}).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(' ');
+  }
+
+  function renderDevices(devices, now) {
+    const box = document.getElementById('devices');
+    if (!devices.length) {
+      box.innerHTML = '<div class="none-yet">No devices decoded yet — rtl_433 needs a minute or two to catch a transmission.</div>';
+      return;
+    }
+    box.innerHTML = devices.map(d => {
+      const age = now - d.last_seen;
+      const stale = age > STALE_S;
+      return `
+        <div class="device">
+          <div class="device-head">
+            <span class="device-model">${esc(d.model)}</span>
+            <span class="device-id">id ${esc(d.id)}${d.channel != null ? ` · ch ${esc(d.channel)}` : ''}</span>
+          </div>
+          <div class="device-fields">${fmtFields(d.fields)}</div>
+          <div class="device-sub">${stale ? `<span class="bad">last seen ${fmtAge(age)}</span>` : fmtAge(age)} · ${d.count} decode${d.count === 1 ? '' : 's'}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderFeed(recent) {
+    const body = document.getElementById('feed');
+    if (!recent.length) {
+      body.innerHTML = '<tr><td colspan="5">—</td></tr>';
+      return;
+    }
+    body.innerHTML = recent.slice(0, 30).map(r => `
+      <tr>
+        <td>${new Date(r.ts * 1000).toLocaleTimeString('en-GB')}</td>
+        <td class="model">${esc(r.model)}</td>
+        <td>${esc(r.id)}</td>
+        <td>${r.channel != null ? esc(r.channel) : '—'}</td>
+        <td>${esc(fmtFieldsInline(r.fields))}</td>
+      </tr>`).join('');
+  }
+
+  async function load() {
+    try {
+      const r = await fetch('/api/rtl433');
+      const d = await r.json();
+      const lamp = document.getElementById('status-lamp');
+      const statusText = document.getElementById('status-text');
+      if (d.error) {
+        statusText.textContent = 'OFFLINE';
+        lamp.className = 'lamp down';
+        return;
+      }
+      renderDevices(d.devices, d.ts);
+      renderFeed(d.recent);
+
+      if (!d.service_active) {
+        statusText.textContent = 'SERVICE DOWN';
+        lamp.className = 'lamp down';
+      } else {
+        statusText.textContent = `${d.device_count} DEVICE${d.device_count === 1 ? '' : 'S'}`;
+        lamp.className = 'lamp on';
+      }
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+    } catch {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>

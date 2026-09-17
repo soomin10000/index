@@ -32,9 +32,7 @@ UNIFI_DATA = DATA / 'unifi'
 PROXIES = {
     '/api/harold':  'http://localhost:5000/api/status',
     '/api/train':   'http://localhost:8192/api/departures',
-    '/api/darren':  'http://localhost:8193/api/status',
     '/api/weather': 'http://localhost:8186/api/weather',
-    '/api/timers':  'http://localhost:8196/api/status',
 }
 
 # tar1090 (the live ADS-B map) runs on jeff itself, not steve — jeff isn't on the
@@ -315,6 +313,7 @@ BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
 ICKLE_JSON   = DATA / 'ickle.json'
 ICKLE_DB     = DATA / 'ickle_history.db'
+RTL433_JSON  = DATA / 'rtl433.json'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
 V6HEALTH_JSON = DATA / 'v6health.json'
@@ -608,6 +607,59 @@ def _jeff_readsb_recover():
         return {'ok': True, 'log': tail}
     return {'ok': False, 'error': 'readsb still deaf after usbreset + restart — '
             'reseat or swap the dongle', 'log': tail}
+
+
+SDR_MODES = {
+    'planes': {'start': 'readsb', 'stop': 'rtl_433'},
+    'ism':    {'start': 'rtl_433', 'stop': 'readsb'},
+}
+
+
+def _sdr_ssh(script):
+    try:
+        result = subprocess.run(
+            ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'jeff', script],
+            capture_output=True, text=True, timeout=30,
+        )
+        return result.stdout, result.stderr
+    except Exception as e:
+        return '', str(e)
+
+
+def _sdr_status():
+    """jeff's one RTL-SDR dongle can only feed readsb (plane tracking) or rtl_433
+    (ISM-band sniffing) at a time — the two services are kept mutually exclusive
+    by hand (see _sdr_switch), so which is running IS the current mode."""
+    out, err = _sdr_ssh('systemctl is-active readsb rtl_433 2>&1')
+    lines = out.strip().splitlines()
+    readsb = lines[0] if len(lines) > 0 else 'unknown'
+    rtl433 = lines[1] if len(lines) > 1 else 'unknown'
+    mode = 'planes' if readsb == 'active' else 'ism' if rtl433 == 'active' else 'off'
+    return {'mode': mode, 'readsb': readsb, 'rtl433': rtl433}
+
+
+def _sdr_switch(mode):
+    """readsb-watchdog.timer usbresets the dongle + force-restarts readsb any time
+    it judges readsb "deaf" — it has no notion of rtl_433 legitimately owning the
+    dongle, so left enabled it fights rtl_433 for the device and wins (seen live
+    2026-09-17: it silently un-parked readsb ~15min after the ISM switch, crashing
+    rtl_433). It must only run in 'planes' mode."""
+    cfg = SDR_MODES.get(mode)
+    if not cfg:
+        return {'ok': False, 'error': 'unknown mode'}
+    watchdog_cmd = ('enable --now readsb-watchdog.timer' if mode == 'planes'
+                     else 'disable --now readsb-watchdog.timer')
+    out, err = _sdr_ssh(
+        f"sudo -n systemctl disable --now {cfg['stop']} 2>&1\n"
+        f"sudo -n systemctl enable --now {cfg['start']} 2>&1\n"
+        f"sudo -n systemctl {watchdog_cmd} 2>&1\n"
+    )
+    status = _sdr_status()
+    ok = status['mode'] == mode
+    result = {'ok': ok, **status}
+    if not ok:
+        result['error'] = '\n'.join((out or err or 'switch failed').strip().splitlines()[-4:])
+    return result
 
 
 def _kismet_bytes():
@@ -1402,6 +1454,10 @@ class Handler(BaseHTTPRequestHandler):
     def _res_jeff_readsb_restart(self):
         self._json(_jeff_readsb_recover())
 
+    def _res_sdr_switch(self):
+        mode = self._body_json().get('mode', '')
+        self._json(_sdr_switch(mode))
+
     def _res_alert_acks(self):
         now = int(time.time())
         with _alert_ack_lock:
@@ -1566,6 +1622,8 @@ ROUTES_GET = {
     '/jeff':                 _page('jeff.html'),
     '/bazza':                _page('bazza.html'),
     '/ickle':                _page('ickle.html'),
+    '/rtl433':               _page('rtl433.html'),
+    '/sdr':                  _page('sdr.html'),
     '/vpn':                  _page('vpn.html'),
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
@@ -1594,6 +1652,7 @@ ROUTES_GET = {
     '/api/jeff':             _jsonfile(JEFF_JSON),
     '/api/bazza':            _jsonfile(BAZZA_JSON),
     '/api/ickle':            _jsonfile(ICKLE_JSON),
+    '/api/rtl433':           _jsonfile(RTL433_JSON, max_age=600),  # poller runs */5
     '/api/vpn':              _jsonfile(VPN_JSON),
     '/api/honeypot':         _jsonfile(DATA / 'honeypot.json', max_age=1800),  # poller runs */10
     '/api/arr':              _jsonfile(ARR_JSON),
@@ -1612,6 +1671,7 @@ ROUTES_GET = {
     '/api/ickle/history':    _jsonfn(_ickle_history),
     '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref),
+    '/api/sdr/status':       _jsonfn(_sdr_status),
     '/api/alerts/acks':      Route(Handler._res_alert_acks),
 
     # Request-specific (parse the query string / stream raw bytes)
@@ -1636,6 +1696,7 @@ ROUTES_POST = {
                                     json_ct=True),
     '/api/steve/restart':     Route(Handler._res_steve_restart, json_ct=True),
     '/api/jeff/readsb-restart': Route(Handler._res_jeff_readsb_restart, json_ct=True),
+    '/api/sdr/switch':        Route(Handler._res_sdr_switch, json_ct=True),
     '/api/capture':           Route(Handler._res_capture, json_ct=True),
     '/api/alerts/ack':        Route(Handler._res_alert_ack, json_ct=True),
     '/api/alerts/unack':      Route(Handler._res_alert_unack, json_ct=True),
