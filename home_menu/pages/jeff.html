@@ -248,9 +248,18 @@
       if (a === 'ground') return 'GND';
       return a >= 18000 ? `FL${Math.round(a / 100)}` : `${a.toLocaleString()} ft`;
     };
+    // Private/GA aircraft fly under an owner callsign, not a scheduled route —
+    // adsbdb's route lookup comes back empty for them, so fall back to
+    // registration/owner (looked up by hex) instead of just saying "unknown".
+    const ownerCell = ac => {
+      const bits = [ac.reg, ac.owner].filter(Boolean).join(' · ');
+      return bits
+        ? `<span class="rt unknown" title="${esc([ac.type, ac.owner_country].filter(Boolean).join(' · '))}">${esc(bits)}</span>`
+        : '<span class="rt unknown">route unknown</span>';
+    };
     const routeCell = f => {
       const r = f.route;
-      if (!r) return '<span class="rt unknown">route unknown</span>';
+      if (!r) return f.aircraft ? ownerCell(f.aircraft) : '<span class="rt unknown">route unknown</span>';
       const code = ap => esc((ap && (ap.iata || ap.icao)) || '??');
       const via = (r.via && r.via.length)
         ? ` <span class="arr">via</span> ${r.via.map(esc).join(', ')}` : '';
@@ -258,9 +267,13 @@
     };
     const flightTitle = f => {
       const r = f.route;
-      if (!r) return f.cs;
-      const name = ap => (ap && (ap.name || ap.city)) || '';
-      return `${f.cs}   ${name(r.origin)}  →  ${name(r.dest)}`.trim();
+      if (r) {
+        const name = ap => (ap && (ap.name || ap.city)) || '';
+        return `${f.cs}   ${name(r.origin)}  →  ${name(r.dest)}`.trim();
+      }
+      const ac = f.aircraft;
+      if (ac) return `${f.cs}   ${[ac.manufacturer, ac.type].filter(Boolean).join(' ')}   ${ac.owner || ''}`.trim();
+      return f.cs;
     };
     const flightRows = (adsb && adsb.flights && adsb.flights.length) ? `
       <div class="adsb-flights">${adsb.flights.slice(0, 6).map(f => `

@@ -87,12 +87,13 @@ def load_cache(path):
         return {}
 
 
-def save_cache(path, cache):
-    """Write the cache back, pruning entries nothing has touched in a week so
-    the file doesn't grow without bound. Atomic via a temp file + rename."""
+def save_cache(path, cache, prune_after=PRUNE_AFTER):
+    """Write the cache back, pruning entries nothing has touched in `prune_after`
+    seconds (default a week, sized for the route cache's 24h TTL) so the file
+    doesn't grow without bound. Atomic via a temp file + rename."""
     now = int(time.time())
     pruned = {cs: e for cs, e in cache.items()
-              if isinstance(e, dict) and 0 <= now - e.get("fetched", 0) < PRUNE_AFTER}
+              if isinstance(e, dict) and 0 <= now - e.get("fetched", 0) < prune_after}
     tmp = f"{path}.tmp"
     with open(tmp, "w") as fh:
         json.dump(pruned, fh)
@@ -148,4 +149,105 @@ def annotate(flights, routes):
         r = routes.get(str((f or {}).get("cs") or "").strip().upper())
         if r:
             f["route"] = r
+    return flights
+
+
+# ── aircraft (registration / owner) lookup, by ICAO hex ─────────────────────
+# A private/GA callsign like a bizjet's often has no route (resolve() above
+# comes up empty), which is exactly when who-owns-this-plane is the
+# interesting question. adsbdb's per-aircraft endpoint answers that from the
+# Mode S hex rather than the callsign. Registration/ownership essentially
+# never changes, so this is cached far longer than a route.
+AIRCRAFT_API_URL = "https://api.adsbdb.com/v0/aircraft/"
+AIRCRAFT_CACHE_TTL = 30 * 24 * 3600     # registration/owner is stable for months-years
+AIRCRAFT_NEGATIVE_TTL = 24 * 3600       # hex adsbdb doesn't know — retry daily, not every poll
+MAX_AIRCRAFT_LOOKUP = 8
+AIRCRAFT_PRUNE_AFTER = AIRCRAFT_CACHE_TTL * 7
+
+
+def _aircraft_from_response(resp):
+    """adsbdb `/v0/aircraft` payload -> {reg, type, manufacturer, owner,
+    owner_country}, or None when adsbdb doesn't know the hex."""
+    ac = (resp or {}).get("response")
+    if not isinstance(ac, dict):
+        return None
+    ac = ac.get("aircraft")
+    if not isinstance(ac, dict):
+        return None
+    return {
+        "reg": ac.get("registration") or "",
+        "type": ac.get("type") or ac.get("icao_type") or "",
+        "manufacturer": ac.get("manufacturer") or "",
+        "owner": ac.get("registered_owner") or "",
+        "owner_country": ac.get("registered_owner_country_name") or "",
+    }
+
+
+def _fetch_aircraft(hex_code, *, timeout=HTTP_TIMEOUT):
+    """GET one ICAO hex from adsbdb. Same 404-vs-raise contract as _fetch()."""
+    req = urllib.request.Request(
+        AIRCRAFT_API_URL + urllib.parse.quote(hex_code, safe=""),
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def _fresh_aircraft(entry, now):
+    if not isinstance(entry, dict) or "fetched" not in entry:
+        return False
+    age = now - entry.get("fetched", 0)
+    ttl = AIRCRAFT_CACHE_TTL if entry.get("ok") else AIRCRAFT_NEGATIVE_TTL
+    return 0 <= age < ttl
+
+
+def resolve_aircraft(flights, cache, now=None, fetch=None):
+    """Same shape/contract as resolve(), keyed by lower-cased ICAO hex instead
+    of callsign. Returns (aircraft, dirty): `aircraft` maps hex -> {reg, type,
+    manufacturer, owner, owner_country} for every hex now known."""
+    now = int(now if now is not None else time.time())
+    fetch = fetch or _fetch_aircraft
+    if not isinstance(cache, dict):
+        cache = {}
+
+    want, seen = [], set()
+    for f in flights:
+        hx = str((f or {}).get("hex") or "").strip().lower()
+        if not hx or hx in seen:
+            continue
+        seen.add(hx)
+        if _fresh_aircraft(cache.get(hx), now):
+            continue
+        if len(want) < MAX_AIRCRAFT_LOOKUP:
+            want.append(hx)
+
+    dirty = False
+    for hx in want:
+        try:
+            resp = fetch(hx)
+        except Exception:
+            continue
+        ac = _aircraft_from_response(resp)
+        cache[hx] = {"fetched": now, "ok": bool(ac), **(ac or {})}
+        dirty = True
+
+    aircraft = {}
+    for hx in seen:
+        entry = cache.get(hx)
+        if isinstance(entry, dict) and entry.get("ok"):
+            aircraft[hx] = {k: entry[k] for k in
+                            ("reg", "type", "manufacturer", "owner", "owner_country") if k in entry}
+    return aircraft, dirty
+
+
+def annotate_aircraft(flights, aircraft):
+    """Attach `aircraft` to each flight dict that has known registration/owner info."""
+    for f in flights:
+        ac = aircraft.get(str((f or {}).get("hex") or "").strip().lower())
+        if ac:
+            f["aircraft"] = ac
     return flights

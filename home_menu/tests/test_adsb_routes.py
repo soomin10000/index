@@ -179,3 +179,110 @@ def test_save_cache_roundtrips_and_prunes(tmp_path):
     adsb_routes.save_cache(path, cache)
     back = adsb_routes.load_cache(path)
     assert "FRESH" in back and "ANCIENT" not in back
+
+
+def test_save_cache_custom_prune_after(tmp_path):
+    """The aircraft cache passes its own (much longer) prune_after — an entry
+    that would be pruned under the route cache's default must survive here."""
+    import time
+    now = int(time.time())
+    path = tmp_path / "aircraft.json"
+    cache = {"424C32": {"fetched": now - adsb_routes.PRUNE_AFTER - 1, "ok": True}}
+    adsb_routes.save_cache(path, cache, prune_after=adsb_routes.AIRCRAFT_PRUNE_AFTER)
+    assert "424C32" in adsb_routes.load_cache(path)
+
+
+# ── resolve_aircraft: happy path + caching (mirrors resolve() above) ───────
+def _ac_resp(reg="M-ONEY", owner="Century Aviation Ltd"):
+    return {"response": {"aircraft": {
+        "type": "525", "icao_type": "C525", "manufacturer": "Cessna",
+        "registration": reg, "registered_owner": owner,
+        "registered_owner_country_name": "Isle of Man",
+    }}}
+
+
+class _FetchAircraft:
+    """Same shape as _Fetch but keyed by hex, for resolve_aircraft()."""
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls = []
+
+    def __call__(self, hex_code):
+        self.calls.append(hex_code)
+        r = self.reply[hex_code] if isinstance(self.reply, dict) and "response" not in self.reply else self.reply
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+def test_resolve_aircraft_fetches_annotates_and_caches():
+    fetch = _FetchAircraft(_ac_resp())
+    cache = {}
+    flights = [{"cs": "MONEY", "hex": "424c32"}]
+    aircraft, dirty = adsb_routes.resolve_aircraft(flights, cache, now=1000, fetch=fetch)
+
+    assert dirty is True
+    assert fetch.calls == ["424c32"]
+    assert aircraft["424c32"]["reg"] == "M-ONEY"
+    assert aircraft["424c32"]["owner"] == "Century Aviation Ltd"
+    assert cache["424c32"]["ok"] is True and cache["424c32"]["fetched"] == 1000
+
+    adsb_routes.annotate_aircraft(flights, aircraft)
+    assert flights[0]["aircraft"]["owner"] == "Century Aviation Ltd"
+
+
+def test_resolve_aircraft_cache_hit_skips_fetch():
+    fetch = _FetchAircraft(RuntimeError("must not be called"))
+    cache = {"424c32": {"fetched": 990, "ok": True, "reg": "M-ONEY", "owner": "Century Aviation Ltd"}}
+    aircraft, dirty = adsb_routes.resolve_aircraft(
+        [{"cs": "MONEY", "hex": "424c32"}], cache, now=1000, fetch=fetch)
+    assert fetch.calls == [] and dirty is False
+    assert aircraft["424c32"]["reg"] == "M-ONEY"
+
+
+def test_resolve_aircraft_unknown_hex_is_negative_cached():
+    fetch = _FetchAircraft(None)                # adsbdb 404 -> _fetch_aircraft returns None
+    cache = {}
+    aircraft, dirty = adsb_routes.resolve_aircraft([{"hex": "ffffff"}], cache, now=1000, fetch=fetch)
+    assert "ffffff" not in aircraft
+    assert cache["ffffff"] == {"fetched": 1000, "ok": False}
+    assert dirty is True
+
+    fetch2 = _FetchAircraft(RuntimeError("must not be called"))
+    _, dirty2 = adsb_routes.resolve_aircraft(
+        [{"hex": "ffffff"}], cache, now=1000 + adsb_routes.AIRCRAFT_NEGATIVE_TTL - 1, fetch=fetch2)
+    assert fetch2.calls == [] and dirty2 is False
+
+
+def test_resolve_aircraft_negative_ttl_much_shorter_than_positive():
+    assert adsb_routes.AIRCRAFT_NEGATIVE_TTL < adsb_routes.AIRCRAFT_CACHE_TTL
+
+
+def test_resolve_aircraft_dedupes_by_hex_case_insensitively():
+    fetch = _FetchAircraft(_ac_resp())
+    flights = [{"hex": "424C32"}, {"hex": "424c32"}]
+    aircraft, _ = adsb_routes.resolve_aircraft(flights, {}, now=1000, fetch=fetch)
+    assert fetch.calls == ["424c32"]
+    assert aircraft["424c32"]["reg"] == "M-ONEY"
+
+
+def test_resolve_aircraft_blank_hex_ignored():
+    fetch = _FetchAircraft(_ac_resp())
+    aircraft, dirty = adsb_routes.resolve_aircraft([{"hex": ""}], {}, now=1000, fetch=fetch)
+    assert fetch.calls == [] and aircraft == {} and dirty is False
+
+
+def test_aircraft_from_response_maps_fields():
+    ac = adsb_routes._aircraft_from_response(_ac_resp())
+    assert ac == {"reg": "M-ONEY", "type": "525", "manufacturer": "Cessna",
+                  "owner": "Century Aviation Ltd", "owner_country": "Isle of Man"}
+
+
+def test_aircraft_from_response_falls_back_to_icao_type():
+    resp = {"response": {"aircraft": {"icao_type": "C525", "registration": "M-ONEY"}}}
+    assert adsb_routes._aircraft_from_response(resp)["type"] == "C525"
+
+
+def test_aircraft_from_response_unknown_shapes():
+    for bad in (None, {}, {"response": "unknown callsign"}, {"response": {"aircraft": None}}):
+        assert adsb_routes._aircraft_from_response(bad) is None

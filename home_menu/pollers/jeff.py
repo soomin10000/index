@@ -23,10 +23,11 @@ import hostlib
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 
-OUT          = DATA / "jeff.json"
-STATE_FILE   = DATA / "jeff_state.json"
-DB_FILE      = DATA / "jeff_history.db"
-ROUTES_CACHE = DATA / "jeff_routes.json"
+OUT            = DATA / "jeff.json"
+STATE_FILE     = DATA / "jeff_state.json"
+DB_FILE        = DATA / "jeff_history.db"
+ROUTES_CACHE   = DATA / "jeff_routes.json"
+AIRCRAFT_CACHE = DATA / "jeff_aircraft.json"
 
 TEMP_WARN_C = 70.0
 TEMP_CRIT_C = 80.0
@@ -412,6 +413,18 @@ def fetch_and_write():
                 adsb_routes.save_cache(ROUTES_CACHE, cache)
         except Exception as e:
             print(f"jeff route lookup skipped: {e}")
+
+        # Registration/owner (adsbdb again, by hex this time) — most useful for
+        # exactly the flights the route lookup above came up empty for: private/GA
+        # aircraft fly under an owner's own callsign rather than a scheduled route.
+        try:
+            ac_cache = adsb_routes.load_cache(AIRCRAFT_CACHE)
+            aircraft, ac_dirty = adsb_routes.resolve_aircraft(adsb["flights"], ac_cache, ts)
+            adsb_routes.annotate_aircraft(adsb["flights"], aircraft)
+            if ac_dirty:
+                adsb_routes.save_cache(AIRCRAFT_CACHE, ac_cache, prune_after=adsb_routes.AIRCRAFT_PRUNE_AFTER)
+        except Exception as e:
+            print(f"jeff aircraft lookup skipped: {e}")
 
     data = {
         "ts": ts,
