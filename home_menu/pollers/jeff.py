@@ -80,7 +80,7 @@ echo '===THROTTLED==='; (command -v vcgencmd >/dev/null 2>&1 && vcgencmd get_thr
 echo '===USB==='; lsusb 2>/dev/null
 echo '===RTLMODS==='; lsmod 2>/dev/null | awk '{print $1}' | grep -E '^(rtl2832|rtl2838|dvb_usb_rtl28xxu|rtl8xxxu)$' || true
 echo '===RTLTOOLS==='; for t in rtl_test rtl_sdr rtl_fm rtl_tcp rtl_power rtl_433 rtl_adsb; do command -v $t >/dev/null 2>&1 && echo $t; done
-echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -iE 'rtl|sdr|dump1090|readsb|acars|dumpvdl|dump978|satdump|spyserver|soapy|gqrx|piaware|fr24feed|rbfeeder|adsb' || true
+echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -iE 'rtl|sdr|dump1090|readsb|acars|dumpvdl|dump978|satdump|spyserver|soapy|gqrx|piaware|fr24feed|rbfeeder|adsb|webrx' || true
 echo '===NOW==='; date +%s
 echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0), flights:([.aircraft[]|select((.flight//""|gsub("^ +| +$";""))!="" and .lat!=null)|{cs:(.flight|gsub("^ +| +$";"")), hex, alt:.alt_baro, gs, trk:.track, rssi, lat, lon}]|sort_by(.rssi//-100)|reverse|.[:8])}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
 echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
@@ -267,6 +267,15 @@ def _parse_watchdog(block, now=None, fires_block=""):
 WATCHDOG_FLAP_24H = 4
 
 
+def _other_sdr_mode_active(svcs):
+    """True if jeff's dongle is intentionally running a non-planes SDR mode right
+    now (rtl_433/ISM, acarsdec/ACARS, or openwebrx/waterfall — see the /sdr mode
+    switcher in server.py, which stops readsb entirely for these). readsb being
+    down in that case is expected, not a fault — the deaf/down alert (and its ntfy
+    push) must not fire just because the mode switcher parked it on purpose."""
+    return any(any(x in s for x in ("rtl_433", "acarsdec", "openwebrx")) for s in svcs)
+
+
 def _extra_alerts(data):
     """jeff-specific alert candidates, in the same insertion order as before:
     SoC temp, throttle flags, failed units, DVB squat, deaf readsb."""
@@ -297,23 +306,26 @@ def _extra_alerts(data):
     wedge_hint = ("the USB/dongle link most likely wedged (see the 2026-09-01 "
                   "incidents) — usbreset 0bda:2838 then restart readsb; a bare "
                   "service restart alone did not clear it last time")
-    if readsb_up and adsb and adsb.get("stale"):
-        extra["readsb_deaf"] = ("critical", "readsb feed is frozen",
-            f"readsb is up but aircraft.json is {adsb['feed_age']}s stale — {wedge_hint}")
-    elif readsb_up and adsb and adsb["msgs_per_sec"] < DEAF_MSGS_PER_SEC:
-        extra["readsb_deaf"] = ("critical", "readsb is hearing (almost) nothing",
-            f"readsb is running but only {adsb['msgs_per_sec']} msg/s and "
-            f"{adsb['aircraft']} aircraft — {wedge_hint}")
-    elif dongle and piaware_up and not readsb_up:
-        extra["readsb_deaf"] = ("critical", "readsb is down",
-            "the dongle is present and piaware is up but readsb isn't running — "
-            f"it may be crash-looping on a wedged USB device; {wedge_hint}")
+    # readsb being down/quiet is expected whenever the /sdr mode switcher has
+    # intentionally parked it for ISM/ACARS/waterfall — not a fault to alert on.
+    if not _other_sdr_mode_active(svcs):
+        if readsb_up and adsb and adsb.get("stale"):
+            extra["readsb_deaf"] = ("critical", "readsb feed is frozen",
+                f"readsb is up but aircraft.json is {adsb['feed_age']}s stale — {wedge_hint}")
+        elif readsb_up and adsb and adsb["msgs_per_sec"] < DEAF_MSGS_PER_SEC:
+            extra["readsb_deaf"] = ("critical", "readsb is hearing (almost) nothing",
+                f"readsb is running but only {adsb['msgs_per_sec']} msg/s and "
+                f"{adsb['aircraft']} aircraft — {wedge_hint}")
+        elif dongle and piaware_up and not readsb_up:
+            extra["readsb_deaf"] = ("critical", "readsb is down",
+                "the dongle is present and piaware is up but readsb isn't running — "
+                f"it may be crash-looping on a wedged USB device; {wedge_hint}")
 
     wd = data.get("readsb_watchdog") or {}
     if wd.get("fires_24h", 0) >= WATCHDOG_FLAP_24H:
         extra["readsb_flapping"] = ("warn", "SDR auto-heal firing repeatedly",
             f"readsb-recover has usbreset the dongle {wd['fires_24h']}× in the last "
-            "24h — the £30 NESDR stick is on its way out, reseat it or swap it")
+            "24h — reseat or swap it if this keeps happening")
 
     return extra
 
@@ -329,7 +341,7 @@ def _ntfy(title, message, priority=4, tags=("satellite",)):
         r.read()
 
 
-def notify_readsb(alerts, now, prev, state_out):
+def notify_readsb(alerts, now, prev, state_out, frozen=False):
     """Push to ntfy once when readsb goes (and stays) deaf, and once more when it
     recovers, riding out the heavy flapping a half-wedged USB dongle produces.
 
@@ -342,11 +354,22 @@ def notify_readsb(alerts, now, prev, state_out):
     so a fresh state file can't replay an old outage. Never raises: the poll's
     real job is writing jeff.json.
 
+    `frozen=True` (another /sdr mode is intentionally active, so readsb is
+    deliberately stopped) carries the prior score/notified watermarks forward
+    untouched and pushes nothing — without this, the score would decay toward 0
+    every poll readsb is parked and fire a bogus "recovered" push the moment
+    another mode switch stops it mid-outage, even though nothing was fixed.
+
     `state_out` is the dict about to be saved as the new state; this adds the
     `readsb_deaf_score` / `readsb_notified` watermarks to it.
     """
     deaf = next((a for a in alerts if a["id"] == "readsb_deaf"), None)
     prev = prev or {}
+
+    if frozen:
+        state_out["readsb_deaf_score"] = prev.get("readsb_deaf_score", 0)
+        state_out["readsb_notified"] = bool(prev.get("readsb_notified"))
+        return
 
     if "readsb_notified" not in prev and "readsb_deaf_score" not in prev:
         if deaf:
@@ -449,7 +472,7 @@ def fetch_and_write():
     data["alerts"] = alerts
 
     new_state = {"active_alerts": active_alerts}
-    notify_readsb(alerts, ts, prev, new_state)
+    notify_readsb(alerts, ts, prev, new_state, frozen=_other_sdr_mode_active(sdr["services"]))
 
     OUT.write_text(json.dumps(data, indent=2))
     hostlib.log_history(DB_FILE, ts, load["1m"], mem["percent"], disk["percent"], cpu_temp)

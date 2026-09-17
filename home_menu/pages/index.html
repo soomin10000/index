@@ -693,12 +693,12 @@
         <div class="c-foot">soil moisture · esp32c6 · :8082</div>
       </a>
 
-      <a class="card is-loading" id="c-rtl433" style="--a:#ab7bd6" href="/rtl433">
-        <div class="tape">ISM sniff</div>
-        <div class="c-head"><span class="lamp"></span><span class="c-icon">📻</span><span class="c-name">rtl_433</span></div>
-        <div class="c-metric"><span class="c-val" id="r433-val">—</span><span class="c-unit">devices</span></div>
-        <div class="c-sub" id="r433-sub"></div>
-        <div class="c-foot">jeff · 433/868 MHz · plane tracking parked</div>
+      <a class="card is-loading" id="c-sdr" style="--a:#ab7bd6" href="/sdr">
+        <div class="tape">SDR lab</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">📡</span><span class="c-name">SDR mode</span></div>
+        <div class="c-metric"><span class="c-val" id="sdr-val">—</span></div>
+        <div class="c-sub" id="sdr-sub"></div>
+        <div class="c-foot">jeff · one dongle, 4 modes</div>
       </a>
 
       <a class="card span-row" id="c-bbc" style="--a:#cc0000" href="http://192.168.1.183:8194">
@@ -1184,15 +1184,36 @@
     setCard('plants', { val: driest, unit: '%', sub, accent, lamp });
   });
 
-  const rtl433 = () => poll('rtl433', '/api/rtl433', d => {
-    if (d.error) { setCard('rtl433', { val: '?', unit: 'devices' }, true); return; }
-    if (!d.service_active) { setCard('rtl433', { val: 'Down', unit: '' }, true); return; }
-    const devs = d.devices || [];
-    const sub = devs.length
-      ? devs.slice(0, 4).map(dv => `${dot('dot-on')}${esc(dv.model)} #${esc(dv.id)}`).join('<br>')
-      : `${dot('dot-off')}listening, nothing decoded yet`;
-    setCard('rtl433', { val: d.device_count, unit: ' devices', sub, accent: '#ab7bd6', lamp: 'on' });
-  }, 'No data');
+  // jeff's one dongle time-shares 4 mutually-exclusive modes (see /sdr) — this
+  // card shows whichever is currently active rather than assuming rtl_433
+  // specifically, so switching modes doesn't make the dashboard look "down".
+  const SDR_MODE_LABEL = { planes: 'Planes', ism: 'ISM', acars: 'ACARS', waterfall: 'Waterfall', off: 'Off' };
+  const sdr = () => poll('sdr', '/api/sdr/status', async d => {
+    if (d.error) { setCard('sdr', { val: '?', unit: '' }, true); return; }
+    const mode = d.mode || 'off';
+    let sub = '';
+    try {
+      if (mode === 'planes') {
+        const j = await get('/api/jeff');
+        const a = j && j.adsb;
+        sub = a ? `${dot('dot-on')}${a.aircraft} aircraft · ${a.msgs_per_sec} msg/s` : `${dot('dot-off')}starting up…`;
+      } else if (mode === 'ism') {
+        const r = await get('/api/rtl433');
+        sub = `${dot('dot-on')}${r.device_count} known device${r.device_count === 1 ? '' : 's'}`;
+      } else if (mode === 'acars') {
+        const r = await get('/api/acars');
+        sub = `${dot('dot-on')}${r.flight_count} known aircraft`;
+      } else if (mode === 'waterfall') {
+        sub = `${dot('dot-on')}live spectrum waterfall`;
+      } else {
+        sub = `${dot('dot-off')}all SDR modes off`;
+      }
+    } catch {
+      sub = `${dot('dot-off')}mode active, details unavailable`;
+    }
+    setCard('sdr', { val: SDR_MODE_LABEL[mode] || mode, unit: '', sub, accent: '#ab7bd6',
+                     lamp: mode === 'off' ? 'warn' : 'on' });
+  }, 'Offline');
 
   const uplink = () => poll('uplink', '/api/uplink', d => {
     if (d.error) { setCard('uplink', { val: '?', unit: '' }, true); return; }
@@ -1553,7 +1574,7 @@
 
   function refresh() {
     harold(); train(); weather(); unifi(); pihole(); wireless();
-    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); rtl433(); smoke();
+    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); sdr(); smoke();
     v6health(); eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then pull acks + summarise (syncAlerts
     // repaints the tray and calls updateRollup / updateBandCounts itself)
