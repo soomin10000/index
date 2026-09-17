@@ -305,6 +305,8 @@ JEFF_JSON    = DATA / 'jeff.json'
 JEFF_DB      = DATA / 'jeff_history.db'
 BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
+ICKLE_JSON   = DATA / 'ickle.json'
+ICKLE_DB     = DATA / 'ickle_history.db'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
 V6HEALTH_JSON = DATA / 'v6health.json'
@@ -519,6 +521,7 @@ def _steve_history(): return _metrics_history(STEVE_DB, _HOST_HISTORY_COLS)
 def _wacky_history(): return _metrics_history(WACKY_DB, _HOST_HISTORY_COLS)
 def _jeff_history():  return _metrics_history(JEFF_DB, _HOST_HISTORY_COLS)
 def _bazza_history(): return _metrics_history(BAZZA_DB, _HOST_HISTORY_COLS)
+def _ickle_history(): return _metrics_history(ICKLE_DB, _HOST_HISTORY_COLS)
 def _vpn_history():   return _metrics_history(VPN_DB, ('ts', 'rtt_ms', 'loss_pct', 'api_ms', 'up'))
 
 
@@ -1517,6 +1520,7 @@ ROUTES_GET = {
     '/wacky':                _page('wacky.html'),
     '/jeff':                 _page('jeff.html'),
     '/bazza':                _page('bazza.html'),
+    '/ickle':                _page('ickle.html'),
     '/vpn':                  _page('vpn.html'),
     '/eufy':                 _page('eufy.html'),
     '/arr':                  _page('arr.html'),
@@ -1544,6 +1548,7 @@ ROUTES_GET = {
     '/api/wacky':            _jsonfile(WACKY_JSON),
     '/api/jeff':             _jsonfile(JEFF_JSON),
     '/api/bazza':            _jsonfile(BAZZA_JSON),
+    '/api/ickle':            _jsonfile(ICKLE_JSON),
     '/api/vpn':              _jsonfile(VPN_JSON),
     '/api/honeypot':         _jsonfile(DATA / 'honeypot.json', max_age=1800),  # poller runs */10
     '/api/arr':              _jsonfile(ARR_JSON),
@@ -1559,6 +1564,7 @@ ROUTES_GET = {
     '/api/wacky/history':    _jsonfn(_wacky_history),
     '/api/jeff/history':     _jsonfn(_jeff_history),
     '/api/bazza/history':    _jsonfn(_bazza_history),
+    '/api/ickle/history':    _jsonfn(_ickle_history),
     '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref),
     '/api/alerts/acks':      Route(Handler._res_alert_acks),

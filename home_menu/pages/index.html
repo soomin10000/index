@@ -174,7 +174,7 @@
       gap: 0.85rem;
       align-items: start;
     }
-    .band-grid.hosts { grid-template-columns: repeat(auto-fit, minmax(224px, 1fr)); align-items: stretch; }
+    .band-grid.hosts { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); align-items: stretch; }
     .span-2 { grid-column: span 2; }
     .span-row { grid-column: 1 / -1; }
     @media (max-width: 560px) { .span-2 { grid-column: span 1; } }
@@ -273,7 +273,7 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-vpn .c-sub, #c-eufy .c-sub, #c-unifi .c-sub { flex: 0 1 auto; }
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub, #c-vpn .c-sub, #c-eufy .c-sub, #c-unifi .c-sub { flex: 0 1 auto; }
     .card { align-self: start; }
     .band-grid.hosts .card { align-self: stretch; }
 
@@ -362,11 +362,11 @@
 
     /* ── Host strip-chart recorder ── */
     .band-grid.hosts .card { min-height: 206px; }
-    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub {
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub {
       margin-bottom: 0.1rem;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty { display: none; }
+    #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty, #c-ickle .c-sub:empty { display: none; }
 
     .hs-trace { position: relative; margin: auto 0 0.4rem; }  /* bottom-anchor the trace block so all four line up */
     .hs-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 3px; padding-right: 2px; }
@@ -511,6 +511,16 @@
         <div class="hs-trace" id="bazza-trace"><div class="hs-skel"></div></div>
         <div class="hs-read" id="bazza-read">—</div>
         <div class="c-foot">48h memory · load · temp · pi-hole</div>
+      </a>
+
+      <a class="card is-loading" id="c-ickle" style="--a:#7986cb" href="/ickle">
+        <div class="tape">Project box</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🍎</span><span class="c-name">ickle</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="ickle-sub"></div>
+        <div class="hs-trace" id="ickle-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="ickle-read">—</div>
+        <div class="c-foot">48h memory · load · disk</div>
       </a>
 
     </div>
@@ -1152,6 +1162,22 @@
     setReadout('bazza', d, dns.ftl_active === false ? 'FTL DOWN' : 'FTL up');
   });
 
+  const ickle = () => poll('ickle', '/api/ickle', d => {
+    if (d.error) { setCard('ickle', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    registerAlerts('c-ickle', alerts);
+    const critical = alerts.filter(a => a.level === 'critical').length;
+    const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#7986cb';
+    const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const parts = [];
+    if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
+    setCard('ickle', {
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+    setReadout('ickle', d);
+  });
+
   const atlas = () => poll('atlas', '/api/atlas', d => {
     if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
     const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
@@ -1530,7 +1556,7 @@
   }
 
   function hostTraces() {
-    ['steve', 'wacky', 'jeff', 'bazza'].forEach(h =>
+    ['steve', 'wacky', 'jeff', 'bazza', 'ickle'].forEach(h =>
       fetch(`/api/${h}/history`)
         .then(r => r.json())
         .then(j => renderTrace(h, j.points, HOST_CPUS[h]))
@@ -1539,7 +1565,7 @@
 
   function refresh() {
     harold(); train(); darren(); timers(); weather(); unifi(); pihole(); wireless();
-    steve(); wacky(); jeff(); bazza(); atlas(); uplink(); plants(); smoke();
+    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); smoke();
     v6health(); eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then pull acks + summarise (syncAlerts
     // repaints the tray and calls updateRollup / updateBandCounts itself)
