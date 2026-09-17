@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACARS</title>
+<style>
+  :root {
+    --chassis: #1c1e20;
+    --panel: #26282b;
+    --inset: #202224;
+    --bezel: #38393c;
+    --bezel-lit: #4a4c4f;
+    --ink: #eae7df;
+    --ink-dim: #9ea1a5;
+    --ink-faint: #909398;
+    --ok: #6fb98a;
+    --warn: #d7a24a;
+    --down: #c9584a;
+    --copper: #b8875a;
+    --font-plate: 'Bahnschrift', 'DIN Alternate', 'Arial Narrow', sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'DejaVu Sans Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--chassis);
+    background-image:
+      repeating-linear-gradient(115deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px);
+    color: var(--ink);
+    font-family: var(--font-plate);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+  header.topbar {
+    display: flex; align-items: center; gap: 1.4rem; flex-wrap: wrap; row-gap: 0.4rem;
+    padding: 0.9rem 1.6rem;
+    border-bottom: 1px solid var(--bezel);
+    background: linear-gradient(180deg, #222426, #1e2022);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .home-link {
+    font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-dim); text-decoration: none;
+  }
+  .home-link:hover { color: var(--ink); }
+  .plate-name {
+    font-weight: 700; font-size: 0.92rem; letter-spacing: 0.34em;
+    color: var(--ink); text-transform: uppercase;
+  }
+  .status-led {
+    margin-left: auto; display: flex; align-items: center; gap: 0.55rem;
+    font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em;
+    color: var(--ink-dim);
+  }
+  .lamp {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink-faint); display: inline-block;
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4);
+  }
+  .lamp.on   { background: var(--ok);   box-shadow: 0 0 8px 1px color-mix(in srgb, var(--ok) 70%, transparent); }
+  .lamp.down { background: var(--down); box-shadow: 0 0 9px 2px color-mix(in srgb, var(--down) 80%, transparent); animation: pulse-lamp 1.6s ease-in-out infinite; }
+  @keyframes pulse-lamp { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+  main.frame { max-width: 1120px; margin: 0 auto; padding: 1.8rem 1.6rem 3rem; }
+
+  .eyebrow {
+    font-size: 0.64rem; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--ink-dim); margin-bottom: 0.9rem;
+  }
+
+  section { margin-bottom: 2.1rem; }
+
+  .note {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 0.9rem 1.2rem; font-family: var(--font-mono); font-size: 0.7rem;
+    color: var(--ink-dim); margin-bottom: 1.4rem; line-height: 1.5;
+  }
+  .note b { color: var(--ink); }
+  .note a { color: var(--copper); }
+
+  .flights { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.1rem; }
+  .flight {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.1rem 1.3rem 1rem;
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .flight-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .flight-tail { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; color: var(--ink); }
+  .flight-no { font-family: var(--font-mono); font-size: 0.66rem; color: var(--copper); }
+  .flight-route { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-dim); }
+  .flight-route .arrow { color: var(--ink-faint); margin: 0 0.3rem; }
+  .flight-text {
+    font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-faint);
+    line-height: 1.4; max-height: 2.8em; overflow: hidden;
+  }
+  .flight-sub { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); letter-spacing: 0.03em; }
+
+  .none-yet {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1.6rem; font-family: var(--font-mono); font-size: 0.74rem; color: var(--ink-dim);
+  }
+
+  .feed-card {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 1rem 1.3rem;
+  }
+  table.feed { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.66rem; }
+  table.feed th {
+    text-align: left; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--bezel);
+  }
+  table.feed td { padding: 0.35rem 0.6rem; border-bottom: 1px solid var(--inset); color: var(--ink-dim); vertical-align: top; }
+  table.feed tr:last-child td { border-bottom: none; }
+  table.feed td.tail { color: var(--ink); white-space: nowrap; }
+  table.feed td.text { max-width: 420px; }
+
+  footer.updated {
+    max-width: 1120px; margin: 0 auto; padding: 0 1.6rem 2rem;
+    font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
+  }
+</style>
+  <script src="/auth.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">ACARS</div>
+  <a class="home-link" href="/sdr">SDR MODE →</a>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
+
+<main class="frame">
+
+  <div class="note">
+    Live ACARS text messages off jeff's dongle (131.525 / 131.725 / 131.825 / 131.850 / 131.950 MHz —
+    the standard European primary channel set). Gate assignments, OOOI events, free text between
+    aircraft and their airline ops. <b>Plane tracking / ISM sniffing are parked</b> while this runs.
+    <a href="/sdr">Switch modes →</a>
+  </div>
+
+  <section>
+    <div class="eyebrow">✈️ AIRCRAFT HEARD</div>
+    <div class="flights" id="flights"></div>
+  </section>
+
+  <section class="feed-card">
+    <div class="eyebrow" style="margin-bottom:0.6rem">RECENT MESSAGES</div>
+    <table class="feed">
+      <thead><tr><th>Time</th><th>Tail</th><th>Flight</th><th>Label</th><th>Route</th><th>Text</th></tr></thead>
+      <tbody id="feed"></tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer class="updated" id="updated"></footer>
+
+<script>
+  const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
+
+  function fmtAge(s) {
+    if (s < 90) return `${s}s ago`;
+    if (s < 5400) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
+  }
+
+  function renderFlights(flights, now) {
+    const box = document.getElementById('flights');
+    if (!flights.length) {
+      box.innerHTML = '<div class="none-yet">No ACARS traffic decoded yet — usually only a few minutes between messages.</div>';
+      return;
+    }
+    box.innerHTML = flights.map(f => {
+      const age = now - f.last_seen;
+      const route = (f.depa || f.dsta) ? `${esc(f.depa || '?')}<span class="arrow">→</span>${esc(f.dsta || '?')}` : '';
+      return `
+        <div class="flight">
+          <div class="flight-head">
+            <span class="flight-tail">${esc(f.tail || '—')}</span>
+            <span class="flight-no">${esc(f.flight || '')}</span>
+          </div>
+          ${route ? `<div class="flight-route">${route}</div>` : ''}
+          ${f.last_text ? `<div class="flight-text">${esc(f.last_text)}</div>` : ''}
+          <div class="flight-sub">${fmtAge(age)} · ${f.count} msg${f.count === 1 ? '' : 's'}${f.last_label ? ` · label ${esc(f.last_label)}` : ''}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderFeed(recent) {
+    const body = document.getElementById('feed');
+    if (!recent.length) {
+      body.innerHTML = '<tr><td colspan="6">—</td></tr>';
+      return;
+    }
+    body.innerHTML = recent.slice(0, 40).map(r => `
+      <tr>
+        <td>${new Date(r.ts * 1000).toLocaleTimeString('en-GB')}</td>
+        <td class="tail">${esc(r.tail || '—')}</td>
+        <td>${esc(r.flight || '—')}</td>
+        <td>${esc(r.label || '—')}</td>
+        <td>${(r.depa || r.dsta) ? `${esc(r.depa || '?')}→${esc(r.dsta || '?')}` : '—'}</td>
+        <td class="text">${esc(r.text || '')}</td>
+      </tr>`).join('');
+  }
+
+  async function load() {
+    try {
+      const r = await fetch('/api/acars');
+      const d = await r.json();
+      const lamp = document.getElementById('status-lamp');
+      const statusText = document.getElementById('status-text');
+      if (d.error) {
+        statusText.textContent = 'OFFLINE';
+        lamp.className = 'lamp down';
+        return;
+      }
+      renderFlights(d.flights, d.ts);
+      renderFeed(d.recent);
+
+      if (!d.service_active) {
+        statusText.textContent = 'SERVICE DOWN';
+        lamp.className = 'lamp down';
+      } else {
+        statusText.textContent = `${d.flight_count} AIRCRAFT`;
+        lamp.className = 'lamp on';
+      }
+      document.getElementById('updated').textContent = 'Updated ' + new Date(d.ts * 1000).toLocaleTimeString('en-GB');
+    } catch {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+    }
+  }
+
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>

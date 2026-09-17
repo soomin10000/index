@@ -84,7 +84,8 @@
   }
   .note b { color: var(--ink); }
 
-  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  .modes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.2rem; }
+  @media (max-width: 1180px) { .modes { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 680px) { .modes { grid-template-columns: 1fr; } }
 
   .mode-card {
@@ -143,9 +144,9 @@
 <main class="frame">
 
   <div class="note">
-    jeff has one RTL-SDR dongle (RTL-SDR Blog V3) — it can feed <b>either</b> plane tracking
-    <b>or</b> the ISM-band sniffer, never both. Switching stops the current service and starts
-    the other; the dongle is free again within a few seconds.
+    jeff has one RTL-SDR dongle (RTL-SDR Blog V3) — it can feed <b>only one</b> of plane tracking,
+    the ISM-band sniffer, ACARS, or the waterfall at a time. Switching stops the other three and
+    starts the one you pick; the dongle is free again within a few seconds.
   </div>
 
   <div class="modes">
@@ -170,6 +171,28 @@
       <a class="mode-link" href="/rtl433">→ open the rtl_433 card</a>
       <button class="mode-btn" id="btn-ism" data-mode="ism">Switch to ISM sniffer</button>
     </div>
+
+    <div class="mode-card" id="card-acars">
+      <div class="mode-head">
+        <span class="mode-icon">📨</span>
+        <span class="mode-name">ACARS</span>
+        <span class="mode-state" id="state-acars"><span class="lamp"></span>—</span>
+      </div>
+      <div class="mode-desc">acarsdec — aircraft datalink text messages (gate info, OOOI, free text).</div>
+      <a class="mode-link" href="/acars">→ open the ACARS card</a>
+      <button class="mode-btn" id="btn-acars" data-mode="acars">Switch to ACARS</button>
+    </div>
+
+    <div class="mode-card" id="card-waterfall">
+      <div class="mode-head">
+        <span class="mode-icon">〰️</span>
+        <span class="mode-name">Waterfall</span>
+        <span class="mode-state" id="state-waterfall"><span class="lamp"></span>—</span>
+      </div>
+      <div class="mode-desc">OpenWebRX — live spectrum waterfall, click-to-tune, AM/FM/SSB. LAN only, not proxied.</div>
+      <a class="mode-link" href="http://192.168.1.106:8073" target="_blank" rel="noopener">→ open OpenWebRX (LAN)</a>
+      <button class="mode-btn" id="btn-waterfall" data-mode="waterfall">Switch to waterfall</button>
+    </div>
   </div>
 
   <div class="switch-log" id="switch-log"></div>
@@ -180,6 +203,7 @@
 
 <script>
   let busy = false;
+  const MODE_LABEL = { planes: 'plane tracking', ism: 'ISM sniffer', acars: 'ACARS', waterfall: 'waterfall' };
 
   function render(d) {
     const lamp = document.getElementById('status-lamp');
@@ -192,13 +216,13 @@
     }
 
     lamp.className = 'lamp on';
-    statusText.textContent = d.mode === 'planes' ? 'PLANE TRACKING'
-      : d.mode === 'ism' ? 'ISM SNIFFER'
-      : 'BOTH OFF';
+    statusText.textContent = MODE_LABEL[d.mode] ? MODE_LABEL[d.mode].toUpperCase() : 'ALL OFF';
 
     const cfg = {
-      planes: { state: d.readsb, cardId: 'card-planes', stateId: 'state-planes', btnId: 'btn-planes' },
-      ism:    { state: d.rtl433, cardId: 'card-ism',    stateId: 'state-ism',    btnId: 'btn-ism' },
+      planes:    { state: d.readsb,    cardId: 'card-planes',    stateId: 'state-planes',    btnId: 'btn-planes' },
+      ism:       { state: d.rtl433,    cardId: 'card-ism',       stateId: 'state-ism',       btnId: 'btn-ism' },
+      acars:     { state: d.acarsdec,  cardId: 'card-acars',     stateId: 'state-acars',     btnId: 'btn-acars' },
+      waterfall: { state: d.openwebrx, cardId: 'card-waterfall', stateId: 'state-waterfall', btnId: 'btn-waterfall' },
     };
     for (const [mode, c] of Object.entries(cfg)) {
       const card = document.getElementById(c.cardId);
@@ -212,7 +236,7 @@
         btn.textContent = 'Currently active';
         btn.classList.add('active-btn');
       } else {
-        btn.textContent = busy ? 'Switching…' : `Switch to ${mode === 'planes' ? 'plane tracking' : 'ISM sniffer'}`;
+        btn.textContent = busy ? 'Switching…' : `Switch to ${MODE_LABEL[mode]}`;
         btn.classList.remove('active-btn');
       }
     }
@@ -245,7 +269,7 @@
       });
       const d = await r.json();
       if (d.ok) {
-        log.textContent = `Switched to ${mode === 'planes' ? 'plane tracking' : 'ISM sniffer'}.`;
+        log.textContent = `Switched to ${MODE_LABEL[mode]}.`;
       } else {
         log.className = 'switch-log err';
         log.textContent = 'Switch failed:\n' + (d.error || 'unknown error');

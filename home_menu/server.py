@@ -314,6 +314,7 @@ BAZZA_DB     = DATA / 'bazza_history.db'
 ICKLE_JSON   = DATA / 'ickle.json'
 ICKLE_DB     = DATA / 'ickle_history.db'
 RTL433_JSON  = DATA / 'rtl433.json'
+ACARS_JSON   = DATA / 'acars.json'
 VPN_JSON     = DATA / 'vpn.json'
 VPN_DB       = DATA / 'vpn_history.db'
 V6HEALTH_JSON = DATA / 'v6health.json'
@@ -609,10 +610,7 @@ def _jeff_readsb_recover():
             'reseat or swap the dongle', 'log': tail}
 
 
-SDR_MODES = {
-    'planes': {'start': 'readsb', 'stop': 'rtl_433'},
-    'ism':    {'start': 'rtl_433', 'stop': 'readsb'},
-}
+SDR_MODES = {'planes': 'readsb', 'ism': 'rtl_433', 'acars': 'acarsdec', 'waterfall': 'openwebrx'}
 
 
 def _sdr_ssh(script):
@@ -627,31 +625,34 @@ def _sdr_ssh(script):
 
 
 def _sdr_status():
-    """jeff's one RTL-SDR dongle can only feed readsb (plane tracking) or rtl_433
-    (ISM-band sniffing) at a time — the two services are kept mutually exclusive
-    by hand (see _sdr_switch), so which is running IS the current mode."""
-    out, err = _sdr_ssh('systemctl is-active readsb rtl_433 2>&1')
-    lines = out.strip().splitlines()
-    readsb = lines[0] if len(lines) > 0 else 'unknown'
-    rtl433 = lines[1] if len(lines) > 1 else 'unknown'
-    mode = 'planes' if readsb == 'active' else 'ism' if rtl433 == 'active' else 'off'
-    return {'mode': mode, 'readsb': readsb, 'rtl433': rtl433}
+    """jeff's one RTL-SDR dongle can only feed one of SDR_MODES's services at a
+    time — they're kept mutually exclusive by hand (see _sdr_switch), so which
+    one is running IS the current mode."""
+    units = list(SDR_MODES.values())
+    out, err = _sdr_ssh(f"systemctl is-active {' '.join(units)} 2>&1")
+    lines = (out.strip().splitlines() + ['unknown'] * len(units))[:len(units)]
+    states = dict(zip(units, lines))
+    mode = next((m for m, u in SDR_MODES.items() if states.get(u) == 'active'), 'off')
+    return {'mode': mode, 'readsb': states['readsb'], 'rtl433': states['rtl_433'],
+            'acarsdec': states['acarsdec'], 'openwebrx': states['openwebrx']}
 
 
 def _sdr_switch(mode):
     """readsb-watchdog.timer usbresets the dongle + force-restarts readsb any time
-    it judges readsb "deaf" — it has no notion of rtl_433 legitimately owning the
-    dongle, so left enabled it fights rtl_433 for the device and wins (seen live
-    2026-09-17: it silently un-parked readsb ~15min after the ISM switch, crashing
-    rtl_433). It must only run in 'planes' mode."""
-    cfg = SDR_MODES.get(mode)
-    if not cfg:
+    it judges readsb "deaf" — it has no notion of rtl_433/acarsdec legitimately
+    owning the dongle, so left enabled it fights them for the device and wins
+    (seen live 2026-09-17: it silently un-parked readsb ~15min after an ISM
+    switch, crashing rtl_433). It must only run in 'planes' mode."""
+    target = SDR_MODES.get(mode)
+    if not target:
         return {'ok': False, 'error': 'unknown mode'}
+    others = [u for u in SDR_MODES.values() if u != target]
     watchdog_cmd = ('enable --now readsb-watchdog.timer' if mode == 'planes'
                      else 'disable --now readsb-watchdog.timer')
+    stop_cmds = ''.join(f"sudo -n systemctl disable --now {u} 2>&1\n" for u in others)
     out, err = _sdr_ssh(
-        f"sudo -n systemctl disable --now {cfg['stop']} 2>&1\n"
-        f"sudo -n systemctl enable --now {cfg['start']} 2>&1\n"
+        stop_cmds +
+        f"sudo -n systemctl enable --now {target} 2>&1\n"
         f"sudo -n systemctl {watchdog_cmd} 2>&1\n"
     )
     status = _sdr_status()
@@ -1623,6 +1624,7 @@ ROUTES_GET = {
     '/bazza':                _page('bazza.html'),
     '/ickle':                _page('ickle.html'),
     '/rtl433':               _page('rtl433.html'),
+    '/acars':                _page('acars.html'),
     '/sdr':                  _page('sdr.html'),
     '/vpn':                  _page('vpn.html'),
     '/eufy':                 _page('eufy.html'),
@@ -1653,6 +1655,7 @@ ROUTES_GET = {
     '/api/bazza':            _jsonfile(BAZZA_JSON),
     '/api/ickle':            _jsonfile(ICKLE_JSON),
     '/api/rtl433':           _jsonfile(RTL433_JSON, max_age=600),  # poller runs */5
+    '/api/acars':            _jsonfile(ACARS_JSON, max_age=600),   # poller runs */5
     '/api/vpn':              _jsonfile(VPN_JSON),
     '/api/honeypot':         _jsonfile(DATA / 'honeypot.json', max_age=1800),  # poller runs */10
     '/api/arr':              _jsonfile(ARR_JSON),
