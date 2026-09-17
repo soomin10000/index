@@ -612,12 +612,19 @@ def _jeff_readsb_recover():
 
 SDR_MODES = {'planes': 'readsb', 'ism': 'rtl_433', 'acars': 'acarsdec', 'waterfall': 'openwebrx'}
 
+DONGLE_USB_ID        = '0bda:2838'
+SDR_SWITCH_SETTLE_S  = 2    # let the kernel release/re-enumerate the USB interface after usbreset
+SDR_VERIFY_TIMEOUT_S = 20   # planes: poll window for real accepted ADS-B messages
+SDR_VERIFY_POLL_S    = 2
+SDR_JOURNAL_SETTLE_S = 5    # ism/acars/waterfall: time to let the tuner-open banner land in the journal
+SDR_SWITCH_TIMEOUT_S = 45   # ssh timeout for the switch script specifically (longer than a status check)
 
-def _sdr_ssh(script):
+
+def _sdr_ssh(script, timeout=30):
     try:
         result = subprocess.run(
             ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'jeff', script],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=timeout,
         )
         return result.stdout, result.stderr
     except Exception as e:
@@ -637,30 +644,176 @@ def _sdr_status():
             'acarsdec': states['acarsdec'], 'openwebrx': states['openwebrx']}
 
 
+def _sdr_verify_script(mode, target, switch_ts):
+    """Bash appended to the switch script, run on jeff, that checks the just-started
+    service is actually talking to the tuner — not just 'active' per systemd. Emits
+    a line after '===VERIFY===' that _sdr_switch parses: 'ok ...' or 'fail ...'.
+
+    Found live 2026-09-17: switching modes back-to-back can leave the USB interface
+    half-claimed (kernel logs "did not claim interface 0 before use") — the new
+    service reports active and even streams raw USB samples, but the R820T2 tuner
+    is never actually configured over I2C. readsb showed samples_processed in the
+    tens of millions while accepted stayed [0, 0] the whole time — so 'planes'
+    verification deliberately checks accepted messages, NOT samples_processed,
+    which would NOT have caught this.
+
+    ism/acars have no equivalent live decode-rate file, and rtl_433/acarsdec only
+    emit output on sporadic real transmissions, so an accepted-message check isn't
+    reliable in a short window. Instead check that service's own journal since
+    switch_ts for "Found Rafael Micro R820T tuner" — the banner both tools' shared
+    librtlsdr backend prints once it has opened + I2C-probed the dongle, i.e. the
+    exact step the wedge bug breaks — and for the absence of an explicit open/claim
+    error. This confirms the tuner was opened, not that data is flowing end-to-end:
+    a real but weaker check than the planes one. [R82XX] PLL not locked / "Invalid
+    frequency" lines appear on normal healthy starts too and must NOT be treated as
+    failures.
+
+    waterfall (openwebrx) is structurally different: OpenWebRX doesn't open the
+    RTL-SDR at service-start time at all — it only spawns rtl_connector once a
+    browser client actually connects (confirmed live 2026-09-17: the journal shows
+    no "Found tuner" line for minutes after a clean start with zero viewers). So the
+    tuner-banner check above doesn't apply here and would just report a false
+    "inconclusive" on every automated switch. Verify openwebrx itself instead: the
+    HTTP service answering on :8073 means the process started and is ready for a
+    client to connect — it can't prove the dongle isn't wedged (that only shows up
+    once someone actually opens the waterfall), but that's an inherent limit of an
+    on-demand SDR client, not something this check can paper over.
+    """
+    echo = "echo '===VERIFY==='\n"
+    if mode == 'planes':
+        iters = SDR_VERIFY_TIMEOUT_S // SDR_VERIFY_POLL_S
+        return echo + (
+            f"ok=0; acc=0\n"
+            f"for i in $(seq 1 {iters}); do\n"
+            f"  sleep {SDR_VERIFY_POLL_S}\n"
+            f"  a=$(jq -r '.last1min.local.accepted[0] // 0' /run/readsb/stats.json 2>/dev/null || echo 0)\n"
+            f"  if [ \"${{a:-0}}\" -gt 0 ] 2>/dev/null; then ok=1; acc=$a; break; fi\n"
+            f"done\n"
+            f"if [ \"$ok\" = 1 ]; then echo \"ok accepted=$acc\"; else "
+            f"echo \"fail no accepted ADS-B messages within {SDR_VERIFY_TIMEOUT_S}s "
+            f"(dongle may still be wedged, or genuinely no aircraft in range)\"; fi\n"
+        )
+    if mode == 'waterfall':
+        return echo + (
+            f"sleep {SDR_JOURNAL_SETTLE_S}\n"
+            f"c=$(curl -s -o /dev/null -w '%{{http_code}}' --max-time 4 http://localhost:8073/status.json 2>/dev/null || echo 000)\n"
+            f"if [ \"$c\" = 200 ]; then echo \"ok openwebrx http $c (dongle opens on first viewer, not checked here)\"\n"
+            f"else echo \"fail openwebrx not answering on :8073 (http $c)\"; fi\n"
+        )
+    err_re = 'usb_claim_interface|failed to open rtlsdr|no supported devices|usb_open error|error opening'
+    return echo + (
+        f"sleep {SDR_JOURNAL_SETTLE_S}\n"
+        f"j=$(journalctl -u {target} --no-pager -o cat --since '@{switch_ts}' 2>/dev/null)\n"
+        f"e=$(echo \"$j\" | grep -iE '{err_re}' | tail -1)\n"
+        f"if [ -n \"$e\" ]; then echo \"fail tuner/USB error in {target} journal: $e\"\n"
+        f"elif echo \"$j\" | grep -qi 'found.*tuner'; then echo \"ok tuner opened\"\n"
+        f"else echo \"fail no tuner-open banner seen in {target} journal within "
+        f"{SDR_JOURNAL_SETTLE_S}s (inconclusive, not necessarily wedged)\"; fi\n"
+    )
+
+
+SDR_SWITCH_MAX_ATTEMPTS = 2   # a wedge that survives one usbreset sometimes clears on a second
+                              # (seen live 2026-09-17 under rapid-cycle testing — one reset isn't
+                              # always enough, matching the manual recovery earlier that session)
+
+
+def _sdr_switch_attempt(mode, target, others, watchdog_cmd):
+    """One stop/usbreset/start/verify cycle — see _sdr_switch for the retry wrapper
+    and the full rationale (docstring kept there since that's the public entry
+    point; this just factors out a single attempt so it can be retried)."""
+    stop_cmds = ''.join(f"sudo -n systemctl disable --now {u} 2>&1\n" for u in others)
+    switch_ts = int(time.time())
+    script = (
+        stop_cmds +
+        f"sudo -n usbreset {DONGLE_USB_ID} 2>&1 || (sleep 1; sudo -n usbreset {DONGLE_USB_ID} 2>&1)\n"
+        f"sleep {SDR_SWITCH_SETTLE_S}\n"
+        f"sudo -n systemctl enable --now {target} 2>&1\n"
+        f"sudo -n systemctl {watchdog_cmd} 2>&1\n" +
+        _sdr_verify_script(mode, target, switch_ts)
+    )
+    out, err = _sdr_ssh(script, timeout=SDR_SWITCH_TIMEOUT_S)
+
+    verify_line = ''
+    if out and '===VERIFY===' in out:
+        tail = out.split('===VERIFY===', 1)[1].strip().splitlines()
+        verify_line = tail[0] if tail else ''
+    verify_ok = verify_line.startswith('ok')
+    return verify_ok, verify_line, out, err
+
+
 def _sdr_switch(mode):
     """readsb-watchdog.timer usbresets the dongle + force-restarts readsb any time
-    it judges readsb "deaf" — it has no notion of rtl_433/acarsdec legitimately
-    owning the dongle, so left enabled it fights them for the device and wins
-    (seen live 2026-09-17: it silently un-parked readsb ~15min after an ISM
-    switch, crashing rtl_433). It must only run in 'planes' mode."""
+    it judges readsb "deaf" — it has no notion of rtl_433/acarsdec/openwebrx
+    legitimately owning the dongle, so left enabled it fights them for the device
+    and wins (seen live 2026-09-17: it silently un-parked readsb ~15min after an
+    ISM switch, crashing rtl_433). It must only run in 'planes' mode.
+
+    Also bakes in a real `usbreset` + settle delay before starting the target
+    service, and a real post-switch verification (see _sdr_verify_script) — not
+    just `systemctl is-active`, which does NOT catch a half-claimed USB interface
+    leaving the tuner unconfigured (see that function's docstring for the live
+    2026-09-17 incident this fixes). `ok` now means switched AND verified, so a
+    switch that "worked" per systemd but left the tuner silently unconfigured
+    reports ok:False with a real reason instead of claiming success.
+
+    Retries the whole attempt up to SDR_SWITCH_MAX_ATTEMPTS times on verify
+    failure — confirmed live 2026-09-17 that a wedge can survive one usbreset
+    under rapid mode-cycling (accepted stayed [0,0], noise -6.6dBFS, exactly the
+    original incident's signature) but clears on a second attempt, same as the
+    manual recovery earlier that session."""
     target = SDR_MODES.get(mode)
     if not target:
         return {'ok': False, 'error': 'unknown mode'}
     others = [u for u in SDR_MODES.values() if u != target]
     watchdog_cmd = ('enable --now readsb-watchdog.timer' if mode == 'planes'
                      else 'disable --now readsb-watchdog.timer')
-    stop_cmds = ''.join(f"sudo -n systemctl disable --now {u} 2>&1\n" for u in others)
-    out, err = _sdr_ssh(
-        stop_cmds +
-        f"sudo -n systemctl enable --now {target} 2>&1\n"
-        f"sudo -n systemctl {watchdog_cmd} 2>&1\n"
-    )
+
+    verify_ok, verify_line, out, err = False, '', '', ''
+    attempts = 0
+    for attempts in range(1, SDR_SWITCH_MAX_ATTEMPTS + 1):
+        verify_ok, verify_line, out, err = _sdr_switch_attempt(mode, target, others, watchdog_cmd)
+        if verify_ok:
+            break
+
     status = _sdr_status()
-    ok = status['mode'] == mode
-    result = {'ok': ok, **status}
+    switched = status['mode'] == mode
+    ok = switched and verify_ok
+    result = {'ok': ok, 'switched': switched, 'verify_ok': verify_ok,
+              'verify_detail': verify_line, 'attempts': attempts, **status}
     if not ok:
-        result['error'] = '\n'.join((out or err or 'switch failed').strip().splitlines()[-4:])
+        lines = (out or err or 'switch failed').strip().splitlines()
+        result['error'] = '\n'.join(lines[-6:])
     return result
+
+
+OWRX_STATUS_URL = 'http://192.168.1.106:8073/status.json'
+
+
+def _owrx_status():
+    """Server-side fetch of OpenWebRX's own /status.json — avoids a cross-origin
+    browser fetch to jeff's LAN-only address (same reasoning as JEFF_MAP_PREFIX).
+    Checked this OpenWebRX version's owrx/controllers/status.py directly on jeff:
+    this endpoint only reports static config (receiver name, max_clients, configured
+    SDR profiles) — there is no connected-client-count or live-signal field in its
+    HTTP API (client counts only flow over its internal websocket protocol to
+    already-connected clients). So this can only tell the hub "openwebrx is up and
+    configured", not "someone's listening" or "the dongle is actually receiving" —
+    a known, accepted gap, not a bug."""
+    try:
+        req = urllib.request.Request(OWRX_STATUS_URL, headers={'User-Agent': 'home-menu/1.0'})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            data = json.loads(r.read())
+        sdrs = data.get('sdrs') or []
+        return {
+            'reachable': True,
+            'receiver_name': (data.get('receiver') or {}).get('name'),
+            'max_clients': data.get('max_clients'),
+            'profile_count': sum(len(s.get('profiles') or []) for s in sdrs),
+        }
+    except Exception:
+        # Expected whenever waterfall isn't the active mode — openwebrx.service is
+        # stopped, so the port is simply closed. Not an error state, just "not running".
+        return {'reachable': False}
 
 
 def _kismet_bytes():
@@ -1675,6 +1828,7 @@ ROUTES_GET = {
     '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref),
     '/api/sdr/status':       _jsonfn(_sdr_status),
+    '/api/sdr/waterfall':    _jsonfn(_owrx_status),
     '/api/alerts/acks':      Route(Handler._res_alert_acks),
 
     # Request-specific (parse the query string / stream raw bytes)

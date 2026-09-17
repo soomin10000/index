@@ -106,6 +106,10 @@
     text-transform: uppercase; color: var(--ink-faint); display: flex; align-items: center; gap: 0.4rem;
   }
   .mode-desc { font-size: 0.76rem; color: var(--ink-dim); line-height: 1.5; }
+  .mode-summary {
+    font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-faint);
+    letter-spacing: 0.02em;
+  }
   .mode-link {
     font-family: var(--font-mono); font-size: 0.66rem; color: var(--copper); text-decoration: none;
     align-self: flex-start;
@@ -145,8 +149,16 @@
 
   <div class="note">
     jeff has one RTL-SDR dongle (RTL-SDR Blog V3) — it can feed <b>only one</b> of plane tracking,
-    the ISM-band sniffer, ACARS, or the waterfall at a time. Switching stops the other three and
-    starts the one you pick; the dongle is free again within a few seconds.
+    the ISM-band sniffer, ACARS, or the waterfall at a time. Switching stops the other three,
+    resets the dongle over USB, and verifies the new mode is actually receiving before calling it
+    done — that check takes up to ~45s for plane tracking (waiting for a real decoded aircraft) and
+    a few seconds for the others (checking the tuner opened cleanly), so a switch isn't instant.
+    <br><br>
+    <b>Reading the waterfall:</b> it shows the past, not a replay button — it scrolls continuously,
+    so a streak partway down the screen already happened and won't play back. Click a streak still
+    forming at the <b>top edge</b> to catch something live, or click any frequency and wait for the
+    next transmission there. If you hear nothing, check the volume slider isn't too low and the
+    squelch (SQ) isn't set so high it's muting weak signals.
   </div>
 
   <div class="modes">
@@ -157,6 +169,7 @@
         <span class="mode-state" id="state-planes"><span class="lamp"></span>—</span>
       </div>
       <div class="mode-desc">readsb + tar1090 — live ADS-B map, aircraft overhead, routes &amp; owners.</div>
+      <div class="mode-summary" id="summary-planes">—</div>
       <a class="mode-link" href="/jeff">→ open the jeff / plane card</a>
       <button class="mode-btn" id="btn-planes" data-mode="planes">Switch to plane tracking</button>
     </div>
@@ -168,6 +181,7 @@
         <span class="mode-state" id="state-ism"><span class="lamp"></span>—</span>
       </div>
       <div class="mode-desc">rtl_433 — passive 433/868 MHz inventory (weather sensors, TPMS, doorbells).</div>
+      <div class="mode-summary" id="summary-ism">—</div>
       <a class="mode-link" href="/rtl433">→ open the rtl_433 card</a>
       <button class="mode-btn" id="btn-ism" data-mode="ism">Switch to ISM sniffer</button>
     </div>
@@ -179,6 +193,7 @@
         <span class="mode-state" id="state-acars"><span class="lamp"></span>—</span>
       </div>
       <div class="mode-desc">acarsdec — aircraft datalink text messages (gate info, OOOI, free text).</div>
+      <div class="mode-summary" id="summary-acars">—</div>
       <a class="mode-link" href="/acars">→ open the ACARS card</a>
       <button class="mode-btn" id="btn-acars" data-mode="acars">Switch to ACARS</button>
     </div>
@@ -190,6 +205,7 @@
         <span class="mode-state" id="state-waterfall"><span class="lamp"></span>—</span>
       </div>
       <div class="mode-desc">OpenWebRX — live spectrum waterfall, click-to-tune, AM/FM/SSB. LAN only, not proxied.</div>
+      <div class="mode-summary" id="summary-waterfall">—</div>
       <a class="mode-link" href="http://192.168.1.106:8073" target="_blank" rel="noopener">→ open OpenWebRX (LAN)</a>
       <button class="mode-btn" id="btn-waterfall" data-mode="waterfall">Switch to waterfall</button>
     </div>
@@ -254,12 +270,43 @@
     }
   }
 
+  function setSummary(mode, data, fmt) {
+    const el = document.getElementById('summary-' + mode);
+    if (!el) return;
+    el.textContent = data ? fmt(data) : 'summary unavailable';
+  }
+
+  // Runs alongside loadStatus() — each mode's own data persists regardless of
+  // which mode is currently active (rtl433/acars keep their catalog across
+  // switches), so this shows "last known" activity even for inactive modes,
+  // not just for whichever one is live right now.
+  async function loadSummaries() {
+    const [jeff, rtl433, acars, owrx] = await Promise.allSettled([
+      fetch('/api/jeff').then(r => r.json()),
+      fetch('/api/rtl433').then(r => r.json()),
+      fetch('/api/acars').then(r => r.json()),
+      fetch('/api/sdr/waterfall').then(r => r.json()),
+    ]);
+
+    setSummary('planes', jeff.status === 'fulfilled' ? jeff.value : null, j => {
+      const a = j && j.adsb;
+      return a ? `${a.aircraft} aircraft · ${a.msgs_per_sec} msg/s` : 'inactive — no live ADS-B data';
+    });
+    setSummary('ism', rtl433.status === 'fulfilled' ? rtl433.value : null, d =>
+      `${d.device_count} known device${d.device_count === 1 ? '' : 's'} · ${d.new_decodes} new decode${d.new_decodes === 1 ? '' : 's'}`);
+    setSummary('acars', acars.status === 'fulfilled' ? acars.value : null, d =>
+      `${d.flight_count} known aircraft · ${d.recent.length} recent message${d.recent.length === 1 ? '' : 's'}`);
+    setSummary('waterfall', owrx.status === 'fulfilled' ? owrx.value : null, d =>
+      d.reachable ? `reachable · ${d.profile_count} configured profile${d.profile_count === 1 ? '' : 's'}`
+                  : 'not reachable (mode inactive)');
+  }
+
   async function switchMode(mode) {
     if (busy) return;
     busy = true;
     const log = document.getElementById('switch-log');
     log.className = 'switch-log';
-    log.textContent = `Switching to ${mode}…`;
+    log.textContent = `Switching to ${mode}… (can take up to ~45s — resetting the dongle and verifying it's actually receiving)`;
     document.querySelectorAll('.mode-btn').forEach(b => b.disabled = true);
     try {
       const r = await fetch('/api/sdr/switch', {
@@ -269,12 +316,17 @@
       });
       const d = await r.json();
       if (d.ok) {
-        log.textContent = `Switched to ${MODE_LABEL[mode]}.`;
+        log.textContent = `Switched to ${MODE_LABEL[mode]}.` + (d.verify_detail ? ` (${d.verify_detail})` : '');
+      } else if (d.switched && !d.verify_ok) {
+        log.className = 'switch-log err';
+        log.textContent = `Service started but verification failed: ${d.verify_detail || 'unknown reason'}\n`
+          + 'The dongle may still be wedged — try switching again, or check jeff directly.';
       } else {
         log.className = 'switch-log err';
         log.textContent = 'Switch failed:\n' + (d.error || 'unknown error');
       }
       render(d);
+      loadSummaries();
     } catch (e) {
       log.className = 'switch-log err';
       log.textContent = 'Switch request failed — server unreachable.';
@@ -289,7 +341,8 @@
   });
 
   loadStatus();
-  setInterval(loadStatus, 20000);
+  loadSummaries();
+  setInterval(() => { loadStatus(); loadSummaries(); }, 20000);
 </script>
 </body>
 </html>
