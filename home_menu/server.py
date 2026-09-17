@@ -37,6 +37,14 @@ PROXIES = {
     '/api/timers':  'http://localhost:8196/api/status',
 }
 
+# tar1090 (the live ADS-B map) runs on jeff itself, not steve — jeff isn't on the
+# tailnet, so embedding its LAN IP directly in the page would only render for
+# clients on the home LAN. Proxying arbitrary sub-paths through steve instead
+# (see Handler._res_jeff_map) keeps it working over Tailscale from anywhere,
+# same as every other card.
+JEFF_MAP_PREFIX = '/jeff/map/'
+JEFF_MAP_BASE   = 'http://192.168.1.106/tar1090'
+
 # SmokePing's classic browse windows, as hours.
 SMOKEPING_RANGES = {'3h': 3, '30h': 30, '10d': 240, '1y': 8766}
 SMOKEPING_RRD_DIR = DATA / 'smokeping_rrd'
@@ -1230,7 +1238,7 @@ class Handler(BaseHTTPRequestHandler):
         # Page navigations bounce to the login screen; API/XHR/asset requests get a
         # bare 401 so a stale tab's fetch fails cleanly and its own handler redirects.
         if (path.startswith('/api/') or path.startswith('/eufy/snapshot/')
-                or path.endswith('.png')):
+                or path.startswith(JEFF_MAP_PREFIX) or path.endswith('.png')):
             self.send_response(401)
             self.send_header('Content-Length', '0')
             self.end_headers()
@@ -1272,6 +1280,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith('/eufy/snapshot/'):
             route = ROUTES_GET.get('/eufy/snapshot/')
+        elif path.startswith(JEFF_MAP_PREFIX):
+            route = ROUTES_GET.get(JEFF_MAP_PREFIX)
         else:
             route = ROUTES_GET.get(path)
         if route is None:
@@ -1471,6 +1481,41 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(err)
 
+    def _res_jeff_map(self):
+        """Reverse-proxies tar1090's whole asset tree (HTML/JS/CSS/images plus the
+        live aircraft.json/binCraft data files) from jeff through steve, one
+        sub-path at a time — see JEFF_MAP_PREFIX/BASE above for why this can't
+        just be an iframe straight at jeff's LAN IP."""
+        from urllib.parse import urlsplit
+        split = urlsplit(self.path)
+        rest = split.path[len(JEFF_MAP_PREFIX):]
+        upstream = f'{JEFF_MAP_BASE}/{rest}'
+        if split.query:
+            upstream += f'?{split.query}'
+        try:
+            req = urllib.request.Request(upstream, headers={'User-Agent': 'home-menu/1.0'})
+            with urllib.request.urlopen(req, timeout=6) as r:
+                body = r.read()
+                status, ct = r.status, r.headers.get('Content-Type', 'application/octet-stream')
+                cache, enc = r.headers.get('Cache-Control'), r.headers.get('Content-Encoding')
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            status, ct = e.code, e.headers.get('Content-Type', 'text/plain')
+            cache, enc = e.headers.get('Cache-Control'), e.headers.get('Content-Encoding')
+        except Exception as e:
+            self.send_error(502, f'jeff map unreachable: {e}')
+            return
+        extra = {}
+        if cache: extra['Cache-Control'] = cache
+        if enc: extra['Content-Encoding'] = enc
+        self.send_response(status)
+        self.send_header('Content-Type', ct)
+        self.send_header('Content-Length', len(body))
+        for k, v in extra.items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(body)
+
     def _abs_file(self, path, ct):
         try:
             body = path.read_bytes()
@@ -1578,6 +1623,7 @@ ROUTES_GET = {
     '/unifi/topology.png':   Route(Handler._res_unifi_png),
     '/unifi/dashboard.png':  Route(Handler._res_unifi_png),
     '/eufy/snapshot/':       Route(Handler._res_eufy_snapshot),
+    JEFF_MAP_PREFIX:         Route(Handler._res_jeff_map),
 }
 # Service API pass-throughs (behind the login like everything else) — see PROXIES.
 for _p, _u in PROXIES.items():

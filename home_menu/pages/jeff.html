@@ -113,6 +113,14 @@
   .rows .row span:first-child { color: var(--ink-faint); }
   .rows .row .proc-name { color: var(--ink); }
 
+  /* ── Live map (tar1090, proxied from jeff) ── */
+  .map-frame {
+    border: 1px solid var(--bezel); border-radius: 6px; overflow: hidden;
+    background: var(--panel); height: 480px;
+  }
+  .map-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
+  @media (max-width: 620px) { .map-frame { height: 360px; } }
+
   body.stale header.topbar { box-shadow: inset 0 -2px 0 var(--warn); }
   body.stale footer.updated { color: var(--warn); }
 
@@ -158,6 +166,13 @@
   <section>
     <div class="eyebrow">SDR — RTL-SDR RIG</div>
     <div class="sdr-card" id="sdr-card"></div>
+  </section>
+
+  <section>
+    <div class="eyebrow">LIVE MAP — TAR1090</div>
+    <div class="map-frame">
+      <iframe src="/jeff/map/" loading="lazy" title="Live ADS-B map (tar1090, on jeff)"></iframe>
+    </div>
   </section>
 
   <section>
