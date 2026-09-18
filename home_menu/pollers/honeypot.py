@@ -11,6 +11,10 @@ user-agents are literally whatever the prober typed. Fields are truncated and
 stripped of control characters here, and the card escapes them again on render.
 Do not relax either half.
 
+Passwords are additionally masked (mask_pw) before they ever reach honeypot.json
+— probed passwords can coincide with a real credential of ours, so the raw
+value is never written to disk here or shown on the dashboard, only its shape.
+
 Note steve is in weeny's `ip.ignorelist`, so this poller's own SSH traffic and
 any nmap run from steve never appear in the log. Probes must come from another
 host to show up here.
@@ -65,6 +69,21 @@ def clean(v, limit=FIELD_MAX):
     return s[:limit] + "…" if len(s) > limit else s
 
 
+def mask_pw(v):
+    """Passwords probed against the honeypot are sometimes real credentials of
+    ours reused elsewhere (an attacker's dictionary can contain a leaked one by
+    coincidence), so the raw value never leaves weeny's own log — only a shape
+    (first/last char + length) survives into honeypot.json and the dashboard.
+    The full value stays in /var/log/opencanary/opencanary.log on weeny for
+    anyone who deliberately needs to go look."""
+    s = clean(v)
+    if not s:
+        return s
+    if len(s) <= 2:
+        return "•" * len(s)
+    return s[0] + "•" * (len(s) - 2) + s[-1]
+
+
 def fetch_log():
     r = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", HOST,
@@ -108,7 +127,7 @@ def parse(raw, now):
             "label": label,
             "login": lt in LOGIN_TYPES,
             "user": clean(ld.get("USERNAME")),
-            "pw": clean(ld.get("PASSWORD")),
+            "pw": mask_pw(ld.get("PASSWORD")),
             "ua": clean(ld.get("USERAGENT"), 90),
         })
     events.sort(key=lambda x: x["ts"])

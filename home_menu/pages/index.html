@@ -174,13 +174,15 @@
       gap: 0.85rem;
       align-items: start;
     }
-    /* Hosts + House each hold exactly 5 plain cards. auto-fit's continuous
-       column count (like the default .band-grid above) always has some width
-       range that lands on 4 columns, stranding the 5th alone in an otherwise
+    /* Hosts (7 plain cards) and House (6 plain cards + a span-row BBC card
+       that sits outside the count, on its own row regardless of column count)
+       no longer share a card total, so they get independent final tiers.
+       auto-fit's continuous column count (like the default .band-grid above)
+       always has some width range that strands a card alone in an otherwise
        empty row — minmax alone only moves that dead zone around, it can't
-       remove it. Fixed breakpoints that jump straight from 3 columns to 5
-       (skipping 4) mean a lone last-row card never has more than one empty
-       slot beside it, at any width. */
+       remove it. Fixed breakpoints at each band's own final column count
+       (House: 6, divides its 6 evenly; Hosts: 7, its full card count) mean
+       the widest, most-used layout never leaves a lone stranded card. */
     .band-grid.hosts, .band-grid.house { grid-template-columns: 1fr; }
     @media (min-width: 480px) {
       .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(2, 1fr); }
@@ -189,7 +191,8 @@
       .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(3, 1fr); }
     }
     @media (min-width: 1060px) {
-      .band-grid.hosts, .band-grid.house { grid-template-columns: repeat(5, 1fr); }
+      .band-grid.house { grid-template-columns: repeat(6, 1fr); }
+      .band-grid.hosts { grid-template-columns: repeat(7, 1fr); }
     }
     .band-grid.hosts { align-items: stretch; }
     .span-2 { grid-column: span 2; }
@@ -290,7 +293,7 @@
     #c-bbc .c-val { font-size: 2rem; letter-spacing: -0.3px; font-weight: 600; }
     #c-bbc .c-sub { color: var(--ink-dim); }
 
-    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub, #c-vpn .c-sub, #c-eufy .c-sub, #c-unifi .c-sub { flex: 0 1 auto; }
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub, #c-weeny .c-sub, #c-pi4 .c-sub, #c-vpn .c-sub, #c-eufy .c-sub, #c-unifi .c-sub { flex: 0 1 auto; }
     .card { align-self: start; }
     .band-grid.hosts .card { align-self: stretch; }
 
@@ -379,11 +382,11 @@
 
     /* ── Host strip-chart recorder ── */
     .band-grid.hosts .card { min-height: 206px; }
-    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub {
+    #c-steve .c-sub, #c-wacky .c-sub, #c-jeff .c-sub, #c-bazza .c-sub, #c-ickle .c-sub, #c-weeny .c-sub, #c-pi4 .c-sub {
       margin-bottom: 0.1rem;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty, #c-ickle .c-sub:empty { display: none; }
+    #c-steve .c-sub:empty, #c-wacky .c-sub:empty, #c-jeff .c-sub:empty, #c-bazza .c-sub:empty, #c-ickle .c-sub:empty, #c-weeny .c-sub:empty, #c-pi4 .c-sub:empty { display: none; }
 
     .hs-trace { position: relative; margin: auto 0 0.4rem; }  /* bottom-anchor the trace block so all four line up */
     .hs-cap { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; margin-bottom: 3px; padding-right: 2px; }
@@ -538,6 +541,26 @@
         <div class="hs-trace" id="ickle-trace"><div class="hs-skel"></div></div>
         <div class="hs-read" id="ickle-read">—</div>
         <div class="c-foot">48h memory · load · disk</div>
+      </a>
+
+      <a class="card is-loading" id="c-weeny" style="--a:#8d6e63" href="/weeny">
+        <div class="tape">Zero W</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🐝</span><span class="c-name">weeny</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="weeny-sub"></div>
+        <div class="hs-trace" id="weeny-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="weeny-read">—</div>
+        <div class="c-foot">48h memory · load · temp · honeypot host</div>
+      </a>
+
+      <a class="card is-loading" id="c-pi4" style="--a:#26a69a" href="/pi4">
+        <div class="tape">Project box</div>
+        <div class="c-head"><span class="lamp"></span><span class="c-icon">🍓</span><span class="c-name">pi4</span></div>
+        <div class="c-metric"><span class="c-val">—</span><span class="c-unit">up</span></div>
+        <div class="c-sub" id="pi4-sub"></div>
+        <div class="hs-trace" id="pi4-trace"><div class="hs-skel"></div></div>
+        <div class="hs-read" id="pi4-read">—</div>
+        <div class="c-foot">48h memory · load · temp · scoping SDR</div>
       </a>
 
     </div>
@@ -1156,6 +1179,38 @@
     setReadout('ickle', d);
   });
 
+  const weeny = () => poll('weeny', '/api/weeny', d => {
+    if (d.error) { setCard('weeny', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    registerAlerts('c-weeny', alerts);
+    const critical = alerts.filter(a => a.level === 'critical').length;
+    const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#8d6e63';
+    const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const parts = [];
+    if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
+    setCard('weeny', {
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+    setReadout('weeny', d);
+  });
+
+  const pi4 = () => poll('pi4', '/api/pi4', d => {
+    if (d.error) { setCard('pi4', { val: '?', unit: '' }, true); return; }
+    const alerts = d.alerts || [];
+    registerAlerts('c-pi4', alerts);
+    const critical = alerts.filter(a => a.level === 'critical').length;
+    const accent = critical ? 'var(--down)' : alerts.length ? 'var(--warn)' : '#26a69a';
+    const lamp   = critical ? 'down' : alerts.length ? 'warn' : 'on';
+    const parts = [];
+    if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
+    setCard('pi4', {
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      sub: parts.join('<br>'), accent, lamp,
+    });
+    setReadout('pi4', d);
+  });
+
   const atlas = () => poll('atlas', '/api/atlas', d => {
     if (d.error) { setCard('atlas', { val: '?', unit: '' }, true); return; }
     const FLAGS = ['divergent', 'own_path_divergent', 'unexpected_block', 'unblocked'];
@@ -1565,7 +1620,7 @@
   }
 
   function hostTraces() {
-    ['steve', 'wacky', 'jeff', 'bazza', 'ickle'].forEach(h =>
+    ['steve', 'wacky', 'jeff', 'bazza', 'ickle', 'weeny', 'pi4'].forEach(h =>
       fetch(`/api/${h}/history`)
         .then(r => r.json())
         .then(j => renderTrace(h, j.points, HOST_CPUS[h]))
@@ -1574,7 +1629,7 @@
 
   function refresh() {
     harold(); train(); weather(); unifi(); pihole(); wireless();
-    steve(); wacky(); jeff(); bazza(); ickle(); atlas(); uplink(); plants(); sdr(); smoke();
+    steve(); wacky(); jeff(); bazza(); ickle(); weeny(); pi4(); atlas(); uplink(); plants(); sdr(); smoke();
     v6health(); eufy(); arr(); isItBroken(); honeypot(); hostTraces();
     // give the polls a beat to land, then pull acks + summarise (syncAlerts
     // repaints the tray and calls updateRollup / updateBandCounts itself)

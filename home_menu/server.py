@@ -313,6 +313,10 @@ BAZZA_JSON   = DATA / 'bazza.json'
 BAZZA_DB     = DATA / 'bazza_history.db'
 ICKLE_JSON   = DATA / 'ickle.json'
 ICKLE_DB     = DATA / 'ickle_history.db'
+WEENY_JSON   = DATA / 'weeny.json'
+WEENY_DB     = DATA / 'weeny_history.db'
+PI4_JSON     = DATA / 'pi4.json'
+PI4_DB       = DATA / 'pi4_history.db'
 RTL433_JSON  = DATA / 'rtl433.json'
 ACARS_JSON   = DATA / 'acars.json'
 VPN_JSON     = DATA / 'vpn.json'
@@ -530,6 +534,8 @@ def _wacky_history(): return _metrics_history(WACKY_DB, _HOST_HISTORY_COLS)
 def _jeff_history():  return _metrics_history(JEFF_DB, _HOST_HISTORY_COLS)
 def _bazza_history(): return _metrics_history(BAZZA_DB, _HOST_HISTORY_COLS)
 def _ickle_history(): return _metrics_history(ICKLE_DB, _HOST_HISTORY_COLS)
+def _weeny_history(): return _metrics_history(WEENY_DB, _HOST_HISTORY_COLS)
+def _pi4_history():   return _metrics_history(PI4_DB, _HOST_HISTORY_COLS)
 def _vpn_history():   return _metrics_history(VPN_DB, ('ts', 'rtt_ms', 'loss_pct', 'api_ms', 'up'))
 
 
@@ -1776,6 +1782,8 @@ ROUTES_GET = {
     '/jeff':                 _page('jeff.html'),
     '/bazza':                _page('bazza.html'),
     '/ickle':                _page('ickle.html'),
+    '/weeny':                _page('weeny.html'),
+    '/pi4':                  _page('pi4.html'),
     '/rtl433':               _page('rtl433.html'),
     '/acars':                _page('acars.html'),
     '/sdr':                  _page('sdr.html'),
@@ -1807,6 +1815,8 @@ ROUTES_GET = {
     '/api/jeff':             _jsonfile(JEFF_JSON),
     '/api/bazza':            _jsonfile(BAZZA_JSON),
     '/api/ickle':            _jsonfile(ICKLE_JSON),
+    '/api/weeny':            _jsonfile(WEENY_JSON),
+    '/api/pi4':              _jsonfile(PI4_JSON),
     '/api/rtl433':           _jsonfile(RTL433_JSON, max_age=600),  # poller runs */5
     '/api/acars':            _jsonfile(ACARS_JSON, max_age=600),   # poller runs */5
     '/api/vpn':              _jsonfile(VPN_JSON),
@@ -1825,6 +1835,8 @@ ROUTES_GET = {
     '/api/jeff/history':     _jsonfn(_jeff_history),
     '/api/bazza/history':    _jsonfn(_bazza_history),
     '/api/ickle/history':    _jsonfn(_ickle_history),
+    '/api/weeny/history':    _jsonfn(_weeny_history),
+    '/api/pi4/history':      _jsonfn(_pi4_history),
     '/api/vpn/history':      _jsonfn(_vpn_history),
     '/api/cross_ref':        _jsonfn(_cross_ref),
     '/api/sdr/status':       _jsonfn(_sdr_status),
