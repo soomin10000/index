@@ -2,7 +2,9 @@
  * (steve / wacky / jeff / bazza): palette, reset, topbar, frame, hero,
  * gauges, trend chart. Loaded via <link> before each page's inline <style>,
  * which keeps only that host's distinctive panel rules (jeff/bazza also
- * override --sdr / --dns and the gauge gap). vpn.html does NOT use this. */
+ * override --sdr / --dns and the gauge gap). vpn.html does NOT use this.
+ * kismet.html also links this for the shared palette/topbar/frame, but
+ * (having no host metrics) skips the hero/gauges/trend-chart pieces. */
 
 :root {
   --chassis: #1c1e20;

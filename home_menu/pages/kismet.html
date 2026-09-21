@@ -4,114 +4,137 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wireless · Kismet</title>
+  <link rel="stylesheet" href="/hostcard.css">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --bg: #07070f; --card: rgba(14,14,26,0.85); --border: rgba(255,255,255,0.07); --a: #a78bfa; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: #e0e0e0; padding: 1.5rem; min-height: 100vh; }
+    :root { --wl: #a78bfa; }
 
-    .bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-    .bg span { position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.13; animation: drift linear infinite alternate; }
-    .bg span:nth-child(1) { width:500px;height:500px;background:#7c3aed;top:-10%;left:-10%;animation-duration:30s; }
-    .bg span:nth-child(2) { width:400px;height:400px;background:#2060ff;top:10%;right:-5%;animation-duration:22s;animation-delay:-8s; }
-    .bg span:nth-child(3) { width:350px;height:350px;background:#059669;bottom:5%;left:30%;animation-duration:27s;animation-delay:-14s; }
-    @keyframes drift { from{transform:translate(0,0) scale(1)} to{transform:translate(40px,30px) scale(1.1)} }
+    body.stale header.topbar { box-shadow: inset 0 -2px 0 var(--warn); }
 
-    .content { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; }
+    /* ── Stat row ── */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; margin-bottom: 0.5rem; }
+    .stat-card { background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px; padding: 1rem 1.15rem; }
+    .stat-val { font-family: var(--font-mono); font-size: 1.9rem; font-weight: 600; color: var(--wl); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: 0.6rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); margin-top: 0.3rem; }
+    .stat-card.is-muted { opacity: 0.7; }
+    .stat-card.is-muted .stat-val { font-size: 1.25rem; color: var(--ink-faint); }
 
-    header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; row-gap: 0.3rem; margin-bottom: 1.5rem; }
-    header a { color: #444; text-decoration: none; font-size: 0.8rem; }
-    header a:hover { color: #888; }
-    h1 { font-size: 1.4rem; font-weight: 800; color: var(--a); }
-    .meta { font-size: 0.72rem; color: #333; margin-left: auto; font-family: monospace; }
+    /* ── Section headers — a label + a rule filling the rest of the row ── */
+    .section-title { display: flex; align-items: center; gap: 0.85rem; flex: 1; min-width: 0;
+      font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.2em;
+      text-transform: uppercase; color: var(--ink-faint); }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--bezel); }
+    .section-head { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.9rem; }
+    .ack-btn {
+      padding: 0.3rem 0.8rem; border-radius: 4px; border: 1px solid var(--bezel);
+      background: var(--panel); color: var(--ink-dim); font-family: var(--font-mono);
+      font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+      transition: border-color 0.2s, color 0.2s; flex-shrink: 0;
+    }
+    .ack-btn:hover { border-color: var(--bezel-lit); color: var(--ink); }
 
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; margin-bottom: 1.5rem; }
-    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.2rem; }
-    .stat-val { font-size: 2rem; font-weight: 800; color: var(--a); letter-spacing: -1px; }
-    .stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: #444; margin-top: 0.2rem; }
+    /* ── Alerts ── */
+    .alert-item {
+      background: var(--panel); border: 1px solid var(--bezel); border-left: 3px solid var(--bezel-lit);
+      border-radius: 4px; padding: 0.7rem 0.9rem; display: flex; align-items: center; gap: 0.9rem;
+      margin-bottom: 0.5rem; flex-wrap: wrap;
+    }
+    .alert-item.critical { border-left-color: var(--down); }
+    .alert-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+    .alert-item-top { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+    .alert-header { font-size: 0.78rem; font-weight: 600; color: var(--ink-dim); }
+    .alert-item.critical .alert-header { color: var(--down); }
+    .alert-class { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); }
+    .alert-count { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
+    .alert-text { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim); }
+    .alert-time { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); flex-shrink: 0; }
 
-    .section { margin-bottom: 1.5rem; }
-    .section-title { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #444; margin-bottom: 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
-
-    .alert-item { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 0.5rem; }
-    .alert-header { font-size: 0.75rem; font-weight: 700; color: #ef4444; }
-    .alert-text { font-size: 0.72rem; color: #888; margin-top: 0.2rem; line-height: 1.5; }
-    .alert-meta { font-size: 0.62rem; color: #333; margin-top: 0.3rem; font-family: monospace; }
-    .alert-item.is-info { background: var(--card); border-color: var(--border); }
-    .alert-item.is-info .alert-header { color: #777; }
-
-    .stat.is-muted { opacity: 0.6; }
-    .stat.is-muted .stat-val { font-size: 1.4rem; color: #888; }
-
-    .net-row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.9rem; margin-bottom: 0.4rem; cursor: pointer; }
-    .net-row-main { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-    .net-chevron { font-size: 0.6rem; color: #444; transition: transform 0.15s; width: 0.8rem; }
-    .net-row.is-open .net-chevron { transform: rotate(90deg); }
-    .net-ssid { font-size: 0.8rem; font-weight: 700; color: #ddd; }
-    .net-radios { font-size: 0.6rem; color: #555; }
-    .net-manuf { font-size: 0.68rem; color: #999; margin-left: auto; }
-    .net-expand { display: none; margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+    /* ── Networks — collapsed SSID summary, click to expand its BSSIDs ── */
+    .net-row { background: var(--inset); border: 1px solid var(--bezel); border-radius: 4px; padding: 0.6rem 0.9rem; margin-bottom: 0.45rem; cursor: pointer; }
+    .net-row:hover { border-color: var(--bezel-lit); }
+    .net-row-main { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+    .net-chevron { font-family: var(--font-mono); font-size: 0.6rem; color: var(--ink-faint); width: 0.8rem; transition: transform 0.15s; }
+    .net-row.is-open .net-chevron { transform: rotate(90deg); color: var(--ink-dim); }
+    .net-ssid { font-size: 0.82rem; font-weight: 600; color: var(--ink); }
+    .net-manuf { font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink-dim); margin-left: auto; }
+    .net-expand { display: none; margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--bezel); }
     .net-row.is-open .net-expand { display: block; }
-    .net-bssid-row { display: flex; align-items: center; gap: 0.7rem; font-size: 0.68rem; color: #888; padding: 0.2rem 0; font-family: monospace; }
+    .net-bssid-row { display: flex; align-items: center; gap: 0.9rem; font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); padding: 0.22rem 0; }
+    .net-bssid-row span:first-child { color: var(--ink-faint); }
 
-    .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -0.2rem; }
-    table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.75rem; }
-    th { text-align: left; font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.1em; color: #333; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
-    td { padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(255,255,255,0.03); color: #bbb; white-space: nowrap; }
+    /* ── Badges / signal / crypt — reuse the shared status palette ── */
+    .badge { display: inline-block; font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase; padding: 0.1rem 0.45rem; border-radius: 3px; border: 1px solid transparent; }
+    .badge-ap     { background: color-mix(in srgb, var(--wl) 18%, transparent); color: var(--wl); border-color: color-mix(in srgb, var(--wl) 40%, transparent); }
+    .badge-client { background: color-mix(in srgb, #5b8def 18%, transparent); color: #5b8def; border-color: color-mix(in srgb, #5b8def 40%, transparent); }
+    .badge-other  { background: var(--inset); color: var(--ink-faint); border-color: var(--bezel); }
+    .badge-unknown { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+    .badge-noise  { background: transparent; color: var(--ink-faint); border-color: var(--bezel); border-style: dashed; }
+
+    .sig { font-family: var(--font-mono); }
+    .sig-good { color: var(--ok); }
+    .sig-ok   { color: var(--warn); }
+    .sig-weak { color: var(--down); }
+
+    .crypt { font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 3px; white-space: nowrap; }
+    .crypt-good { color: var(--ok);   background: color-mix(in srgb, var(--ok) 15%, transparent); }
+    .crypt-ok   { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+    .crypt-bad  { color: var(--down); background: color-mix(in srgb, var(--down) 15%, transparent); }
+
+    /* ── Filters / search / toggles ── */
+    .filter-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+    .filter-btn {
+      font-family: var(--font-mono); font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--ink-dim); background: var(--inset); border: 1px solid var(--bezel); border-radius: 4px;
+      padding: 0.32rem 0.75rem; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    }
+    .filter-btn:hover { color: var(--ink); border-color: var(--bezel-lit); }
+    .filter-btn.active { color: var(--wl); border-color: var(--wl); }
+    input[type=search] {
+      font-family: var(--font-mono); font-size: 0.66rem; color: var(--ink); background: var(--inset);
+      border: 1px solid var(--bezel); border-radius: 4px; padding: 0.32rem 0.8rem; outline: none; width: 200px;
+    }
+    input[type=search]::placeholder { color: var(--ink-faint); }
+    input[type=search]:focus { border-color: var(--bezel-lit); }
+    .toggle { display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-dim); cursor: pointer; user-select: none; }
+    .toggle input { accent-color: var(--wl); }
+    .row-count { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); margin-bottom: 0.6rem; }
+
+    /* ── Devices table ── */
+    .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; min-width: 780px; border-collapse: collapse; font-size: 0.76rem; }
+    th { text-align: left; font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--ink-faint); padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--bezel); }
+    td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--inset); color: var(--ink-dim); white-space: nowrap; }
     tr:hover td { background: rgba(255,255,255,0.02); }
-
-    .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
-    .badge-ap     { background: rgba(167,139,250,0.15); color: #a78bfa; }
-    .badge-client { background: rgba(96,165,250,0.12); color: #60a5fa; }
-    .badge-other  { background: rgba(255,255,255,0.05); color: #555; }
-    .badge-unknown { background: rgba(251,191,36,0.12); color: #fbbf24; }
-
-    .sig { font-family: monospace; }
-    .sig-good  { color: #4ade80; }
-    .sig-ok    { color: #facc15; }
-    .sig-weak  { color: #f87171; }
-
-    .crypt { font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 4px; white-space: nowrap; }
-    .crypt-good { background: rgba(74,222,128,0.12); color: #4ade80; }
-    .crypt-ok   { background: rgba(250,204,21,0.12); color: #facc15; }
-    .crypt-bad  { background: rgba(248,113,113,0.15); color: #f87171; }
-
-    .filter-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem; flex-wrap: wrap; }
-    .filter-btn { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #555; font-size: 0.68rem; cursor: pointer; transition: all 0.2s; }
-    .filter-btn.active { border-color: var(--a); color: var(--a); }
-    input[type=search] { padding: 0.3rem 0.8rem; border-radius: 20px; border: 1px solid var(--border); background: var(--card); color: #ccc; font-size: 0.68rem; outline: none; width: 200px; }
-    input[type=search]::placeholder { color: #333; }
-    .stale-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: 0.68rem; color: #555; margin-left: auto; cursor: pointer; user-select: none; }
-    .stale-toggle input { accent-color: var(--a); }
-    .row-count { font-size: 0.65rem; color: #333; margin-bottom: 0.5rem; }
   </style>
   <script src="/auth.js"></script>
 </head>
 <body>
-<div class="bg" aria-hidden="true"><span></span><span></span><span></span></div>
-<div class="content">
 
-  <header>
-    <a href="/">← Home</a>
-    <h1>📡 Wireless</h1>
-    <div class="meta" id="meta">Loading…</div>
-  </header>
+<header class="topbar">
+  <a class="home-link" href="/">← HOME</a>
+  <div class="plate-name">WIRELESS</div>
+  <div class="status-led"><span class="lamp" id="status-lamp"></span><span id="status-text">READING…</span></div>
+</header>
 
-  <div class="stats" id="stats"></div>
+<main class="frame">
 
-  <div class="section" id="alerts-section" style="display:none">
-    <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
-      <span id="alerts-title">🚨 Alerts</span>
-      <button id="ack-alerts" class="filter-btn" style="text-transform:none;letter-spacing:normal">Acknowledge all</button>
+  <section class="stats" id="stats"></section>
+
+  <section id="alerts-section" style="display:none">
+    <div class="section-head">
+      <div class="section-title">Alerts</div>
+      <button id="ack-alerts" class="ack-btn">Acknowledge all</button>
     </div>
     <div id="alerts"></div>
-  </div>
+  </section>
 
-  <div class="section">
+  <section>
     <div class="section-title">Networks (<span id="net-count">0</span>)</div>
     <div id="networks"></div>
-  </div>
+  </section>
 
-  <div class="section">
+  <section>
     <div class="section-title">Devices</div>
     <div class="filter-row">
       <button class="filter-btn active" data-filter="all">All</button>
@@ -119,8 +142,8 @@
       <button class="filter-btn" data-filter="Client">Clients</button>
       <button class="filter-btn" data-filter="unknown">Unresolved</button>
       <input type="search" id="search" placeholder="Search MAC, SSID, vendor…">
-      <label class="stale-toggle" style="margin-left:auto"><input type="checkbox" id="show-noise"> Show ambient noise</label>
-      <label class="stale-toggle"><input type="checkbox" id="show-stale"> Show inactive (30m+)</label>
+      <label class="toggle" style="margin-left:auto"><input type="checkbox" id="show-noise"> Show ambient noise</label>
+      <label class="toggle"><input type="checkbox" id="show-stale"> Show inactive (30m+)</label>
     </div>
     <div class="row-count" id="row-count"></div>
     <div class="tbl-scroll">
@@ -134,9 +157,9 @@
         <tbody id="devices"></tbody>
       </table>
     </div>
-  </div>
+  </section>
 
-</div>
+</main>
 <script>
   const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ESC_MAP[c]);
@@ -199,85 +222,26 @@
       const badge = isAP ? 'badge-ap' : d.type.includes('Client') ? 'badge-client' : 'badge-other';
       const label = isAP ? 'AP' : d.type.includes('Client') ? 'Client' : d.type;
       const unknownBadge = (!d.known && d.type.includes('Client'))
-        ? (d.noise ? ' <span class="badge badge-other">noise</span>' : ' <span class="badge badge-unknown">unknown</span>')
+        ? (d.noise ? ' <span class="badge badge-noise">noise</span>' : ' <span class="badge badge-unknown">unknown</span>')
         : '';
-      const ssid = d.ssid ? esc(d.ssid) : (isAP ? '<span style="color:#333">hidden</span>' : '—');
+      const ssid = d.ssid ? esc(d.ssid) : (isAP ? '<span style="color:var(--ink-faint)">hidden</span>' : '—');
       const sig = d.signal ? `<span class="sig ${sigClass(d.signal)}">${d.signal} dBm</span>` : '—';
       const probes = (d.probes||[]).slice(0,3).map(esc).join(', ') || '—';
-      const host = d.hostname ? `<span style="color:#ddd">${esc(d.hostname)}</span>` : '<span style="color:#333">—</span>';
-      const crypt = d.crypt ? `<span class="crypt ${cryptClass(d.crypt)}">${esc(d.crypt.split(' ')[0])}</span>` : '<span style="color:#333">—</span>';
+      const host = d.hostname ? `<span style="color:var(--ink)">${esc(d.hostname)}</span>` : '<span style="color:var(--ink-faint)">—</span>';
+      const crypt = d.crypt ? `<span class="crypt ${cryptClass(d.crypt)}">${esc(d.crypt.split(' ')[0])}</span>` : '<span style="color:var(--ink-faint)">—</span>';
       return `<tr>
         <td><span class="badge ${badge}">${esc(label)}</span>${unknownBadge}</td>
         <td>${host}</td>
-        <td style="font-family:monospace;color:#666">${esc(d.mac)}</td>
+        <td style="font-family:var(--font-mono);color:var(--ink-faint)">${esc(d.mac)}</td>
         <td>${ssid}</td>
-        <td style="color:#999">${esc(d.manuf||'—')}</td>
+        <td style="color:var(--ink-dim)">${esc(d.manuf||'—')}</td>
         <td>${crypt}</td>
         <td>${sig}</td>
-        <td style="color:#555">${d.channel||'—'}</td>
-        <td style="color:#444">${relTime(d.last_time)}</td>
-        <td style="color:#555;max-width:200px;overflow:hidden;text-overflow:ellipsis">${probes}</td>
+        <td style="color:var(--ink-faint)">${d.channel||'—'}</td>
+        <td style="color:var(--ink-faint)">${relTime(d.last_time)}</td>
+        <td style="color:var(--ink-faint);max-width:200px;overflow:hidden;text-overflow:ellipsis">${probes}</td>
       </tr>`;
     }).join('');
-  }
-
-  async function load() {
-    const d = await fetch('/api/kismet').then(r => r.json());
-    if (d.error) { document.getElementById('meta').textContent = d.error; return; }
-
-    allDevices = (d.devices || []).slice().sort((a, b) => (b.last_time||0) - (a.last_time||0));
-    allNetworks = d.networks || [];
-    const active     = allDevices.filter(x => x.last_time && (d.ts - x.last_time) <= STALE_SECONDS);
-    const aps        = active.filter(x => x.type.includes('AP')).length;
-    const clients    = active.filter(x => x.type.includes('Client')).length;
-    const unresolved = active.filter(x => !x.known && x.type.includes('Client') && !x.noise).length;
-    const noiseCount = active.filter(x => x.noise).length;
-    const allAlerts = d.alerts || [];
-    const ackTs = Number(localStorage.getItem('kismet_alerts_ack_ts') || 0);
-    const alerts = allAlerts.filter(a => a.ts > ackTs);
-    lastAlertTs = allAlerts.reduce((m, a) => Math.max(m, a.ts), ackTs);
-
-    document.getElementById('meta').textContent =
-      `Updated ${relTime(d.ts)} · Kismet up ${Math.floor((d.uptime_sec||0)/60)}m · ${d.device_count} seen all-time`;
-
-    document.getElementById('stats').innerHTML = [
-      [active.length, 'Active (30m)', false],
-      [aps, 'Access points', false],
-      [clients, 'Clients', false],
-      [unresolved, 'Unresolved', false],
-      [noiseCount, 'Ambient noise', true],
-      [alerts.length, 'Alerts', false],
-    ].map(([v,l,muted]) => `<div class="stat${muted ? ' is-muted' : ''}"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
-
-    if (alerts.length) {
-      const groups = new Map();
-      alerts.forEach(a => {
-        const normText = a.text.replace(/\(\d+ failures?\)/i, '').trim();
-        const key = `${a.header}|${a.class}|${normText}`;
-        const g = groups.get(key);
-        if (!g || a.ts > g.ts) groups.set(key, { ...a, count: (g?.count||0) + 1, ts: g ? Math.max(g.ts, a.ts) : a.ts });
-        else g.count++;
-      });
-      const grouped = [...groups.values()].sort((a,b) => b.ts - a.ts).slice(0, 8);
-      const anyCritical = grouped.some(a => a.level !== 'info');
-
-      document.getElementById('alerts-section').style.display = '';
-      document.getElementById('alerts-title').textContent = anyCritical ? '🚨 Alerts' : 'ℹ️ Alerts';
-      document.getElementById('alerts').innerHTML = grouped.map(a => {
-        const isInfo = a.level === 'info';
-        return `
-        <div class="alert-item${isInfo ? ' is-info' : ''}">
-          <div class="alert-header">${esc(a.header)} <span style="font-weight:400;color:#555">[${esc(a.class)}]</span>${a.count > 1 ? ` <span style="font-weight:400;color:#888">×${a.count}</span>` : ''}</div>
-          <div class="alert-text">${esc(a.text)}</div>
-          <div class="alert-meta">${a.count > 1 ? 'last ' : ''}${new Date(a.ts*1000).toLocaleString()} ${a.source_mac ? '· ' + esc(a.source_mac) : ''}</div>
-        </div>`;
-      }).join('');
-    } else {
-      document.getElementById('alerts-section').style.display = 'none';
-    }
-
-    renderNetworks();
-    renderDevices();
   }
 
   function renderNetworks() {
@@ -291,16 +255,16 @@
       const rows = bssids.map(d => `
         <div class="net-bssid-row">
           <span>${esc(d.mac)}</span>
-          <span style="color:#555">ch ${d.channel||'—'}</span>
+          <span>ch ${d.channel||'—'}</span>
           <span class="sig ${sigClass(d.signal)}">${d.signal||'—'} dBm</span>
-          <span style="color:#999">${esc(d.manuf||'—')}</span>
+          <span>${esc(d.manuf||'—')}</span>
         </div>`).join('');
       return `
         <div class="net-row${isOpen ? ' is-open' : ''}" data-ssid="${esc(n.ssid)}">
           <div class="net-row-main">
             <span class="net-chevron">▶</span>
             <span class="net-ssid">${esc(n.ssid)}</span>
-            <span class="net-radios badge badge-ap">×${n.bssid_count} radio${n.bssid_count > 1 ? 's' : ''}</span>
+            <span class="badge badge-ap">×${n.bssid_count} radio${n.bssid_count > 1 ? 's' : ''}</span>
             ${sig}
             ${crypt}
             <span class="net-manuf">${esc(n.manufs.join(', '))}</span>
@@ -316,6 +280,84 @@
         renderNetworks();
       });
     });
+  }
+
+  async function load() {
+    let d;
+    try {
+      d = await fetch('/api/kismet').then(r => r.json());
+    } catch (e) {
+      document.getElementById('status-text').textContent = 'OFFLINE';
+      document.getElementById('status-lamp').className = 'lamp down';
+      return;
+    }
+    if (d.error) {
+      document.getElementById('status-text').textContent = d.error;
+      document.getElementById('status-lamp').className = 'lamp down';
+      return;
+    }
+
+    allDevices = (d.devices || []).slice().sort((a, b) => (b.last_time||0) - (a.last_time||0));
+    allNetworks = d.networks || [];
+    const active     = allDevices.filter(x => x.last_time && (d.ts - x.last_time) <= STALE_SECONDS);
+    const aps        = active.filter(x => x.type.includes('AP')).length;
+    const clients    = active.filter(x => x.type.includes('Client')).length;
+    const unresolved = active.filter(x => !x.known && x.type.includes('Client') && !x.noise).length;
+    const noiseCount = active.filter(x => x.noise).length;
+    const allAlerts = d.alerts || [];
+    const ackTs = Number(localStorage.getItem('kismet_alerts_ack_ts') || 0);
+    const alerts = allAlerts.filter(a => a.ts > ackTs);
+    lastAlertTs = allAlerts.reduce((m, a) => Math.max(m, a.ts), ackTs);
+    const anyCritical = alerts.some(a => a.level !== 'info');
+
+    document.getElementById('status-lamp').className =
+      'lamp ' + (anyCritical ? 'down' : unresolved > 0 ? 'warn' : 'on');
+    document.getElementById('status-text').textContent =
+      `Updated ${relTime(d.ts)} · up ${Math.floor((d.uptime_sec||0)/60)}m · ${d.device_count} seen all-time`;
+
+    document.getElementById('stats').innerHTML = [
+      [active.length, 'Active (30m)', false],
+      [aps, 'Access points', false],
+      [clients, 'Clients', false],
+      [unresolved, 'Unresolved', false],
+      [noiseCount, 'Ambient noise', true],
+      [alerts.length, 'Alerts', false],
+    ].map(([v,l,muted]) => `<div class="stat-card${muted ? ' is-muted' : ''}"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
+
+    if (alerts.length) {
+      const groups = new Map();
+      alerts.forEach(a => {
+        const normText = a.text.replace(/\(\d+ failures?\)/i, '').trim();
+        const key = `${a.header}|${a.class}|${normText}`;
+        const g = groups.get(key);
+        if (!g || a.ts > g.ts) groups.set(key, { ...a, count: (g?.count||0) + 1, ts: g ? Math.max(g.ts, a.ts) : a.ts });
+        else g.count++;
+      });
+      const grouped = [...groups.values()].sort((a,b) => b.ts - a.ts).slice(0, 8);
+
+      document.getElementById('alerts-section').style.display = '';
+      document.getElementById('alerts').innerHTML = grouped.map(a => {
+        const isCritical = a.level !== 'info';
+        return `
+        <div class="alert-item${isCritical ? ' critical' : ''}">
+          <div class="alert-body">
+            <div class="alert-item-top">
+              <span class="alert-header">${esc(a.header)}</span>
+              <span class="alert-class">[${esc(a.class)}]</span>
+              ${a.count > 1 ? `<span class="alert-count">×${a.count}</span>` : ''}
+            </div>
+            <div class="alert-text">${esc(a.text)}</div>
+          </div>
+          <span class="alert-time">${a.count > 1 ? 'last ' : ''}${new Date(a.ts*1000).toLocaleString('en-GB')}${a.source_mac ? ' · ' + esc(a.source_mac) : ''}</span>
+        </div>`;
+      }).join('');
+    } else {
+      document.getElementById('alerts-section').style.display = 'none';
+    }
+
+    document.body.classList.toggle('stale', !!(d._stale || d.error));
+    renderNetworks();
+    renderDevices();
   }
 
   document.querySelectorAll('.filter-row .filter-btn').forEach(btn => {
