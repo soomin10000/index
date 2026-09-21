@@ -63,7 +63,7 @@ echo '===RTLMODS==='; lsmod 2>/dev/null | awk '{print $1}' | grep -E '^(rtl2832|
 echo '===RTLTOOLS==='; for t in rtl_test rtl_sdr rtl_fm rtl_tcp rtl_power rtl_433 rtl_adsb; do command -v $t >/dev/null 2>&1 && echo $t; done
 echo '===SDRSVC==='; systemctl list-units --type=service --state=running --no-legend --plain 2>/dev/null | awk '{print $1}' | grep -iE 'rtl|sdr|dump1090|readsb|acars|dumpvdl|dump978|satdump|spyserver|soapy|gqrx|piaware|fr24feed|rbfeeder|adsb|webrx' || true
 echo '===NOW==='; date +%s
-echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0), flights:([.aircraft[]|select((.flight//""|gsub("^ +| +$";""))!="" and .lat!=null)|{cs:(.flight|gsub("^ +| +$";"")), hex, alt:.alt_baro, gs, trk:.track, rssi, lat, lon}]|sort_by(.rssi//-100)|reverse|.[:8])}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
+echo '===ADSB==='; jq -c '{total:(.aircraft|length), pos:([.aircraft[]|select(.lat!=null)]|length), file_ts:(.now//0), flights:([.aircraft[]|select((.flight//""|gsub("^ +| +$";""))!="" and .lat!=null)|{cs:(.flight|gsub("^ +| +$";"")), hex, alt:.alt_baro, gs, trk:.track, rssi, lat, lon, msgs:.messages, seen, squawk, category}]|sort_by(.rssi//-100)|reverse|.[:8])}' /run/readsb/aircraft.json 2>/dev/null || echo '{}'
 echo '===ADSBSTATS==='; jq -c '{msgs_last_min:(.last1min.messages//0), max_dist_m:(.last1min.max_distance//0)}' /run/readsb/stats.json 2>/dev/null || echo '{}'
 echo '===WATCHDOG==='; cat /var/lib/readsb-watchdog/state.json 2>/dev/null || echo '{}'
 echo '===FIRES==='; cat /var/lib/readsb-watchdog/fires 2>/dev/null || true
@@ -102,8 +102,10 @@ def _parse_adsb(adsb_block, stats_block, remote_now=None):
     even though the file — and its last message counts — are still on disk.
 
     `flights` is the strongest-signal handful of aircraft with a callsign and a
-    position — {cs, hex, alt, gs, track, lat, lon} each — for the panel's flight
-    list; routes get attached later in fetch_and_write."""
+    position — {cs, hex, alt, gs, track, lat, lon, msgs, seen, squawk, category}
+    each — for the panel's flight list; routes get attached later in
+    fetch_and_write. `msgs`/`seen`/`squawk`/`category` are readsb's raw
+    per-aircraft Mode S telemetry, shown in the panel's per-flight dropdown."""
     try:
         a = json.loads(adsb_block.strip() or "{}")
     except Exception:
@@ -136,6 +138,11 @@ def _parse_adsb(adsb_block, stats_block, remote_now=None):
             "track": f.get("trk"),
             "lat": f.get("lat"),
             "lon": f.get("lon"),
+            "rssi": f.get("rssi"),
+            "msgs": f.get("msgs"),
+            "seen": f.get("seen"),
+            "squawk": f.get("squawk"),
+            "category": f.get("category"),
         })
 
     return {

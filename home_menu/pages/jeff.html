@@ -63,6 +63,16 @@
     padding: 0.32rem 0.9rem; border-top: 1px solid var(--inset);
   }
   .adsb-flight:first-child { border-top: 0; }
+  .adsb-flight.clickable { cursor: pointer; }
+  .adsb-flight.clickable:hover { background: var(--inset); }
+  .adsb-flight .caret { margin-left: 0.3rem; color: var(--ink-faint); flex-shrink: 0; font-size: 0.6rem; }
+  .adsb-flight-detail {
+    display: none; font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-faint);
+    padding: 0.1rem 0.9rem 0.5rem; border-top: 1px dashed var(--inset);
+    gap: 0.3rem 1rem; flex-wrap: wrap;
+  }
+  .adsb-flight-detail.open { display: flex; }
+  .adsb-flight-detail span b { color: var(--ink-dim); font-weight: 600; }
   .adsb-flight .cs { color: var(--ink); font-weight: 600; min-width: 4.6rem; flex-shrink: 0; }
   .adsb-flight .rt { color: var(--sdr); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .adsb-flight .rt .arr { color: var(--ink-faint); }
@@ -276,13 +286,33 @@
       if (ac) return `${f.cs}   ${[ac.manufacturer, ac.type].filter(Boolean).join(' ')}   ${ac.owner || ''}`.trim();
       return f.cs;
     };
+    // readsb's raw per-aircraft Mode S telemetry — how many messages it's sent
+    // us, how recently, and its squawk/category — shown in a dropdown under
+    // the flight row rather than cluttering the summary line.
+    const flightDetail = f => {
+      const bits = [];
+      if (f.msgs != null) bits.push(`<span><b>${f.msgs.toLocaleString()}</b> messages</span>`);
+      if (f.seen != null) bits.push(`<span>heard <b>${esc(fmtAgo(f.seen))}</b></span>`);
+      if (f.rssi != null) bits.push(`<span><b>${f.rssi}</b> dBFS</span>`);
+      if (f.squawk && f.squawk !== '0000') bits.push(`<span>squawk <b>${esc(f.squawk)}</b></span>`);
+      if (f.category) bits.push(`<span>cat <b>${esc(f.category)}</b></span>`);
+      if (f.hex) bits.push(`<span>hex <b>${esc(f.hex)}</b></span>`);
+      return bits.join('') || '<span>no message telemetry</span>';
+    };
+    const hasDetail = f => f.msgs != null || f.seen != null || f.rssi != null || f.squawk || f.category || f.hex;
     const flightRows = (adsb && adsb.flights && adsb.flights.length) ? `
-      <div class="adsb-flights">${adsb.flights.slice(0, 6).map(f => `
-        <div class="adsb-flight" title="${esc(flightTitle(f))}">
+      <div class="adsb-flights">${adsb.flights.slice(0, 6).map((f, i) => {
+        const detail = hasDetail(f);
+        return `
+        <div class="adsb-flight${detail ? ' clickable' : ''}" title="${esc(flightTitle(f))}${detail ? ' — click for message details' : ''}"${
+          detail ? ` data-detail-target="flight-detail-${i}"` : ''}>
           <span class="cs">${esc(f.cs)}</span>
           ${routeCell(f)}
           <span class="alt">${esc(fmtAlt(f.alt))}</span>
-        </div>`).join('')}</div>` : '';
+          ${detail ? '<span class="caret">▾</span>' : ''}
+        </div>
+        ${detail ? `<div class="adsb-flight-detail" id="flight-detail-${i}">${flightDetail(f)}</div>` : ''}`;
+      }).join('')}</div>` : '';
 
     // auto-heal status (readsb-recover on jeff — usbreset + restart on a wedge)
     let healRow = '';
@@ -362,6 +392,14 @@
 
     const btn = document.getElementById('readsb-restart-btn');
     if (btn) btn.addEventListener('click', () => restartReadsb(btn));
+
+    card.querySelectorAll('.adsb-flight[data-detail-target]').forEach(row => {
+      row.addEventListener('click', () => {
+        const detail = document.getElementById(row.dataset.detailTarget);
+        const open = detail.classList.toggle('open');
+        row.querySelector('.caret').textContent = open ? '▴' : '▾';
+      });
+    });
   }
 
   async function restartReadsb(btn) {
