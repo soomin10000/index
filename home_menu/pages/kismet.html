@@ -36,6 +36,22 @@
     .alert-header { font-size: 0.75rem; font-weight: 700; color: #ef4444; }
     .alert-text { font-size: 0.72rem; color: #888; margin-top: 0.2rem; line-height: 1.5; }
     .alert-meta { font-size: 0.62rem; color: #333; margin-top: 0.3rem; font-family: monospace; }
+    .alert-item.is-info { background: var(--card); border-color: var(--border); }
+    .alert-item.is-info .alert-header { color: #777; }
+
+    .stat.is-muted { opacity: 0.6; }
+    .stat.is-muted .stat-val { font-size: 1.4rem; color: #888; }
+
+    .net-row { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 0.55rem 0.9rem; margin-bottom: 0.4rem; cursor: pointer; }
+    .net-row-main { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .net-chevron { font-size: 0.6rem; color: #444; transition: transform 0.15s; width: 0.8rem; }
+    .net-row.is-open .net-chevron { transform: rotate(90deg); }
+    .net-ssid { font-size: 0.8rem; font-weight: 700; color: #ddd; }
+    .net-radios { font-size: 0.6rem; color: #555; }
+    .net-manuf { font-size: 0.68rem; color: #555; margin-left: auto; }
+    .net-expand { display: none; margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
+    .net-row.is-open .net-expand { display: block; }
+    .net-bssid-row { display: flex; align-items: center; gap: 0.7rem; font-size: 0.68rem; color: #888; padding: 0.2rem 0; font-family: monospace; }
 
     .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -0.2rem; }
     table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 0.75rem; }
@@ -84,10 +100,15 @@
 
   <div class="section" id="alerts-section" style="display:none">
     <div class="section-title" style="display:flex;align-items:center;justify-content:space-between">
-      <span>🚨 Alerts</span>
+      <span id="alerts-title">🚨 Alerts</span>
       <button id="ack-alerts" class="filter-btn" style="text-transform:none;letter-spacing:normal">Acknowledge all</button>
     </div>
     <div id="alerts"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Networks (<span id="net-count">0</span>)</div>
+    <div id="networks"></div>
   </div>
 
   <div class="section">
@@ -96,8 +117,9 @@
       <button class="filter-btn active" data-filter="all">All</button>
       <button class="filter-btn" data-filter="AP">APs</button>
       <button class="filter-btn" data-filter="Client">Clients</button>
-      <button class="filter-btn" data-filter="unknown">Unknown</button>
+      <button class="filter-btn" data-filter="unknown">Unresolved</button>
       <input type="search" id="search" placeholder="Search MAC, SSID, vendor…">
+      <label class="stale-toggle" style="margin-left:auto"><input type="checkbox" id="show-noise"> Show ambient noise</label>
       <label class="stale-toggle"><input type="checkbox" id="show-stale"> Show inactive (30m+)</label>
     </div>
     <div class="row-count" id="row-count"></div>
@@ -122,8 +144,10 @@
   const STALE_SECONDS = 1800;
 
   let allDevices = [];
+  let allNetworks = [];
   let activeFilter = 'all';
   let lastAlertTs = 0;
+  const openNets = new Set();
 
   function sigClass(s) {
     if (!s || s === 0) return '';
@@ -151,25 +175,32 @@
   function renderDevices() {
     const q = document.getElementById('search').value.toLowerCase();
     const showStale = document.getElementById('show-stale').checked;
+    const showNoise = document.getElementById('show-noise').checked;
     const now = Math.floor(Date.now()/1000);
     const tbody = document.getElementById('devices');
     const rows = allDevices.filter(d => {
       if (!showStale && (!d.last_time || now - d.last_time > STALE_SECONDS)) return false;
+      if (!showNoise && d.noise) return false;
       if (activeFilter === 'AP' && !d.type.includes('AP')) return false;
       if (activeFilter === 'Client' && !d.type.includes('Client')) return false;
-      if (activeFilter === 'unknown' && d.known) return false;
+      if (activeFilter === 'unknown' && (d.known || d.noise)) return false;
       if (q && ![d.mac, d.ssid, d.name, d.manuf, d.hostname, ...(d.probes||[])].join(' ').toLowerCase().includes(q)) return false;
       return true;
     });
 
+    const hiddenBits = [];
+    if (!showStale) hiddenBits.push('inactive 30m+');
+    if (!showNoise) hiddenBits.push('ambient noise');
     document.getElementById('row-count').textContent =
-      `Showing ${rows.length} of ${allDevices.length} devices${showStale ? '' : ' (inactive 30m+ hidden)'}`;
+      `Showing ${rows.length} of ${allDevices.length} devices${hiddenBits.length ? ' (' + hiddenBits.join(', ') + ' hidden)' : ''}`;
 
     tbody.innerHTML = rows.map(d => {
       const isAP = d.type.includes('AP');
       const badge = isAP ? 'badge-ap' : d.type.includes('Client') ? 'badge-client' : 'badge-other';
       const label = isAP ? 'AP' : d.type.includes('Client') ? 'Client' : d.type;
-      const unknownBadge = (!d.known && d.type.includes('Client')) ? ' <span class="badge badge-unknown">unknown</span>' : '';
+      const unknownBadge = (!d.known && d.type.includes('Client'))
+        ? (d.noise ? ' <span class="badge badge-other">noise</span>' : ' <span class="badge badge-unknown">unknown</span>')
+        : '';
       const ssid = d.ssid ? esc(d.ssid) : (isAP ? '<span style="color:#333">hidden</span>' : '—');
       const sig = d.signal ? `<span class="sig ${sigClass(d.signal)}">${d.signal} dBm</span>` : '—';
       const probes = (d.probes||[]).slice(0,3).map(esc).join(', ') || '—';
@@ -195,10 +226,12 @@
     if (d.error) { document.getElementById('meta').textContent = d.error; return; }
 
     allDevices = (d.devices || []).slice().sort((a, b) => (b.last_time||0) - (a.last_time||0));
-    const active  = allDevices.filter(x => x.last_time && (d.ts - x.last_time) <= STALE_SECONDS);
-    const aps     = active.filter(x => x.type.includes('AP')).length;
-    const clients = active.filter(x => x.type.includes('Client')).length;
-    const unknown = active.filter(x => !x.known && x.type.includes('Client')).length;
+    allNetworks = d.networks || [];
+    const active     = allDevices.filter(x => x.last_time && (d.ts - x.last_time) <= STALE_SECONDS);
+    const aps        = active.filter(x => x.type.includes('AP')).length;
+    const clients    = active.filter(x => x.type.includes('Client')).length;
+    const unresolved = active.filter(x => !x.known && x.type.includes('Client') && !x.noise).length;
+    const noiseCount = active.filter(x => x.noise).length;
     const allAlerts = d.alerts || [];
     const ackTs = Number(localStorage.getItem('kismet_alerts_ack_ts') || 0);
     const alerts = allAlerts.filter(a => a.ts > ackTs);
@@ -208,12 +241,13 @@
       `Updated ${relTime(d.ts)} · Kismet up ${Math.floor((d.uptime_sec||0)/60)}m · ${d.device_count} seen all-time`;
 
     document.getElementById('stats').innerHTML = [
-      [active.length, 'Active (30m)'],
-      [aps, 'Access points'],
-      [clients, 'Clients'],
-      [unknown, 'Unknown clients'],
-      [alerts.length, 'Alerts'],
-    ].map(([v,l]) => `<div class="stat"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
+      [active.length, 'Active (30m)', false],
+      [aps, 'Access points', false],
+      [clients, 'Clients', false],
+      [unresolved, 'Unresolved', false],
+      [noiseCount, 'Ambient noise', true],
+      [alerts.length, 'Alerts', false],
+    ].map(([v,l,muted]) => `<div class="stat${muted ? ' is-muted' : ''}"><div class="stat-val">${v}</div><div class="stat-label">${l}</div></div>`).join('');
 
     if (alerts.length) {
       const groups = new Map();
@@ -225,19 +259,63 @@
         else g.count++;
       });
       const grouped = [...groups.values()].sort((a,b) => b.ts - a.ts).slice(0, 8);
+      const anyCritical = grouped.some(a => a.level !== 'info');
 
       document.getElementById('alerts-section').style.display = '';
-      document.getElementById('alerts').innerHTML = grouped.map(a => `
-        <div class="alert-item">
+      document.getElementById('alerts-title').textContent = anyCritical ? '🚨 Alerts' : 'ℹ️ Alerts';
+      document.getElementById('alerts').innerHTML = grouped.map(a => {
+        const isInfo = a.level === 'info';
+        return `
+        <div class="alert-item${isInfo ? ' is-info' : ''}">
           <div class="alert-header">${esc(a.header)} <span style="font-weight:400;color:#555">[${esc(a.class)}]</span>${a.count > 1 ? ` <span style="font-weight:400;color:#888">×${a.count}</span>` : ''}</div>
           <div class="alert-text">${esc(a.text)}</div>
           <div class="alert-meta">${a.count > 1 ? 'last ' : ''}${new Date(a.ts*1000).toLocaleString()} ${a.source_mac ? '· ' + esc(a.source_mac) : ''}</div>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     } else {
       document.getElementById('alerts-section').style.display = 'none';
     }
 
+    renderNetworks();
     renderDevices();
+  }
+
+  function renderNetworks() {
+    document.getElementById('net-count').textContent = allNetworks.length;
+    document.getElementById('networks').innerHTML = allNetworks.map(n => {
+      const isOpen = openNets.has(n.ssid);
+      const sig = `<span class="sig ${sigClass(n.strongest_signal)}">${n.strongest_signal} dBm</span>`;
+      const crypt = n.best_crypt ? `<span class="crypt ${cryptClass(n.best_crypt)}">${esc(n.best_crypt.split(' ')[0])}</span>` : '—';
+      const bssids = allDevices.filter(d => d.type.includes('AP') && d.ssid === n.ssid)
+        .sort((a,b) => -(a.signal||-999) + (b.signal||-999));
+      const rows = bssids.map(d => `
+        <div class="net-bssid-row">
+          <span>${esc(d.mac)}</span>
+          <span style="color:#555">ch ${d.channel||'—'}</span>
+          <span class="sig ${sigClass(d.signal)}">${d.signal||'—'} dBm</span>
+          <span style="color:#555">${esc(d.manuf||'—')}</span>
+        </div>`).join('');
+      return `
+        <div class="net-row${isOpen ? ' is-open' : ''}" data-ssid="${esc(n.ssid)}">
+          <div class="net-row-main">
+            <span class="net-chevron">▶</span>
+            <span class="net-ssid">${esc(n.ssid)}</span>
+            <span class="net-radios badge badge-ap">×${n.bssid_count} radio${n.bssid_count > 1 ? 's' : ''}</span>
+            ${sig}
+            ${crypt}
+            <span class="net-manuf">${esc(n.manufs.join(', '))}</span>
+          </div>
+          <div class="net-expand">${rows}</div>
+        </div>`;
+    }).join('') || '<div class="row-count">No named networks seen yet.</div>';
+
+    document.querySelectorAll('.net-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const ssid = row.dataset.ssid;
+        openNets.has(ssid) ? openNets.delete(ssid) : openNets.add(ssid);
+        renderNetworks();
+      });
+    });
   }
 
   document.querySelectorAll('.filter-row .filter-btn').forEach(btn => {
@@ -250,6 +328,7 @@
   });
   document.getElementById('search').addEventListener('input', renderDevices);
   document.getElementById('show-stale').addEventListener('change', renderDevices);
+  document.getElementById('show-noise').addEventListener('change', renderDevices);
   document.getElementById('ack-alerts').addEventListener('click', () => {
     localStorage.setItem('kismet_alerts_ack_ts', String(lastAlertTs));
     load();

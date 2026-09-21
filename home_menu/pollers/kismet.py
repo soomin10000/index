@@ -115,6 +115,47 @@ def _alert_is_critical(a):
             or a.get('kismet.alert.header', '') in CRITICAL_HEADERS)
 
 
+def _mac_is_random(mac):
+    """True if the locally-administered bit is set — a randomized/private address,
+    not the device's real vendor-assigned MAC (common on modern phones per-SSID).
+    Same test as server.py's _mac_is_random."""
+    try:
+        first_octet = int((mac or '').split(':')[0], 16)
+    except ValueError:
+        return False
+    return bool(first_octet & 0x02)
+
+
+def _is_noise(d):
+    """A client that's unknown, has a randomized MAC, and left no SSID/probe trail
+    to identify it by — ambient background scanning from phones/laptops passing by,
+    not something you could ever act on. Never true for APs."""
+    return (not d['known'] and _mac_is_random(d['mac'])
+            and not d['ssid'] and not d['probes'])
+
+
+def _group_networks(devices):
+    """Collapse AP rows sharing an SSID (mesh systems, dual-band routers broadcast
+    one SSID as several BSSIDs) into one summary per network, sorted strongest-first.
+    Hidden/blank-SSID APs are left out of the grouping (still present in devices[])."""
+    groups = {}
+    for d in devices:
+        if 'AP' not in d['type'] or not d['ssid']:
+            continue
+        g = groups.setdefault(d['ssid'], {
+            'ssid': d['ssid'], 'bssid_count': 0, 'strongest_signal': -999,
+            'best_crypt': '', 'manufs': [], 'last_time': 0,
+        })
+        g['bssid_count'] += 1
+        if (d['signal'] or -999) > g['strongest_signal']:
+            g['strongest_signal'] = d['signal'] or -999
+            g['best_crypt'] = d['crypt']
+        if d['manuf'] and d['manuf'] not in g['manufs']:
+            g['manufs'].append(d['manuf'])
+        g['last_time'] = max(g['last_time'], d['last_time'] or 0)
+    return sorted(groups.values(), key=lambda g: -g['strongest_signal'])
+
+
 def notify_critical_alerts(raw_alerts):
     """Push a notification when Kismet raises a NEW security-critical alert.
 
@@ -229,6 +270,7 @@ def fetch_and_write():
             'ts':        int(a.get('kismet.alert.timestamp', 0)),
             'text':      a.get('kismet.alert.text', ''),
             'source_mac': a.get('kismet.alert.source_mac', ''),
+            'level':     'critical' if _alert_is_critical(a) else 'info',
         })
     alerts.sort(key=lambda a: -a['ts'])
 
@@ -263,7 +305,12 @@ def fetch_and_write():
             hostname = real_hostname or pihole_name or display_name
         d['hostname'] = hostname
 
+    for d in devices:
+        d['noise'] = 'Client' in d['type'] and _is_noise(d)
+
     unknown = [d for d in devices if not d['known'] and 'Client' in d['type']]
+    noise   = [d for d in unknown if d['noise']]
+    networks = _group_networks(devices)
 
     data = {
         'ts':           now,
@@ -272,13 +319,15 @@ def fetch_and_write():
         'devices':      devices,
         'alerts':       alerts,
         'unknown_clients': unknown,
+        'networks':     networks,
     }
 
     OUT.write_text(json.dumps(data, indent=2))
     aps      = sum(1 for d in devices if 'AP' in d['type'])
     clients  = sum(1 for d in devices if 'Client' in d['type'])
-    print(f'Saved {OUT} — {device_count} devices ({aps} APs, {clients} clients), '
-          f'{len(alerts)} alerts, {len(unknown)} unknown clients')
+    print(f'Saved {OUT} — {device_count} devices ({aps} APs -> {len(networks)} networks, '
+          f'{clients} clients), {len(alerts)} alerts, '
+          f'{len(unknown)} unknown clients ({len(noise)} ambient noise)')
 
 
 if __name__ == '__main__':
