@@ -48,7 +48,7 @@
     .net-row.is-open .net-chevron { transform: rotate(90deg); }
     .net-ssid { font-size: 0.8rem; font-weight: 700; color: #ddd; }
     .net-radios { font-size: 0.6rem; color: #555; }
-    .net-manuf { font-size: 0.68rem; color: #555; margin-left: auto; }
+    .net-manuf { font-size: 0.68rem; color: #999; margin-left: auto; }
     .net-expand { display: none; margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid var(--border); }
     .net-row.is-open .net-expand { display: block; }
     .net-bssid-row { display: flex; align-items: center; gap: 0.7rem; font-size: 0.68rem; color: #888; padding: 0.2rem 0; font-family: monospace; }
@@ -211,7 +211,7 @@
         <td>${host}</td>
         <td style="font-family:monospace;color:#666">${esc(d.mac)}</td>
         <td>${ssid}</td>
-        <td style="color:#555">${esc(d.manuf||'—')}</td>
+        <td style="color:#999">${esc(d.manuf||'—')}</td>
         <td>${crypt}</td>
         <td>${sig}</td>
         <td style="color:#555">${d.channel||'—'}</td>
@@ -293,7 +293,7 @@
           <span>${esc(d.mac)}</span>
           <span style="color:#555">ch ${d.channel||'—'}</span>
           <span class="sig ${sigClass(d.signal)}">${d.signal||'—'} dBm</span>
-          <span style="color:#555">${esc(d.manuf||'—')}</span>
+          <span style="color:#999">${esc(d.manuf||'—')}</span>
         </div>`).join('');
       return `
         <div class="net-row${isOpen ? ' is-open' : ''}" data-ssid="${esc(n.ssid)}">
