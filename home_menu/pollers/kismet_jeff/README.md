@@ -74,3 +74,20 @@ Verify on steve once both jeff services are up:
 should show `jeff_alfa` running, and `/kismet` should keep showing live
 devices with zero interruption (Kismet just gains a second remote source
 briefly during cutover, no config change needed on steve either way).
+
+## Weekly restart (leak mitigation, added 2026-09-22)
+
+`kismet_cap_linux_wifi` leaks ~200MB/day (see
+[[project_kismet_memory_leak]]) — steve already restarts `kismet.service`
+weekly for this, but that only covers the **server**. Since capture moved
+here, the leaking process is `jeff-kismet-capture.service` on jeff itself,
+which had no restart schedule (`Restart=always` on crash only). This adds
+a matching weekly restart on jeff, offset 30 min after steve's so both
+sides refresh in the same maintenance window without racing each other.
+
+```
+sudo cp jeff-kismet-restart.service jeff-kismet-restart.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jeff-kismet-restart.timer
+systemctl list-timers jeff-kismet-restart.timer
+```
