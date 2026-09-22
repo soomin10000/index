@@ -1,6 +1,0 @@
-[Unit]
-Description=Weekly restart of jeff-kismet-capture.service (kismet_cap_linux_wifi leaks ~200MB/day)
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/systemctl restart jeff-kismet-capture.service

@@ -13,6 +13,7 @@ from pathlib import Path
 KISMET_URL   = os.environ.get('KISMET_URL', 'http://localhost:2501')
 KISMET_USER  = os.environ.get('KISMET_USER')
 KISMET_PASS  = os.environ.get('KISMET_PASS')
+KISMET_IFACE = os.environ.get('KISMET_IFACE', 'wlx00c0cabaea2c')
 
 if not KISMET_USER or not KISMET_PASS:
     raise SystemExit('Set KISMET_USER and KISMET_PASS env vars before running pollers/kismet.py')
@@ -83,18 +84,18 @@ def _post(path, data):
         return json.loads(r.read())
 
 
-def check_datasource():
-    """The Alfa adapter now lives on pi4, not steve — Kismet's datasource is a
-    *remote* capture agent (kismet_cap_linux_wifi on pi4, tunneled to steve's
-    loopback:3501 over SSH), which registers itself with Kismet on connect.
-    There's no local interface left on steve to self-heal by re-adding, so just
-    surface it when the source list is empty: that means the tunnel or the
-    capture service on pi4 is down, not something steve's poller can fix.
+def ensure_datasource():
+    """Kismet forgets its datasource on every restart (site config is root-owned
+    and we don't have a password for sudo to persist it there), so re-add the
+    capture interface here if it's missing. Idempotent — no-op if already present.
     """
     sources = _get('/datasource/all_sources.json')
-    if not sources:
-        print('No Kismet datasource present — check pi4-kismet-tunnel.service '
-              'and pi4-kismet-capture.service on pi4')
+    if sources:
+        return
+    definition = f'{KISMET_IFACE}:name=alfa5,type=linuxwifi'
+    _post('/datasource/add_source.cmd', {'definition': definition})
+    print(f'No datasource found — added {definition}')
+    time.sleep(5)  # give the capture helper a moment to spin up
 
 
 def _load_pihole_by_ip():
@@ -210,7 +211,7 @@ def notify_critical_alerts(raw_alerts):
 def fetch_and_write():
     now = int(time.time())
 
-    check_datasource()
+    ensure_datasource()
 
     # System status
     status = _get('/system/status.json')
