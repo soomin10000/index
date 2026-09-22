@@ -91,6 +91,14 @@
   .feed-device { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); letter-spacing: 0.04em; }
   .feed-time { margin-left: auto; font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); white-space: nowrap; }
 
+  .vision-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; }
+  .vision-tag {
+    font-family: var(--font-mono); font-size: 0.6rem; padding: 0.12rem 0.4rem; border-radius: 3px;
+    background: var(--inset); border: 1px solid var(--bezel); color: var(--ink-dim);
+  }
+  .vision-tag.empty { color: var(--ink-faint); font-style: italic; }
+  .vision-tag.alert { border-color: var(--warn); color: var(--warn); }
+
   .feed-item.critical { border-left-color: var(--down); }
   .feed-item.critical .feed-message { color: var(--down); }
   .feed-item.notice { border-left-color: var(--warn); }
@@ -195,6 +203,32 @@
   };
   const meta = kind => KIND_META[kind] || { icon: '🔔', level: '' };
 
+  const ANIMAL_ICON = { dog: '🐶', cat: '🐱' };
+
+  // On-device Vision classification (ickle) of the snapshot — fills the gap
+  // for the ~75% of events Eufy's own AI just calls "motion detected" with
+  // nothing further.
+  function visionTags(e) {
+    const v = e.vision;
+    if (!v) return '';
+    const tags = [];
+    if (v.person) tags.push(`🧍 Person${v.personCount > 1 ? ` ×${v.personCount}` : ''}`);
+    (v.animals || []).forEach(a => tags.push(`${ANIMAL_ICON[a] || '🐾'} ${a}`));
+    let alertVehicle = false;
+    if (v.vehicle) {
+      if (v.knownVehicle === true) tags.push('🚗 Your car');
+      else if (v.sainsburysVan === true) tags.push("🛒 Sainsbury's van");
+      else if (v.dpdVan === true) tags.push('📦 DPD van');
+      else if (v.knownVehicle === false) { tags.push('🚨 Unknown vehicle'); alertVehicle = true; }
+      else tags.push('🚗 Vehicle');
+    }
+    if (v.package) tags.push('📦 Package');
+    if (!tags.length) return '<div class="vision-tags"><span class="vision-tag empty">no detection</span></div>';
+    return `<div class="vision-tags">${tags.map(t =>
+      `<span class="vision-tag${alertVehicle && t.includes('Unknown vehicle') ? ' alert' : ''}">${esc(t)}</span>`
+    ).join('')}</div>`;
+  }
+
   function relTime(ts) {
     const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
     if (s < 60) return 'just now';
@@ -279,6 +313,7 @@
             <span class="feed-time" title="${esc(when)}">${relTime(e.ts)}</span>
           </div>
           ${e.device ? `<div class="feed-device">${esc(e.device)}</div>` : ''}
+          ${visionTags(e)}
         </div>
       </div>`;
     }).join('');
