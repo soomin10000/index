@@ -3,8 +3,14 @@ Moisture monitor endpoint — receives POSTs from the XIAO ESP32C6,
 validates the bearer token, logs readings to SQLite.
 
 Run on steve:
-    pip install flask
+    pip install flask requests
     python3 moisture_endpoint.py
+
+requests is only needed for the low-moisture notify_sender push (see
+check_low_moisture below) — the endpoint itself still runs fine without it,
+just logs "notify_sender unavailable" instead of alerting. Easy to lose this
+after a venv gets wiped by an OS/Python upgrade since nothing else in this
+file imports it directly.
 
 Test it:
     curl -X POST http://localhost:8082/moisture \
