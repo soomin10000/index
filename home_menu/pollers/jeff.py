@@ -229,6 +229,12 @@ def _parse_watchdog(block, now=None, fires_block=""):
         for b in by_bucket:
             b.sort()
         fails_recent = len(epochs)
+        if (fires_block or "").strip():
+            # state.json's counts are a snapshot written only when readsb-recover
+            # fires, so they never age out on their own — recount from the epoch
+            # log so a quiet dongle stops showing (and alerting on) old fires.
+            fires_24h = sum(1 for e in epochs if e > now_i - 86400)
+            fires_48h = fails_recent
         fails_by_bucket = [len(b) for b in by_bucket]
         bucket_epochs = by_bucket
         recent_fires = [now_i - e for e in epochs[::-1][:RECENT_FIRE_MAX]]

@@ -228,3 +228,15 @@ def test_deaf_and_flapping_can_coexist_deaf_first():
     assert "readsb_deaf" in ids and "readsb_flapping" in ids
     assert ids.index("readsb_deaf") < ids.index("readsb_flapping")
 
+
+
+def test_parse_watchdog_recounts_fires_from_epoch_log():
+    # state.json's fires_24h is only rewritten on a fire, so it goes stale; the
+    # epoch log is the source of truth once the remote clock is known.
+    now = 1_000_000
+    fires = f"{now - 30 * 3600} {now - 26 * 3600} {now - 3600}"
+    w = jeff._parse_watchdog('{"last_fire":%d,"fires_24h":4,"fires_48h":10}' % (now - 3600),
+                             str(now), fires)
+    assert w["fires_24h"] == 1 and w["fires_48h"] == 3
+    w = jeff._parse_watchdog('{"last_fire":1,"fires_24h":4}', str(now + 3 * 86400), fires)
+    assert w["fires_24h"] == 0 and w["fires_48h"] == 0
