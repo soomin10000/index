@@ -301,6 +301,7 @@ KISMET_JSON  = DATA / 'kismet.json'
 STEVE_JSON   = DATA / 'steve.json'
 EUFY_JSON    = DATA / 'eufy.json'
 EUFY_VACUUM_JSON = DATA / 'eufy_vacuum.json'
+EUFY_BATTERY_JSON = DATA / 'eufy_battery.json'
 EUFY_SNAPSHOTS = DATA / 'eufy_snapshots'
 _EUFY_SNAPSHOT_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\.(png|jpg|jpeg)$', re.I)
 STEVE_DB     = DATA / 'steve_history.db'
@@ -1824,6 +1825,7 @@ ROUTES_GET = {
     '/api/arr':              _jsonfile(ARR_JSON),
     '/api/eufy':             _jsonfile(EUFY_JSON),
     '/api/eufy/vacuum':      _jsonfile(EUFY_VACUUM_JSON),
+    '/api/eufy/battery':     _jsonfile(EUFY_BATTERY_JSON, max_age=7 * 3600),
 
     # JSON computed on demand
     '/api/unifi':            _jsonfn(_unifi_status),

@@ -137,6 +137,22 @@
   .vacuum-sub { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-dim); }
   .vacuum-error { color: var(--down); }
 
+  .batt-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem; margin-bottom: 1.6rem; }
+  .batt-cell {
+    background: var(--panel); border: 1px solid var(--bezel); border-radius: 6px;
+    padding: 0.75rem 0.9rem; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0;
+  }
+  .batt-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .batt-name { font-size: 0.82rem; font-weight: 600; }
+  .batt-val { font-family: var(--font-mono); font-size: 1.3rem; font-weight: 600; }
+  .batt-val.low { color: var(--warn); }
+  .batt-val.critical { color: var(--down); }
+  .batt-bar { height: 5px; border-radius: 3px; background: var(--inset); border: 1px solid var(--bezel); overflow: hidden; }
+  .batt-bar i { display: block; height: 100%; background: var(--ok); }
+  .batt-bar i.low { background: var(--warn); }
+  .batt-bar i.critical { background: var(--down); }
+  .batt-sub { font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-dim); line-height: 1.5; }
+
   footer.updated {
     max-width: 900px; margin: 0 auto; padding: 0 1.6rem 2rem;
     font-family: var(--font-mono); font-size: 0.62rem; color: var(--ink-faint); text-align: right;
@@ -155,6 +171,11 @@
 <main class="frame">
   <div class="eyebrow">ROBOVAC</div>
   <div class="vacuum-card" id="vacuum-card">
+    <div class="empty" style="padding:0.5rem 0">Loading…</div>
+  </div>
+
+  <div class="eyebrow">CAMERA BATTERIES</div>
+  <div class="batt-grid" id="batt-grid">
     <div class="empty" style="padding:0.5rem 0">Loading…</div>
   </div>
 
@@ -280,6 +301,56 @@
     }
   }
 
+  // Drain since the last charge, from the once-a-day log eufy_listener.py
+  // keeps: walk back from today until the level last went up, need 2+ days.
+  function batteryDrain(history, serial, level) {
+    let oldest = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const v = (history[i].levels || {})[serial];
+      if (v == null) continue;
+      if (oldest && v < oldest.v) break;
+      oldest = { v, ts: history[i].ts };
+    }
+    const days = oldest ? (Date.now() / 1000 - oldest.ts) / 86400 : 0;
+    if (days < 2) return null;
+    const rate = (oldest.v - level) / days;
+    return { rate, days, left: rate > 0 ? Math.round(level / rate) : null };
+  }
+
+  async function loadBattery() {
+    const grid = document.getElementById('batt-grid');
+    try {
+      const r = await fetch('/api/eufy/battery');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const cams = Object.entries(d.cameras || {}).sort((a, b) => a[1].battery - b[1].battery);
+      if (!cams.length) {
+        grid.innerHTML = `<div class="empty" style="padding:0.5rem 0">${esc(d.error || 'No battery readings yet')}</div>`;
+        return;
+      }
+      grid.innerHTML = cams.map(([serial, c]) => {
+        const cls = c.battery < 10 ? 'critical' : c.battery < 20 ? 'low' : '';
+        const drain = batteryDrain(d.history || [], serial, c.battery);
+        const facts = [];
+        if (c.charging) facts.push('charging');
+        if (c.lastChargingDays != null) facts.push(`charged ${c.lastChargingDays}d ago`);
+        if (c.temperature != null) facts.push(`${c.temperature}°C`);
+        if (c.wifiRssi != null) facts.push(`WiFi ${c.wifiRssi} dBm`);
+        const trend = drain
+          ? `${drain.rate.toFixed(1)}%/day over ${Math.round(drain.days)}d${drain.left != null ? ` · ~${drain.left}d left` : ''}`
+          : `drain rate once 2 days are logged`;
+        return `
+          <div class="batt-cell">
+            <div class="batt-top"><span class="batt-name">${esc(c.name)}</span><span class="batt-val ${cls}">${c.battery}%</span></div>
+            <div class="batt-bar"><i class="${cls}" style="width:${Math.max(0, Math.min(100, c.battery))}%"></i></div>
+            <div class="batt-sub">${esc(trend)}<br>${esc(facts.join(' · '))}</div>
+          </div>`;
+      }).join('');
+    } catch (e) {
+      grid.innerHTML = '<div class="empty" style="padding:0.5rem 0">Could not load battery levels.</div>';
+    }
+  }
+
   let allEvents = [];
   let activeDevice = 'all';
 
@@ -352,7 +423,9 @@
 
   load();
   loadVacuum();
+  loadBattery();
   setInterval(load, 10000);
+  setInterval(loadBattery, 300000);
   setInterval(loadVacuum, 10000);
 </script>
 </body>

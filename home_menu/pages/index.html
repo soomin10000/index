@@ -1336,9 +1336,36 @@
     });
   }, 'No data');
 
-  const eufy = () => poll('eufy', '/api/eufy', d => {
+  // Days of battery left from the daily log (see eufy.html's batteryDrain):
+  // walk back from today until the level last went up (a charge), need 2+ days.
+  function eufyDaysLeft(history, serial, level) {
+    let oldest = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const v = (history[i].levels || {})[serial];
+      if (v == null) continue;
+      if (oldest && v < oldest.v) break;
+      oldest = { v, ts: history[i].ts };
+    }
+    const days = oldest ? (Date.now() / 1000 - oldest.ts) / 86400 : 0;
+    const rate = days >= 2 ? (oldest.v - level) / days : 0;
+    return rate > 0 ? Math.round(level / rate) : null;
+  }
+
+  const eufy = async () => {
+    let batt = null;
+    try { batt = await get('/api/eufy/battery'); } catch {}
+    const cams = batt && !batt._stale && batt.cameras ? Object.entries(batt.cameras) : [];
+    const low = cams.sort((a, b) => a[1].battery - b[1].battery)[0];
+    let battLine = '', battLamp = 'on';
+    if (low) {
+      const [serial, c] = low;
+      const left = eufyDaysLeft(batt.history || [], serial, c.battery);
+      battLamp = c.battery < 10 ? 'down' : c.battery < 20 ? 'warn' : 'on';
+      battLine = `<br>🔋 ${esc(c.name)} ${c.battery}%${left != null ? ` · ~${left}d left` : ''}`;
+    }
+    return poll('eufy', '/api/eufy', d => {
     const events = d.events || [];
-    if (!events.length) { setCard('eufy', { val: '0', unit: ' today', sub: `${dot('dot-off')}No events yet`, lamp: 'on' }); return; }
+    if (!events.length) { setCard('eufy', { val: '0', unit: ' today', sub: `${dot('dot-off')}No events yet${battLine}`, lamp: battLamp }); return; }
     const dayAgo = Date.now() / 1000 - 86400;
     const today = events.filter(e => e.ts >= dayAgo).length;
     const latest = events[0];
@@ -1346,10 +1373,11 @@
     const when = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`;
     setCard('eufy', {
       val: today, unit: ' today',
-      sub: `${dot('dot-on')}${esc(latest.message)} · ${when}`,
-      accent: '#5c9fd8', lamp: 'on',
+      sub: `${dot('dot-on')}${esc(latest.message)} · ${when}${battLine}`,
+      accent: '#5c9fd8', lamp: battLamp,
     });
   }, 'No data');
+  };
 
   const IIB_LAMP = { ok: 'on', warn: 'warn', down: 'down' };
   const IIB_META = {
