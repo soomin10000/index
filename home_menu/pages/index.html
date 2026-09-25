@@ -517,15 +517,16 @@
       .band-grid.hosts .c-foot { display: none; }
     }
 
-    /* ── Network on phones: host-row headers, a grouped list for the simple cards ──
+    /* ── Network + House on phones: host-row headers, grouped lists for the simple cards ──
        Same language as the Hosts list above: name left, verdict right, chevron,
        tape + foot on the last line. .strip-row goes display:contents so the
        verdict can sit in the header line and the sub-panels / kv underneath.
        Atlas, Uplink, SmokePing and IPv6 are adjacent one-number cards, so they
-       butt together into one grouped list. */
+       butt together into one grouped list; House is all one-number cards, so
+       the whole band is one grouped list like Hosts. */
     @media (max-width: 479px) {
       .band-grid.network { gap: 0.75rem; }
-      .band-grid.network .card {
+      :is(.band-grid.network, .band-grid.house) .card {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr) auto;
         grid-template-areas:
@@ -538,50 +539,50 @@
         padding: 0.95rem 2.1rem 0.9rem 1rem;
         border-radius: 12px;
       }
-      .band-grid.network .card:hover { transform: none; }
-      .band-grid.network .card:active { background: #2a2d30; }
-      .band-grid.network .card::after {
+      :is(.band-grid.network, .band-grid.house) .card:hover { transform: none; }
+      :is(.band-grid.network, .band-grid.house) .card:active { background: #2a2d30; }
+      :is(.band-grid.network, .band-grid.house) .card::after {
         content: '›';
         top: 0.95rem; left: auto; right: 0.8rem; transform: none;
         width: auto; height: auto; background: none; opacity: 1;
         font-size: 1.4rem; line-height: 1.2rem; color: var(--ink-faint);
       }
-      .band-grid.network .card:hover::after { opacity: 1; }
-      .band-grid.network .strip-row { display: contents; }
+      :is(.band-grid.network, .band-grid.house) .card:hover::after { opacity: 1; }
+      :is(.band-grid.network, .band-grid.house) .strip-row { display: contents; }
 
-      .band-grid.network .c-head { grid-area: head; margin: 0; min-width: 0; gap: 0.5rem; }
-      .band-grid.network .c-name {
+      :is(.band-grid.network, .band-grid.house) .c-head { grid-area: head; margin: 0; min-width: 0; gap: 0.5rem; }
+      :is(.band-grid.network, .band-grid.house) .c-name {
         font-size: 1.02rem; font-weight: 600; letter-spacing: 0.01em;
         text-transform: none; color: var(--ink);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .band-grid.network .card > .c-metric,
-      .band-grid.network .strip-verdict {
+      :is(.band-grid.network, .band-grid.house) .card > .c-metric,
+      :is(.band-grid.network, .band-grid.house) .strip-verdict {
         grid-area: verdict; margin: 0; align-self: center; justify-self: end; text-align: right;
       }
-      .band-grid.network .c-metric { justify-content: flex-end; white-space: nowrap; margin: 0; }
-      .band-grid.network .c-val { font-size: 1.1rem; letter-spacing: 0; }
-      .band-grid.network .c-unit { font-size: 0.78rem; }
-      .band-grid.network .is-offline .c-val { font-size: 0.95rem; }
-      .band-grid.network .pv-sub { font-size: 0.6rem; margin-top: 0.2rem; }
+      :is(.band-grid.network, .band-grid.house) .c-metric { justify-content: flex-end; white-space: nowrap; margin: 0; }
+      :is(.band-grid.network, .band-grid.house) .c-val { font-size: 1.1rem; letter-spacing: 0; }
+      :is(.band-grid.network, .band-grid.house) .c-unit { font-size: 0.78rem; }
+      :is(.band-grid.network, .band-grid.house) .is-offline .c-val { font-size: 0.95rem; }
+      :is(.band-grid.network, .band-grid.house) .pv-sub { font-size: 0.6rem; margin-top: 0.2rem; }
       #c-pihole .strip-verdict, #c-unifi .strip-verdict { padding-top: 0; align-self: center; }
 
-      .band-grid.network .c-sub { grid-area: sub; margin: 0.55rem 0 0; font-size: 0.8rem; }
-      .band-grid.network .subpanels,
-      .band-grid.network .kv { grid-area: panels; width: 100%; margin-top: 0.8rem; }
-      .band-grid.network .kv { column-gap: 1rem; row-gap: 0.45rem; }
+      :is(.band-grid.network, .band-grid.house) .c-sub { grid-area: sub; margin: 0.55rem 0 0; font-size: 0.8rem; }
+      :is(.band-grid.network, .band-grid.house) .subpanels,
+      :is(.band-grid.network, .band-grid.house) .kv { grid-area: panels; width: 100%; margin-top: 0.8rem; }
+      :is(.band-grid.network, .band-grid.house) .kv { column-gap: 1rem; row-gap: 0.45rem; }
 
-      .band-grid.network .tape {
+      :is(.band-grid.network, .band-grid.house) .tape {
         grid-area: tape; margin: 0.75rem 0 0 0.1rem;
         font-size: 0.52rem; padding: 1px 6px;
       }
-      .band-grid.network .c-foot {
+      :is(.band-grid.network, .band-grid.house) .c-foot {
         grid-area: foot; margin: 0.75rem 0 0; padding: 0; border: 0;
         font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
 
       /* Sub-panels as compact inset rows: name left, status right, detail below */
-      .band-grid.network .subpanels { gap: 0.45rem; }
+      :is(.band-grid.network, .band-grid.house) .subpanels { gap: 0.45rem; }
       #c-isitbroken .subpanel, #c-wireless .subpanel, #c-honeypot .subpanel, #c-arr .subpanel {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -589,9 +590,9 @@
         align-items: center; column-gap: 0.6rem;
         padding: 0.6rem 0.8rem;
       }
-      .band-grid.network .subpanel .nm { grid-area: nm; min-width: 0; }
-      .band-grid.network .subpanel .st { grid-area: st; margin: 0; font-size: 0.88rem; text-align: right; }
-      .band-grid.network .subpanel .dt { grid-area: dt; margin-top: 0.25rem; }
+      :is(.band-grid.network, .band-grid.house) .subpanel .nm { grid-area: nm; min-width: 0; }
+      :is(.band-grid.network, .band-grid.house) .subpanel .st { grid-area: st; margin: 0; font-size: 0.88rem; text-align: right; }
+      :is(.band-grid.network, .band-grid.house) .subpanel .dt { grid-area: dt; margin-top: 0.25rem; }
       #c-arr .subpanels { grid-template-columns: 1fr 1fr; }
       /* arr tiles are too narrow for name + status side by side (qBittorrent collides) */
       #c-arr .subpanel { padding: 0.5rem 0.65rem; grid-template-columns: 1fr; grid-template-areas: "nm" "st"; }
@@ -603,6 +604,23 @@
         margin-top: -0.75rem; box-shadow: none;
         border-top-left-radius: 0; border-top-right-radius: 0;
       }
+      /* House: the whole band is one grouped list */
+      .band-grid.house {
+        gap: 0;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+      }
+      .band-grid.house .card {
+        border: 0; border-radius: 0; box-shadow: none; background: transparent;
+        border-top: 1px solid var(--border);
+      }
+      .band-grid.house .card:first-child { border-top: 0; }
+      .band-grid.house .card:active { background: rgba(255,255,255,0.04); }
+      #c-harold .c-val, #c-bbc .c-val { font-size: 1.1rem !important; letter-spacing: 0 !important; }
+      #c-weather .c-bg-emoji { display: none; }
     }
 
     /* Status dots used inside .c-sub lines */
