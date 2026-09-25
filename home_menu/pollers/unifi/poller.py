@@ -21,12 +21,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path.home() / "ubuntu-sender"))
 
 from unifi_client import UnifiClient, UnifiAuthError
-from checks import check_congestion
+from checks import check_congestion, check_port_flapping
 import topology
 import dashboard
 from db import (open_db, log_poll, last_flagged_congestion,
                 check_new_devices, log_speedtest, log_event, get_known_devices,
-                log_radio_util, prune_radio_util)
+                log_radio_util, prune_radio_util,
+                log_port_counters, port_flap_baseline, prune_port_counter_log,
+                last_flagged_ports, log_port_flaps)
 
 try:
     from notify_sender import notify as _notify_send
@@ -286,6 +288,34 @@ def _radio_samples(devices):
     return samples
 
 
+def _port_samples(devices):
+    """Every up switch port's link_down_count/stp_state_change_count, every
+    poll, unconditionally — feeds port_flap_baseline()'s rolling window."""
+    samples = []
+    for dev in devices:
+        sw_mac = dev.get("mac")
+        if not sw_mac:
+            continue
+        sw_name = dev.get("name", sw_mac)
+        for p in dev.get("port_table", []):
+            if not p.get("up"):
+                continue
+            stp_changes = p.get("stp_state_change_count") or []
+            stp_total = sum((c.get("change_count") or 0) for c in stp_changes)
+            samples.append({
+                "sw_mac":                  sw_mac,
+                "sw_name":                 sw_name,
+                "port_idx":                p.get("port_idx"),
+                "port_name":               p.get("name", f"Port {p.get('port_idx')}"),
+                "link_down_count":         p.get("link_down_count"),
+                "stp_state_change_count":  stp_total,
+            })
+    return samples
+
+
+def _port_flap_key(f): return f"{f['sw_name']}:{f['port_idx']}"
+
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 def run(interval, client):
@@ -293,10 +323,13 @@ def run(interval, client):
     prev_congestion = last_flagged_congestion(db, within_seconds=interval * 2)
     if prev_congestion:
         log.info("Resuming — suppressing re-notification for: %s", prev_congestion)
+    prev_port_flags = last_flagged_ports(db, within_seconds=interval * 2)
+    if prev_port_flags:
+        log.info("Resuming — suppressing re-notification for flapping ports: %s", prev_port_flags)
 
     # Speed test: once per hour
     speedtest_every = max(1, 3600 // interval)
-    # Prune old radio_util_log rows: once per day
+    # Prune old radio_util_log/port_counter_log rows: once per day
     prune_every = max(1, 86400 // interval)
     # Regenerate the topology / dashboard PNGs at most every 15 min, not every
     # poll — matplotlib re-rendering two large figures on a 5-min loop was the
@@ -345,6 +378,27 @@ def run(interval, client):
             log.info("Congestion resolved: %s", key)
             _notify("UniFi: Congestion resolved", key, sound=False)
             log_event(db, "resolved", "Congestion resolved", key)
+
+        # Switch port flapping — log every up port's counters unconditionally
+        # (for the rolling baseline), then flag against the last hour.
+        port_samples = _port_samples(devices)
+        log_port_counters(db, port_samples)
+        port_baseline = port_flap_baseline(db, window_seconds=3600)
+        port_flags = check_port_flapping(devices, port_baseline, delta_threshold=5)
+        curr_port_flags = {_port_flap_key(f): f for f in port_flags}
+        if port_flags:
+            log_port_flaps(db, port_flags)
+        for key, f in curr_port_flags.items():
+            if key not in prev_port_flags:
+                msg = (f"{f['sw_name']} {f['port_name']} — {f['delta']} link drops "
+                       f"in the last {f['window_min']}m")
+                log.warning("NEW port flapping: %s", msg)
+                _notify("UniFi: Port flapping", msg, sound=False)
+                log_event(db, "port_flapping", "Port flapping", msg)
+        for key in prev_port_flags - curr_port_flags.keys():
+            log.info("Port flapping resolved: %s", key)
+            _notify("UniFi: Port flapping resolved", key, sound=False)
+            log_event(db, "resolved", "Port flapping resolved", key)
 
         # New device detection
         try:
@@ -412,6 +466,7 @@ def run(interval, client):
             trigger_speedtest(client)
         if poll_count % prune_every == 0:
             prune_radio_util(db)
+            prune_port_counter_log(db)
         sync_speedtest(db, client)
 
         # First poll always renders (so a restart refreshes the PNGs promptly),
@@ -420,8 +475,10 @@ def run(interval, client):
             _regenerate_visuals(devices, stations, wlans)
 
         prev_congestion = set(curr_congestion.keys())
+        prev_port_flags = set(curr_port_flags.keys())
 
-        log.info("Poll complete — %d congestion flags", len(curr_congestion))
+        log.info("Poll complete — %d congestion flags, %d port flap flags",
+                  len(curr_congestion), len(curr_port_flags))
         time.sleep(interval)
 
 

@@ -1150,7 +1150,8 @@
 
     const fc = d.flagged_clients || [];
     const cg = d.flagged_congestion || [];
-    const n = fc.length + cg.length;
+    const pf = d.flagged_ports || [];
+    const n = fc.length + cg.length + pf.length;
     const [vLamp, vCls] = VPN_STATE[v && v.status] || ['', ''];
     const lamp = (n > 0 || vLamp === 'down') ? 'down' : vLamp === 'warn' ? 'warn' : 'on';
     setCard('unifi', {
@@ -1173,6 +1174,9 @@
       ['Congested APs',
         cg.length ? `<b>${cg.length}</b> · ${esc(cg.map(c => `${c.ap} ${c.cu_total}%`).slice(0, 2).join(', '))}` : 'none',
         cg.length ? 'warn' : ''],
+      ['Flapping ports',
+        pf.length ? `<b>${pf.length}</b> · ${esc(pf.map(p => `${p.sw_name} ${p.port_name} (${p.delta}/${p.window_min}m)`).slice(0, 2).join(', '))}` : 'none',
+        pf.length ? 'down' : ''],
       ['WAN speedtest', `<b>${dl}↓ / ${ul}↑</b> Mbps${st.ping_ms != null ? ` · ${st.ping_ms} ms` : ''}`],
     ];
     if (v) {

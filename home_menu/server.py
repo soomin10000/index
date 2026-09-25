@@ -191,6 +191,11 @@ def _unifi_status():
             'FROM congestion_log WHERE ts >= ? GROUP BY ap, radio',
             (cutoff,)
         ).fetchall()
+        ports = conn.execute(
+            'SELECT sw_name, port_idx, port_name, MAX(delta) as delta, MAX(window_min) as window_min '
+            'FROM port_flap_log WHERE ts >= ? GROUP BY sw_name, port_idx',
+            (cutoff,)
+        ).fetchall()
         speed_row = conn.execute(
             'SELECT ts, ping_ms, download_mbps, upload_mbps FROM speedtest_log ORDER BY ts DESC LIMIT 1'
         ).fetchone()
@@ -199,6 +204,8 @@ def _unifi_status():
             'flagged_clients':    [{'hostname': r[0], 'signal': r[1],
                                     'retry_pct': round(r[2], 1) if r[2] is not None else None} for r in weak],
             'flagged_congestion': [{'ap': r[0], 'radio': r[1], 'cu_total': r[2]} for r in cong],
+            'flagged_ports':      [{'sw_name': r[0], 'port_idx': r[1], 'port_name': r[2],
+                                    'delta': r[3], 'window_min': r[4]} for r in ports],
             'speedtest': {'ts': speed_row[0], 'ping_ms': speed_row[1],
                           'download_mbps': round(speed_row[2], 1),
                           'upload_mbps': round(speed_row[3], 1)} if speed_row else None,

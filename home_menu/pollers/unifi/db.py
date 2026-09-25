@@ -63,11 +63,42 @@ CREATE TABLE IF NOT EXISTS events_log (
     message TEXT    NOT NULL
 );
 
+-- Every switch port, every poll, unconditionally (mirrors radio_util_log) —
+-- gives check_port_flapping() a rolling window to diff link_down_count
+-- against, since that counter is lifetime-cumulative on the device and a
+-- bare threshold on its raw value would trip forever on any port with a
+-- normal history.
+CREATE TABLE IF NOT EXISTS port_counter_log (
+    id                      INTEGER PRIMARY KEY,
+    ts                      INTEGER NOT NULL,
+    sw_mac                  TEXT    NOT NULL,
+    sw_name                 TEXT    NOT NULL,
+    port_idx                INTEGER NOT NULL,
+    port_name               TEXT,
+    link_down_count         INTEGER,
+    stp_state_change_count  INTEGER
+);
+
+-- Only written when a port's link_down_count delta over the check window
+-- crosses the alert threshold (mirrors congestion_log).
+CREATE TABLE IF NOT EXISTS port_flap_log (
+    id         INTEGER PRIMARY KEY,
+    ts         INTEGER NOT NULL,
+    sw_name    TEXT    NOT NULL,
+    port_idx   INTEGER NOT NULL,
+    port_name  TEXT,
+    delta      INTEGER NOT NULL,
+    window_min INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS weak_client_log_ts  ON weak_client_log (ts);
 CREATE INDEX IF NOT EXISTS congestion_log_ts   ON congestion_log (ts);
 CREATE INDEX IF NOT EXISTS radio_util_log_ts   ON radio_util_log (ts);
 CREATE INDEX IF NOT EXISTS speedtest_log_ts    ON speedtest_log (ts);
 CREATE INDEX IF NOT EXISTS events_log_ts       ON events_log (ts);
+CREATE INDEX IF NOT EXISTS port_counter_log_ts ON port_counter_log (ts);
+CREATE INDEX IF NOT EXISTS port_counter_log_port ON port_counter_log (sw_mac, port_idx);
+CREATE INDEX IF NOT EXISTS port_flap_log_ts    ON port_flap_log (ts);
 """
 
 
@@ -238,3 +269,64 @@ def log_speedtest(conn, ping_ms, download_mbps, upload_mbps, ts=None):
             "INSERT INTO speedtest_log (ts, ping_ms, download_mbps, upload_mbps) VALUES (?,?,?,?)",
             (ts, ping_ms, download_mbps, upload_mbps),
         )
+
+
+def log_port_counters(conn, samples, ts=None):
+    """samples: list of {sw_mac, sw_name, port_idx, port_name, link_down_count,
+    stp_state_change_count} — one row per up switch port, every poll."""
+    if ts is None:
+        ts = int(time.time())
+    with conn:
+        for s in samples:
+            conn.execute(
+                "INSERT INTO port_counter_log (ts, sw_mac, sw_name, port_idx, port_name, "
+                "link_down_count, stp_state_change_count) VALUES (?,?,?,?,?,?,?)",
+                (ts, s["sw_mac"], s["sw_name"], s["port_idx"], s.get("port_name"),
+                 s.get("link_down_count"), s.get("stp_state_change_count")),
+            )
+
+
+def port_flap_baseline(conn, window_seconds=3600):
+    """Earliest link_down_count sample within the window, per (sw_mac, port_idx) —
+    the value check_port_flapping() diffs the current count against. Fetched as
+    plain rows ordered by ts and reduced in Python (first-wins) rather than a
+    SQL aggregate, since MIN(ts) alongside a non-aggregated column doesn't
+    reliably return the matching row's value."""
+    cutoff = int(time.time()) - window_seconds
+    rows = conn.execute(
+        "SELECT sw_mac, port_idx, link_down_count, ts FROM port_counter_log "
+        "WHERE ts >= ? ORDER BY ts ASC",
+        (cutoff,)
+    ).fetchall()
+    baseline = {}
+    for sw_mac, port_idx, link_down_count, ts in rows:
+        key = (sw_mac, port_idx)
+        if key not in baseline:
+            baseline[key] = (link_down_count, ts)
+    return baseline
+
+
+def prune_port_counter_log(conn, keep_days=7):
+    cutoff = int(time.time()) - keep_days * 86400
+    with conn:
+        conn.execute("DELETE FROM port_counter_log WHERE ts < ?", (cutoff,))
+
+
+def last_flagged_ports(conn, within_seconds=600):
+    cutoff = int(time.time()) - within_seconds
+    rows = conn.execute(
+        "SELECT DISTINCT sw_name, port_idx FROM port_flap_log WHERE ts >= ?", (cutoff,)
+    ).fetchall()
+    return {f"{r[0]}:{r[1]}" for r in rows}
+
+
+def log_port_flaps(conn, flags, ts=None):
+    if ts is None:
+        ts = int(time.time())
+    with conn:
+        for f in flags:
+            conn.execute(
+                "INSERT INTO port_flap_log (ts, sw_name, port_idx, port_name, delta, window_min) "
+                "VALUES (?,?,?,?,?,?)",
+                (ts, f["sw_name"], f["port_idx"], f.get("port_name"), f["delta"], f["window_min"]),
+            )

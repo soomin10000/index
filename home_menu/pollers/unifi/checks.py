@@ -15,6 +15,7 @@ Notes from real data inspection:
 """
 
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,52 @@ def check_weak_clients(stations, signal_floor=-74, retry_ceiling=15):
                 "retry_pct": retry,
                 "essid":     sta.get("essid", ""),
             })
+    return flags
+
+
+def check_port_flapping(devices, baseline, delta_threshold=5):
+    """
+    Flags switch ports whose link_down_count has risen by at least
+    delta_threshold since the baseline sample (see db.port_flap_baseline()).
+
+    link_down_count/stp_state_change_count are lifetime-cumulative on the
+    device (only reset on reboot), so this only fires on the *rate of
+    increase* over the baseline window, not the raw value — a port with a
+    normal history of occasional reconnects would otherwise trip permanently.
+    A port not yet covered by a full baseline window (just started polling,
+    or a brand-new/moved port) is skipped rather than flagged — same
+    cold-start tradeoff as check_congestion's threshold crossing.
+
+    Returns a list of dicts: {sw_name, sw_mac, port_idx, port_name, delta,
+    window_min, connected_mac}
+    """
+    flags = []
+    for dev in devices:
+        sw_mac = dev.get("mac")
+        sw_name = dev.get("name", sw_mac or "unknown")
+        for p in dev.get("port_table", []):
+            if not p.get("up"):
+                continue
+            key = (sw_mac, p.get("port_idx"))
+            base = baseline.get(key)
+            if not base:
+                continue
+            base_count, base_ts = base
+            curr_count = p.get("link_down_count")
+            if curr_count is None:
+                continue
+            delta = curr_count - base_count
+            if delta >= delta_threshold:
+                window_min = max(1, round((time.time() - base_ts) / 60))
+                flags.append({
+                    "sw_name":      sw_name,
+                    "sw_mac":       sw_mac,
+                    "port_idx":     p.get("port_idx"),
+                    "port_name":    p.get("name", f"Port {p.get('port_idx')}"),
+                    "delta":        delta,
+                    "window_min":   window_min,
+                    "connected_mac": (p.get("last_connection") or {}).get("mac"),
+                })
     return flags
 
 
