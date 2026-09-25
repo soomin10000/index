@@ -435,6 +435,176 @@
       .hs-skel { animation: none; }
     }
 
+    /* ── Hosts on phones: one grouped list instead of seven stacked cards ──
+       Below 480px the band is a single column, and seven full cards ran to
+       ~1,560px. Each host becomes a three-line list row: name + status, a
+       full-width 48h trace with mem %, then the tape and readout. Same
+       markup, so the JS that fills the cards is untouched. */
+    @media (max-width: 479px) {
+      .band-grid.hosts {
+        gap: 0;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 20px rgba(0,0,0,0.4);
+      }
+      .band-grid.hosts .card {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "head  head  metric"
+          "trace trace trace"
+          "tape  read  read"
+          "sub   sub   sub";
+        align-items: center;
+        column-gap: 0.65rem;
+        min-height: 0;
+        padding: 0.95rem 2.1rem 0.95rem 1rem;
+        border: 0; border-radius: 0; box-shadow: none;
+        border-top: 1px solid var(--border);
+        background: transparent;
+      }
+      .band-grid.hosts .card:first-child { border-top: 0; }
+      .band-grid.hosts .card:hover { transform: none; box-shadow: none; }
+      .band-grid.hosts .card:active { background: rgba(255,255,255,0.04); }
+      /* The hover glow's ::after becomes the row's disclosure chevron,
+         level with the name line */
+      .band-grid.hosts .card::after {
+        content: '›';
+        top: 0.95rem; left: auto; right: 0.8rem; transform: none;
+        width: auto; height: auto; background: none; opacity: 1;
+        font-size: 1.4rem; line-height: 1.2rem; color: var(--ink-faint);
+      }
+      .band-grid.hosts .card:hover::after { opacity: 1; }
+
+      .band-grid.hosts .c-head   { grid-area: head; margin: 0; min-width: 0; gap: 0.5rem; }
+      .band-grid.hosts .c-name {
+        font-size: 1.02rem; font-weight: 600; letter-spacing: 0.01em;
+        text-transform: none; color: var(--ink);
+      }
+      .band-grid.hosts .c-metric {
+        grid-area: metric; justify-content: flex-end; margin: 0;
+        white-space: nowrap;
+      }
+      .band-grid.hosts .c-val { font-size: 1.1rem; letter-spacing: 0; }
+      .band-grid.hosts .c-unit { font-size: 0.78rem; }
+      .band-grid.hosts .is-offline .c-val { font-size: 0.95rem; }
+
+      .band-grid.hosts .hs-trace {
+        grid-area: trace; margin: 0.7rem 0 0;
+        display: flex; align-items: flex-end; gap: 0.6rem;
+      }
+      .band-grid.hosts .hs-cap { order: 2; margin: 0; padding: 0; }
+      .band-grid.hosts .hs-k { display: none; }
+      .band-grid.hosts .hs-now { font-size: 0.9rem; min-width: 2.8em; text-align: right; }
+      .band-grid.hosts .hs-svg { flex: 1; min-width: 0; height: 30px; }
+      .band-grid.hosts .hs-skel { flex: 1; height: 30px; margin: 0; }
+
+      .band-grid.hosts .tape {
+        grid-area: tape; margin: 0.65rem 0 0 0.1rem;
+        font-size: 0.52rem; padding: 1px 6px;
+      }
+      .band-grid.hosts .hs-read {
+        grid-area: read; padding: 0.65rem 0 0;
+        font-size: 0.62rem;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .band-grid.hosts .c-sub {
+        grid-area: sub; margin: 0.55rem 0 0;
+        font-size: 0.8rem; white-space: normal;
+      }
+      .band-grid.hosts .c-foot { display: none; }
+    }
+
+    /* ── Network on phones: host-row headers, a grouped list for the simple cards ──
+       Same language as the Hosts list above: name left, verdict right, chevron,
+       tape + foot on the last line. .strip-row goes display:contents so the
+       verdict can sit in the header line and the sub-panels / kv underneath.
+       Atlas, Uplink, SmokePing and IPv6 are adjacent one-number cards, so they
+       butt together into one grouped list. */
+    @media (max-width: 479px) {
+      .band-grid.network { gap: 0.75rem; }
+      .band-grid.network .card {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        grid-template-areas:
+          "head   head   verdict"
+          "sub    sub    sub"
+          "panels panels panels"
+          "tape   foot   foot";
+        align-items: center;
+        column-gap: 0.65rem;
+        padding: 0.95rem 2.1rem 0.9rem 1rem;
+        border-radius: 12px;
+      }
+      .band-grid.network .card:hover { transform: none; }
+      .band-grid.network .card:active { background: #2a2d30; }
+      .band-grid.network .card::after {
+        content: '›';
+        top: 0.95rem; left: auto; right: 0.8rem; transform: none;
+        width: auto; height: auto; background: none; opacity: 1;
+        font-size: 1.4rem; line-height: 1.2rem; color: var(--ink-faint);
+      }
+      .band-grid.network .card:hover::after { opacity: 1; }
+      .band-grid.network .strip-row { display: contents; }
+
+      .band-grid.network .c-head { grid-area: head; margin: 0; min-width: 0; gap: 0.5rem; }
+      .band-grid.network .c-name {
+        font-size: 1.02rem; font-weight: 600; letter-spacing: 0.01em;
+        text-transform: none; color: var(--ink);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .band-grid.network .card > .c-metric,
+      .band-grid.network .strip-verdict {
+        grid-area: verdict; margin: 0; align-self: center; justify-self: end; text-align: right;
+      }
+      .band-grid.network .c-metric { justify-content: flex-end; white-space: nowrap; margin: 0; }
+      .band-grid.network .c-val { font-size: 1.1rem; letter-spacing: 0; }
+      .band-grid.network .c-unit { font-size: 0.78rem; }
+      .band-grid.network .is-offline .c-val { font-size: 0.95rem; }
+      .band-grid.network .pv-sub { font-size: 0.6rem; margin-top: 0.2rem; }
+      #c-pihole .strip-verdict, #c-unifi .strip-verdict { padding-top: 0; align-self: center; }
+
+      .band-grid.network .c-sub { grid-area: sub; margin: 0.55rem 0 0; font-size: 0.8rem; }
+      .band-grid.network .subpanels,
+      .band-grid.network .kv { grid-area: panels; width: 100%; margin-top: 0.8rem; }
+      .band-grid.network .kv { column-gap: 1rem; row-gap: 0.45rem; }
+
+      .band-grid.network .tape {
+        grid-area: tape; margin: 0.75rem 0 0 0.1rem;
+        font-size: 0.52rem; padding: 1px 6px;
+      }
+      .band-grid.network .c-foot {
+        grid-area: foot; margin: 0.75rem 0 0; padding: 0; border: 0;
+        font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+
+      /* Sub-panels as compact inset rows: name left, status right, detail below */
+      .band-grid.network .subpanels { gap: 0.45rem; }
+      #c-isitbroken .subpanel, #c-wireless .subpanel, #c-honeypot .subpanel, #c-arr .subpanel {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "nm st" "dt dt";
+        align-items: center; column-gap: 0.6rem;
+        padding: 0.6rem 0.8rem;
+      }
+      .band-grid.network .subpanel .nm { grid-area: nm; min-width: 0; }
+      .band-grid.network .subpanel .st { grid-area: st; margin: 0; font-size: 0.88rem; text-align: right; }
+      .band-grid.network .subpanel .dt { grid-area: dt; margin-top: 0.25rem; }
+      #c-arr .subpanels { grid-template-columns: 1fr 1fr; }
+      /* arr tiles are too narrow for name + status side by side (qBittorrent collides) */
+      #c-arr .subpanel { padding: 0.5rem 0.65rem; grid-template-columns: 1fr; grid-template-areas: "nm" "st"; }
+      #c-arr .subpanel .st { font-size: 0.8rem; margin-top: 0.3rem; text-align: left; }
+
+      /* The four one-number cards: one grouped list */
+      #c-atlas, #c-uplink, #c-smoke { border-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+      #c-uplink, #c-smoke, #c-v6health {
+        margin-top: -0.75rem; box-shadow: none;
+        border-top-left-radius: 0; border-top-right-radius: 0;
+      }
+    }
+
     /* Status dots used inside .c-sub lines */
     .dot {
       display: inline-block; width: 6px; height: 6px; border-radius: 50%;
@@ -568,7 +738,7 @@
 
   <section class="band">
     <div class="band-label">Network <span class="bl-count" id="bl-network"></span></div>
-    <div class="band-grid">
+    <div class="band-grid network">
 
       <a class="card is-loading span-row" id="c-isitbroken" style="--a:#f2c94c" href="/is-it-broken">
         <div class="tape">Family</div>
@@ -1119,7 +1289,7 @@
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     const banned = d.fail2ban?.currently_banned || 0;
     setCard('wacky', {
-      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : '',
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('wacky', d, banned ? `${banned} banned` : '');
@@ -1138,7 +1308,7 @@
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     setCard('jeff', {
       val: alerts.length ? alerts.length : (adsb ? adsb.aircraft : 'OK'),
-      unit: alerts.length ? ' alerts' : (adsb ? ' aircraft' : ''),
+      unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : (adsb ? ' aircraft' : ''),
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('jeff', d, adsb ? `${adsb.aircraft} ✈` : (sdr.dongle_present ? 'SDR up' : 'no SDR'));
@@ -1157,7 +1327,7 @@
     if (!dns.ftl_active) parts.push(`${dot('dot-red')}Pi-hole FTL down`);
     setCard('bazza', {
       val: alerts.length ? alerts.length : 'OK',
-      unit: alerts.length ? ' alerts' : '',
+      unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : '',
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('bazza', d, dns.ftl_active === false ? 'FTL DOWN' : 'FTL up');
@@ -1173,7 +1343,7 @@
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     setCard('ickle', {
-      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : '',
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('ickle', d);
@@ -1189,7 +1359,7 @@
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     setCard('weeny', {
-      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : '',
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('weeny', d);
@@ -1205,7 +1375,7 @@
     const parts = [];
     if (alerts.length) parts.push(`${dot('dot-red')}${alerts.map(a => esc(a.header)).join(', ')}`);
     setCard('pi4', {
-      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? ' alerts' : '',
+      val: alerts.length ? alerts.length : 'OK', unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : '',
       sub: parts.join('<br>'), accent, lamp,
     });
     setReadout('pi4', d);
@@ -1331,7 +1501,7 @@
       : `${dot('dot-on')}${esc(d.verdict || 'no v6 loss in 24h')}`;
     setCard('v6health', {
       val: alerts.length ? alerts.length : (v6fail || 'OK'),
-      unit: alerts.length ? ' alerts' : (v6fail ? ' fails/24h' : ''),
+      unit: alerts.length ? (alerts.length === 1 ? ' alert' : ' alerts') : (v6fail ? ' fails/24h' : ''),
       sub, accent, lamp,
     });
   }, 'No data');
